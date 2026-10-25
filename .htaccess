@@ -1,0 +1,33 @@
+# G-SMaRT BIR Integration System
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_php7.c>
+    php_value upload_max_filesize 64M
+    php_value post_max_size 64M
+    php_value max_execution_time 300
+    php_value memory_limit 512M
+</IfModule>
+<IfModule mod_php.c>
+    php_value upload_max_filesize 64M
+    php_value post_max_size 64M
+    php_value max_execution_time 300
+    php_value memory_limit 512M
+</IfModule>
+
+# Configuration, dumps and dotfiles are never served.
+<FilesMatch "^(config\.php|config\.sample\.php|.*\.sql|.*\.md|.*\.log|\..*)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(woff2|svg|css|js)$">
+        Header set Cache-Control "public, max-age=604800"
+    </FilesMatch>
+</IfModule>
