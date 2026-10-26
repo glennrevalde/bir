@@ -192,7 +192,7 @@ class View
         <?= self::icon('search') ?><input id="qs" name="q" type="search" placeholder="TIN, name or file" value="<?= e(isset($_GET['q']) && self::$page === 'search' ? $_GET['q'] : '') ?>">
       </form>
       <button type="button" class="tool" data-theme-toggle aria-label="Switch light or dark mode" title="Light or dark mode"><?= self::icon('sun', 'ico ico-sun') ?><?= self::icon('moon', 'ico ico-moon') ?></button>
-      <a class="tool" href="<?= e(url('notifications')) ?>" aria-label="Notifications" title="Notifications"><?= self::icon('bell') ?><?php if ($unread + $pendingAppr) { echo '<span class="count">' . ($unread + $pendingAppr) . '</span>'; } ?></a>
+      <a class="tool" href="<?= e(url('notifications')) ?>" aria-label="Notifications" title="Notifications"><?= self::icon('bell') ?><?php if ($unread + $pendingAppr) { echo '<span class="count" aria-label="' . ($unread + $pendingAppr) . ' unread">' . ($unread + $pendingAppr) . '</span>'; } ?></a>
       <details class="user-menu">
         <summary class="tool user-tool" aria-label="Account menu"><?= self::icon('user') ?><span class="user-name"><?= e($u['full_name']) ?></span></summary>
         <div class="menu-panel">
@@ -211,7 +211,7 @@ class View
         if (!$items) { continue; }
         $active = self::$section === $key; ?>
       <div class="tab <?= $active ? 'is-active' : '' ?>">
-        <button type="button" class="tab-btn" aria-expanded="false" aria-haspopup="true"><?= self::icon($sec['icon']) ?><span><?= e($sec['label']) ?></span><?= $key === 'validation' && $pendingAppr ? '<span class="count">' . $pendingAppr . '</span>' : '' ?></button>
+        <button type="button" class="tab-btn" aria-expanded="false" aria-haspopup="true"><?= self::icon($sec['icon']) ?><span><?= e($sec['label']) ?></span><?= $key === 'validation' && $pendingAppr ? '<span class="count" aria-label="' . $pendingAppr . ' waiting">(' . $pendingAppr . ')</span>' : '' ?></button>
         <div class="tab-menu">
           <?php foreach ($items as $it) { ?>
             <a href="<?= e(url($it[0])) ?>" class="<?= self::$page === $it[0] ? 'is-current' : '' ?>"><?= e($it[1]) ?></a>

@@ -25,6 +25,14 @@ if ($cfg) {
         $checks[] = array('Database connection (MySQL ' . $ver . ')', true);
         $n = (int)$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()")->fetchColumn();
         $checks[] = array('Tables imported (' . $n . ' found, 51 expected)', $n >= 51);
+        if ($n >= 51) {
+            $hasRate = (int)$pdo->query("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'purchase_entries' AND column_name = 'vat_rate'")->fetchColumn();
+            $sawt = $pdo->query("SELECT is_nullable FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'withholding_entries' AND column_name = 'payment_date'")->fetchColumn() === 'YES';
+            $checks[] = array($hasRate ? 'Purchases table is up to date (R_Purchases format)' : 'Database needs an update: run database/migrations/2026-10-25_purchases_r_purchases_format.sql', (bool)$hasRate);
+            $checks[] = array($sawt ? 'Withholding table is up to date (SAWT layout)' : 'Database needs an update: run database/migrations/2026-10-25b_sawt_layout.sql', $sawt);
+            $salesRate = (int)$pdo->query("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'sales_entries' AND column_name = 'vat_rate'")->fetchColumn();
+            $checks[] = array($salesRate ? 'Sales table is up to date (VAT sales format)' : 'Database needs an update: run database/migrations/2026-10-25c_vat_sales_format.sql', (bool)$salesRate);
+        }
         $pk = (int)$pdo->query('SELECT @@max_allowed_packet')->fetchColumn();
         $checks[] = array('MySQL max_allowed_packet at least 16M (found ' . round($pk / 1048576, 1) . 'M' . ($pk >= 16 * 1048576 ? ')' : '; set max_allowed_packet = 16M under [mysqld] in my.ini and restart MySQL)'), $pk >= 16 * 1048576);
     } catch (Exception $e) {

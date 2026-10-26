@@ -54,7 +54,7 @@ Scope `files:read`, permission `dat.download`. Returns the DAT bytes as `applica
 
 Scope `records:read`. Customers, suppliers, payees and payors (up to 5000) with TIN, branch code, names, address and default ATC.
 
-### POST `api.php?r=withholding` | `r=sales` | `r=purchases`
+### POST `api.php?r=withholding` | `r=withheld_on_us` | `r=sales` | `r=purchases`
 
 Scope `records:write`, permission `records.edit`. Body:
 
@@ -103,9 +103,45 @@ Withholding (`r=withholding`):
 | `schedule_tag` | `A` (default), `B` or `C`: which QAP/alphalist schedule the line belongs to |
 | `nature_of_payment`, `reference_no` | Optional text |
 
-Sales (`r=sales`): `invoice_no`, `invoice_date` (required), `exempt_amount`, `zero_rated_amount`, `taxable_amount`, `output_vat`, `description`.
+Taxes withheld on us (`r=withheld_on_us`), the columns of the SAWT. `party` is the payor (the customer who withheld):
 
-Purchases (`r=purchases`): `invoice_no`, `invoice_date` (required), `exempt_amount`, `zero_rated_amount`, `services_amount`, `capital_goods_amount`, `other_goods_amount`, `input_vat`, `non_creditable_vat`, `description`.
+| Field | Notes |
+|---|---|
+| `period_month` | `YYYY-MM`, the month of the SAWT. Required unless `payment_date` is given |
+| `payment_date` | Optional. `YYYY-MM-DD`, inside `period_month` |
+| `atc_code` | Must exist in the ATC registry for the month and fit the client as payee (WC codes for a non-individual, WI codes for an individual) |
+| `nature_of_payment` | Optional. Blank uses the ATC description |
+| `income_amount` | Required. Amount of income payment |
+| `tax_rate` | Optional. Percent; blank uses the ATC rate |
+| `tax_withheld` | Optional. Blank computes ROUND(income x rate / 100, 2). A different amount is kept, as certified on the 2307, with a warning |
+| `reference_no`, `rate_exception_note` | Optional text: the 2307 reference and a note |
+
+Sales (`r=sales`), the same fields as the VAT sales workbook:
+
+| Field | Notes |
+|---|---|
+| `invoice_no`, `invoice_date` | The date (`YYYY-MM-DD`) is required and sets the month |
+| `gross_taxable` | Optional. Taxable sales with VAT. Not stored: when given, blank `taxable_amount` and `output_vat` are worked out from it, and the three must add up |
+| `exempt_amount`, `zero_rated_amount` | Optional |
+| `taxable_amount` | Net of VAT. Blank with a gross: ROUND(gross / (1 + rate / 100), 2) |
+| `vat_rate` | Percent. Blank means 12 |
+| `output_vat` | Blank computes it (gross - taxable, or ROUND(taxable x rate / 100, 2)). A different amount is kept with a warning |
+| `description` | Optional |
+
+The party's `address1` and `address2` are the workbook's SUBSTREET, STREET, BARANGAY and DISTRICT, CITY, ZIP CODE.
+
+Purchases (`r=purchases`), the same fields as the R_Purchases workbook:
+
+| Field | Notes |
+|---|---|
+| `period_month` | `YYYY-MM`. Required unless `invoice_date` is given |
+| `exempt_amount`, `zero_rated_amount` | Optional |
+| `services_amount`, `capital_goods_amount`, `other_goods_amount` | Net of VAT. Their sum is the taxable amount (taxableNetofVat) |
+| `vat_rate` | Percent. Blank means 12 |
+| `input_vat` | Blank computes ROUND(taxable x rate / 100, 2). A different amount is kept with a warning |
+| `invoice_no`, `invoice_date`, `non_creditable_vat`, `description` | Optional. An invoice date must fall inside `period_month` |
+
+At least one amount must be non-zero.
 
 Rows into a locked month, rows that duplicate an existing posted record, and rows with an unknown ATC or branch are refused with a message.
 

@@ -4,10 +4,11 @@
  *   GET  api.php?r=files[&client_id=]          file status list
  *   GET  api.php?r=file&id=N[&client_id=]      download a DAT that has accepted validator evidence
  *   GET  api.php?r=directory[&client_id=]      customers, suppliers, payees
- *   POST api.php?r=withholding|sales|purchases JSON {"client_id":1,"rows":[...]}
+ *   POST api.php?r=withholding|withheld_on_us|sales|purchases JSON {"client_id":1,"rows":[...]}
  */
 define('GSB_NO_SESSION', true);
 require __DIR__ . '/app/bootstrap.php';
+Migrations::run();
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 
@@ -102,7 +103,7 @@ if ($r === 'directory' && $method === 'GET') {
     echo json_encode(array('ok' => true, 'directory' => $rows));
     exit;
 }
-if (in_array($r, array('withholding', 'sales', 'purchases'), true) && $method === 'POST') {
+if (in_array($r, array('withholding', 'withheld_on_us', 'sales', 'purchases'), true) && $method === 'POST') {
     $need('records:write');
     $perm('records.edit');
     $rows = isset($body['rows']) && is_array($body['rows']) ? $body['rows'] : null;
@@ -110,7 +111,7 @@ if (in_array($r, array('withholding', 'sales', 'purchases'), true) && $method ==
         api_fail(422, 'Send between 1 and 1000 rows in "rows".');
     }
     $mod = Records::module($r);
-    $role = $r === 'sales' ? 'customer' : ($r === 'purchases' ? 'supplier' : 'payee');
+    $role = $r === 'sales' ? 'customer' : ($r === 'purchases' ? 'supplier' : ($r === 'withheld_on_us' ? 'payor' : 'payee'));
     $ho = Ctx::headOffice($client['id']);
     $out = array();
     foreach ($rows as $i => $row) {

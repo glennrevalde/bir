@@ -13,34 +13,48 @@ class Records
         return array(
             'sales' => array(
                 'title' => 'Sales', 'singular' => 'sales entry', 'table' => 'sales_entries', 'party' => 'customer', 'date' => 'invoice_date',
-                'lock_scope' => 'sales', 'help' => 'Invoices and receipts issued. Feeds the Summary List of Sales (RELIEF).',
+                'lock_scope' => 'sales', 'help' => 'Invoices and receipts issued, in the columns of the VAT sales workbook. Feeds the Summary List of Sales (RELIEF).',
                 'fields' => array(
                     array('key' => 'branch_id', 'label' => 'Branch', 'type' => 'branch', 'required' => true),
                     array('key' => 'counterparty_id', 'label' => 'Customer', 'type' => 'counterparty', 'required' => true, 'role' => 'customer'),
-                    array('key' => 'invoice_no', 'label' => 'Invoice or receipt no.', 'type' => 'text', 'max' => 40),
+                    array('key' => 'invoice_no', 'label' => 'Invoice no.', 'type' => 'text', 'max' => 40),
                     array('key' => 'invoice_date', 'label' => 'Invoice date', 'type' => 'date', 'required' => true),
                     $amount('exempt_amount', 'Exempt sales'), $amount('zero_rated_amount', 'Zero-rated sales'),
-                    $amount('taxable_amount', 'Taxable sales, net of VAT'), $amount('output_vat', 'Output VAT'),
+                    array('key' => 'taxable_amount', 'label' => 'Taxable sales, net of VAT', 'type' => 'amount', 'auto' => true),
+                    array('key' => 'vat_rate', 'label' => 'VAT rate (%)', 'type' => 'rate'),
+                    array('key' => 'output_vat', 'label' => 'Output VAT', 'type' => 'amount', 'auto' => true),
                     array('key' => 'description', 'label' => 'Description', 'type' => 'text', 'max' => 255),
                 ),
-                'list' => array('invoice_date', 'invoice_no', 'counterparty_id', 'taxable_amount', 'output_vat'),
+                'list' => array('invoice_date', 'invoice_no', 'counterparty_id', '_gross', 'exempt_amount', 'zero_rated_amount', 'taxable_amount', 'output_vat'),
+                'computed' => array(
+                    '_gross' => array('label' => 'Gross taxable', 'sum' => array('taxable_amount', 'output_vat')),
+                ),
                 'totals' => array('exempt_amount', 'zero_rated_amount', 'taxable_amount', 'output_vat'),
             ),
             'purchases' => array(
                 'title' => 'Purchases', 'singular' => 'purchase entry', 'table' => 'purchase_entries', 'party' => 'supplier', 'date' => 'invoice_date',
-                'lock_scope' => 'purchases', 'help' => 'Supplier invoices. Feeds the Summary List of Purchases (RELIEF).',
+                'sort' => 'period_month', 'period_field' => true, 'repeatable' => true, 'repeat_key' => 'invoice_no',
+                'lock_scope' => 'purchases', 'help' => 'Purchases per vendor, in the same columns as the R_Purchases workbook. Feeds the Summary List of Purchases (RELIEF).',
                 'fields' => array(
                     array('key' => 'branch_id', 'label' => 'Branch', 'type' => 'branch', 'required' => true),
-                    array('key' => 'counterparty_id', 'label' => 'Supplier', 'type' => 'counterparty', 'required' => true, 'role' => 'supplier'),
-                    array('key' => 'invoice_no', 'label' => 'Supplier invoice no.', 'type' => 'text', 'max' => 40),
-                    array('key' => 'invoice_date', 'label' => 'Invoice date', 'type' => 'date', 'required' => true),
-                    $amount('exempt_amount', 'Exempt purchases'), $amount('zero_rated_amount', 'Zero-rated purchases'),
-                    $amount('services_amount', 'Purchase of services'), $amount('capital_goods_amount', 'Purchase of capital goods'),
-                    $amount('other_goods_amount', 'Goods other than capital goods'), $amount('input_vat', 'Input VAT'),
+                    array('key' => 'counterparty_id', 'label' => 'Vendor', 'type' => 'counterparty', 'required' => true, 'role' => 'supplier'),
+                    array('key' => 'period_month', 'label' => 'Purchase month', 'type' => 'month', 'required' => true),
+                    array('key' => 'invoice_no', 'label' => 'Invoice or OR no.', 'type' => 'text', 'max' => 40),
+                    array('key' => 'invoice_date', 'label' => 'Invoice date', 'type' => 'date'),
+                    $amount('exempt_amount', 'Exempt'), $amount('zero_rated_amount', 'Zero-rated'),
+                    $amount('services_amount', 'Services'), $amount('capital_goods_amount', 'Capital goods'),
+                    $amount('other_goods_amount', 'Other than capital goods'),
+                    array('key' => 'vat_rate', 'label' => 'VAT rate (%)', 'type' => 'rate'),
+                    array('key' => 'input_vat', 'label' => 'Input VAT', 'type' => 'amount', 'auto' => true),
                     $amount('non_creditable_vat', 'Non-creditable input VAT'),
                     array('key' => 'description', 'label' => 'Description', 'type' => 'text', 'max' => 255),
                 ),
-                'list' => array('invoice_date', 'invoice_no', 'counterparty_id', 'services_amount', 'other_goods_amount', 'input_vat'),
+                'list' => array('period_month', 'counterparty_id', 'exempt_amount', 'zero_rated_amount', 'services_amount', 'capital_goods_amount', 'other_goods_amount',
+                    '_taxable', 'input_vat', '_total'),
+                'computed' => array(
+                    '_taxable' => array('label' => 'Taxable net of VAT', 'sum' => array('services_amount', 'capital_goods_amount', 'other_goods_amount')),
+                    '_total' => array('label' => 'Total purchases', 'sum' => array('exempt_amount', 'zero_rated_amount', 'services_amount', 'capital_goods_amount', 'other_goods_amount')),
+                ),
                 'totals' => array('exempt_amount', 'zero_rated_amount', 'services_amount', 'capital_goods_amount', 'other_goods_amount', 'input_vat', 'non_creditable_vat'),
             ),
             'importations' => array(
@@ -72,7 +86,7 @@ class Records
                         'options' => array('EWT' => 'Expanded (creditable)', 'FWT' => 'Final', 'GVAT' => 'Government: VAT withheld', 'GPT' => 'Government: percentage tax withheld')),
                     array('key' => 'atc_code', 'label' => 'ATC', 'type' => 'atc', 'required' => true),
                     array('key' => 'payment_date', 'label' => 'Payment date', 'type' => 'date', 'required' => true),
-                    array('key' => 'nature_of_payment', 'label' => 'Nature of income payment', 'type' => 'text', 'max' => 150),
+                    array('key' => 'nature_of_payment', 'label' => 'Nature of income payment', 'type' => 'text', 'max' => 255),
                     $amount('income_amount', 'Income payment', true),
                     array('key' => 'tax_rate', 'label' => 'Tax rate (%)', 'type' => 'rate'),
                     $amount('tax_withheld', 'Tax withheld'),
@@ -85,21 +99,24 @@ class Records
                 'totals' => array('income_amount', 'tax_withheld'),
             ),
             'withheld_on_us' => array(
-                'title' => 'Taxes withheld on us', 'singular' => 'creditable withholding received', 'table' => 'withholding_entries', 'party' => 'payor', 'date' => 'payment_date',
+                'title' => 'Taxes withheld on us', 'singular' => 'tax withheld on us', 'table' => 'withholding_entries', 'party' => 'payor', 'date' => 'payment_date',
+                'sort' => 'period_month', 'period_field' => true, 'repeatable' => true, 'repeat_key' => 'reference_no',
                 'lock_scope' => 'withholding', 'fixed' => array('direction' => 'payee', 'tax_kind' => 'EWT', 'schedule_tag' => 'A'),
-                'help' => 'Form 2307 certificates received from customers. Feeds the SAWT attachment.',
+                'help' => 'Creditable taxes customers withheld from this client (Form 2307 received), in the columns of the SAWT. Feeds the SAWT attachment.',
                 'fields' => array(
                     array('key' => 'branch_id', 'label' => 'Branch', 'type' => 'branch', 'required' => true),
-                    array('key' => 'counterparty_id', 'label' => 'Payor (customer who withheld)', 'type' => 'counterparty', 'required' => true, 'role' => 'payor'),
+                    array('key' => 'counterparty_id', 'label' => 'Payor', 'type' => 'counterparty', 'required' => true, 'role' => 'payor'),
+                    array('key' => 'period_month', 'label' => 'Month of income payment', 'type' => 'month', 'required' => true),
+                    array('key' => 'payment_date', 'label' => 'Date of payment', 'type' => 'date'),
                     array('key' => 'atc_code', 'label' => 'ATC', 'type' => 'atc', 'required' => true),
-                    array('key' => 'payment_date', 'label' => 'Date of payment', 'type' => 'date', 'required' => true),
-                    $amount('income_amount', 'Income payment', true),
+                    array('key' => 'nature_of_payment', 'label' => 'Nature of payment', 'type' => 'text', 'max' => 255),
+                    $amount('income_amount', 'Amount of income payment', true),
                     array('key' => 'tax_rate', 'label' => 'Tax rate (%)', 'type' => 'rate'),
-                    $amount('tax_withheld', 'Tax withheld'),
-                    array('key' => 'rate_exception_note', 'label' => 'Reason when rate or tax differs from the ATC', 'type' => 'text', 'max' => 255),
-                    array('key' => 'reference_no', 'label' => 'Certificate reference', 'type' => 'text', 'max' => 40),
+                    array('key' => 'tax_withheld', 'label' => 'Amount of tax withheld', 'type' => 'amount', 'auto' => true),
+                    array('key' => 'rate_exception_note', 'label' => 'Note on the rate or tax', 'type' => 'text', 'max' => 255),
+                    array('key' => 'reference_no', 'label' => 'Certificate (2307) reference', 'type' => 'text', 'max' => 40),
                 ),
-                'list' => array('payment_date', 'counterparty_id', 'atc_code', 'income_amount', 'tax_withheld', 'reference_no'),
+                'list' => array('period_month', 'counterparty_id', 'atc_code', 'nature_of_payment', 'income_amount', 'tax_rate', 'tax_withheld'),
                 'totals' => array('income_amount', 'tax_withheld'),
             ),
         );
@@ -191,7 +208,8 @@ class Records
                         if ($p['rounded']) {
                             $warnings[$k] = $f['label'] . ' had more than 2 decimals and was rounded to ' . Money::toPlain($p['cents']);
                         }
-                        $data[$k] = Money::toPlain($p['cents']);
+                        // Fields computed when left blank (input VAT) keep "blank" so the rule can fill them.
+                        $data[$k] = $p['blank'] && !empty($f['auto']) ? null : Money::toPlain($p['cents']);
                     }
                     break;
                 case 'rate':
@@ -203,6 +221,19 @@ class Records
                             $errors[$k] = $f['label'] . ' must be a percentage such as 1, 2 or 10';
                         } else {
                             $data[$k] = Money::rateString($u);
+                        }
+                    }
+                    break;
+                case 'month':
+                    $mth = self::parseMonth($v);
+                    if ($v === '' || $v === null) {
+                        $data[$k] = null;
+                    } elseif (!$mth) {
+                        $errors[$k] = $f['label'] . ' is not a valid month (use MM/YYYY)';
+                    } else {
+                        $data[$k] = $mth;
+                        if ($mth > date('Y-m', strtotime('first day of next month'))) {
+                            $warnings[$k] = $f['label'] . ' is in the future';
                         }
                     }
                     break;
@@ -275,8 +306,30 @@ class Records
             }
         }
         $dateKey = $mod['date'];
-        if (!empty($data[$dateKey])) {
+        if (!empty($mod['period_field'])) {
+            // The month is its own field; an invoice date is optional but must fall inside it.
+            $fromDate = !empty($data[$dateKey]) ? substr($data[$dateKey], 0, 7) : null;
+            if (empty($data['period_month']) && $fromDate) {
+                $data['period_month'] = $fromDate;
+                unset($errors['period_month']);
+            }
+            $labelOf = array();
+            foreach ($mod['fields'] as $f) {
+                $labelOf[$f['key']] = $f['label'];
+            }
+            if (empty($data['period_month']) && !isset($errors['period_month'])) {
+                $errors['period_month'] = 'Choose the ' . strtolower($labelOf['period_month']) . ' (or give the ' . strtolower($labelOf[$dateKey]) . ')';
+            } elseif ($fromDate && !empty($data['period_month']) && $fromDate !== $data['period_month']) {
+                $errors[$dateKey] = $labelOf[$dateKey] . ' ' . fmt_date($data[$dateKey], 'm/d/Y') . ' is outside the ' . strtolower($labelOf['period_month']) . ', ' . month_label($data['period_month']);
+            }
+        } elseif (!empty($data[$dateKey])) {
             $data['period_month'] = substr($data[$dateKey], 0, 7);
+        }
+        if ($mod['table'] === 'purchase_entries' && !isset($errors['vat_rate'])) {
+            self::checkPurchase($data, $errors, $warnings);
+        }
+        if ($mod['table'] === 'sales_entries' && !isset($errors['vat_rate']) && !isset($errors['taxable_amount']) && !isset($errors['output_vat'])) {
+            self::checkSales($data, $errors, $warnings, isset($input['gross_taxable']) ? $input['gross_taxable'] : '');
         }
         if ($mod['table'] === 'withholding_entries' && empty($errors)) {
             self::checkWithholding($data, $errors, $warnings, $clientId, isset($options['party_entity_type']) ? $options['party_entity_type'] : null);
@@ -284,18 +337,25 @@ class Records
         return array($data, $errors, $warnings);
     }
 
-    /** ATC validity, payee-type match, rate and tax arithmetic. Mutates $data (fills rate/tax). */
+    /**
+     * ATC validity, payee-type match, rate and tax arithmetic. Mutates $data (fills rate/tax).
+     * The ATC is looked up on the payment date, or on the last day of the month when a line has none
+     * (SAWT lines are per month). For taxes withheld on us the payor certified the amounts, so a rate or
+     * tax that differs from the registry is kept and flagged instead of refused.
+     */
     public static function checkWithholding(&$data, &$errors, &$warnings, $clientId, $partyType = null)
     {
-        $tc = self::taxCode($data['atc_code'], $data['tax_kind'], $data['payment_date']);
+        $onDate = !empty($data['payment_date']) ? $data['payment_date'] : (!empty($data['period_month']) ? last_day($data['period_month']) : today());
+        $tc = self::taxCode($data['atc_code'], $data['tax_kind'], $onDate);
         if (!$tc) {
-            $errors['atc_code'] = 'ATC ' . $data['atc_code'] . ' is not registered for ' . $data['tax_kind'] . ' on ' . $data['payment_date'] . '. Add it under Admin, Tax codes.';
+            $errors['atc_code'] = 'ATC ' . $data['atc_code'] . ' is not registered for ' . $data['tax_kind'] . ' on ' . fmt_date($onDate, 'm/d/Y') . '. Add it under Admin, Tax codes.';
             return;
         }
         if ($tc['status'] !== 'approved') {
             $warnings['atc_code'] = 'ATC ' . $data['atc_code'] . ' is still pending review in the tax code registry. Files using it stay unvalidated until it is approved.';
         }
-        if (isset($data['direction']) && $data['direction'] === 'payee') {
+        $received = isset($data['direction']) && $data['direction'] === 'payee';
+        if ($received) {
             // Taxes withheld on the client: the client is the payee, so the ATC must fit the client.
             $cp = array('entity_type' => DB::val('SELECT taxpayer_type FROM client_entities WHERE id = ?', array($clientId)));
         } else {
@@ -304,29 +364,233 @@ class Records
         if ($cp && $tc['payee_type'] !== 'any') {
             $want = $cp['entity_type'] === 'individual' ? 'individual' : 'corporate';
             if ($tc['payee_type'] !== $want) {
-                $errors['atc_code'] = 'ATC ' . $data['atc_code'] . ' applies to ' . ($tc['payee_type'] === 'individual' ? 'individual' : 'non-individual') . ' payees, but this payee is ' . ($want === 'individual' ? 'an individual' : 'a non-individual') . '.';
+                $errors['atc_code'] = $received
+                    ? 'ATC ' . $data['atc_code'] . ' is for ' . ($tc['payee_type'] === 'individual' ? 'individual' : 'non-individual') . ' payees, but this client is ' . ($want === 'individual' ? 'an individual' : 'a non-individual') . '.'
+                    : 'ATC ' . $data['atc_code'] . ' applies to ' . ($tc['payee_type'] === 'individual' ? 'individual' : 'non-individual') . ' payees, but this payee is ' . ($want === 'individual' ? 'an individual' : 'a non-individual') . '.';
                 return;
             }
         }
+        if (empty($data['nature_of_payment']) && $received) {
+            $data['nature_of_payment'] = $tc['description'];
+        }
         $atcUnits = Money::rateUnits($tc['rate']);
         $units = ($data['tax_rate'] === null || $data['tax_rate'] === '') ? $atcUnits : Money::rateUnits($data['tax_rate']);
+        if ($received && $units > 0 && $units < 10000 && $units * 100 === $atcUnits) {
+            // A rate written as a fraction (0.02) where the ATC says 2%.
+            $warnings['tax_rate'] = 'Tax rate ' . rtrim(rtrim(Money::rateString($units), '0'), '.') . ' was read as ' . Money::rateFormat($atcUnits, 'pct2') . '%.';
+            $units = $atcUnits;
+        }
         $data['tax_rate'] = Money::rateString($units);
         $income = Money::fromDb($data['income_amount']);
         $expected = Money::applyRate($income, $units);
         $given = Money::parse(isset($data['tax_withheld']) ? $data['tax_withheld'] : '');
-        if (!isset($data['tax_withheld']) || $given['blank'] || ($given['cents'] === 0 && $expected !== 0 && empty($data['rate_exception_note']))) {
+        if (!isset($data['tax_withheld']) || $given['blank'] || ($given['cents'] === 0 && $expected !== 0 && empty($data['rate_exception_note']) && !$received)) {
             $data['tax_withheld'] = Money::toPlain($expected);
         } else {
             $diff = abs($given['cents'] - $expected);
-            if ($diff > 1 && empty($data['rate_exception_note'])) {
+            $msg = 'Tax withheld ' . Money::fmt($given['cents']) . ' differs from ' . Money::fmt($expected) . ' (' . Money::rateFormat($units, 'pct2') . '% of ' . Money::fmt($income) . ')';
+            if ($diff > 1 && $received) {
+                $warnings['tax_withheld'] = $msg . '. It is kept as certified by the payor; check it against the 2307.';
+            } elseif ($diff > 1 && empty($data['rate_exception_note'])) {
                 $errors['tax_withheld'] = 'Tax withheld should be ' . Money::fmt($expected) . ' (' . Money::rateFormat($units, 'pct2') . '% of ' . Money::fmt($income) . '). Enter a reason to keep a different amount.';
             } elseif ($diff === 1) {
                 $warnings['tax_withheld'] = 'Tax withheld differs from the computed amount by 0.01.';
             }
         }
-        if ($units !== $atcUnits && empty($data['rate_exception_note'])) {
-            $errors['tax_rate'] = 'The rate differs from the ' . Money::rateFormat($atcUnits, 'pct2') . '% registered for ' . $data['atc_code'] . '. Enter a reason to keep it.';
+        if ($units !== $atcUnits) {
+            if ($received) {
+                $warnings['tax_rate'] = 'The rate ' . Money::rateFormat($units, 'pct2') . '% differs from the ' . Money::rateFormat($atcUnits, 'pct2') . '% registered for ' . $data['atc_code'] . '. It is kept as certified by the payor.';
+            } elseif (empty($data['rate_exception_note'])) {
+                $errors['tax_rate'] = 'The rate differs from the ' . Money::rateFormat($atcUnits, 'pct2') . '% registered for ' . $data['atc_code'] . '. Enter a reason to keep it.';
+            }
         }
+    }
+
+    /** Taxable purchases net of VAT, in centavos: services + capital goods + other goods. */
+    public static function purchaseTaxable($d)
+    {
+        return Money::fromDb(isset($d['services_amount']) ? $d['services_amount'] : 0) + Money::fromDb(isset($d['capital_goods_amount']) ? $d['capital_goods_amount'] : 0)
+            + Money::fromDb(isset($d['other_goods_amount']) ? $d['other_goods_amount'] : 0);
+    }
+
+    /** Total purchases, in centavos: exempt + zero-rated + taxable (VAT not included), as in the R_Purchases workbook. */
+    public static function purchaseTotal($d)
+    {
+        return Money::fromDb(isset($d['exempt_amount']) ? $d['exempt_amount'] : 0) + Money::fromDb(isset($d['zero_rated_amount']) ? $d['zero_rated_amount'] : 0) + self::purchaseTaxable($d);
+    }
+
+    /**
+     * Purchase rules from the R_Purchases workbook: taxable = ROUND(services + capital + other, 2),
+     * input VAT = ROUND(taxable x rate / 100, 2), rate defaults to 12. Mutates $data (fills rate and VAT).
+     */
+    public static function checkPurchase(&$data, &$errors, &$warnings)
+    {
+        $units = ($data['vat_rate'] === null || $data['vat_rate'] === '') ? 120000 : Money::rateUnits($data['vat_rate']);
+        if ($units === null || $units > 1000000) {
+            $errors['vat_rate'] = 'VAT rate must be a percentage such as 12';
+            return;
+        }
+        if ($units > 0 && $units < 10000) {
+            $errors['vat_rate'] = 'VAT rate ' . Money::rateFormat($units, 'pct2') . '% looks like a fraction. Enter 12 for 12%.';
+            return;
+        }
+        $data['vat_rate'] = Money::rateString($units);
+        if ($units !== 120000 && $units !== 0) {
+            $warnings['vat_rate'] = 'VAT rate is ' . Money::rateFormat($units, 'pct2') . '%, not the standard 12%.';
+        }
+        $amountKeys = array('exempt_amount', 'zero_rated_amount', 'services_amount', 'capital_goods_amount', 'other_goods_amount');
+        $any = false;
+        foreach ($amountKeys as $k) {
+            $c = Money::fromDb(isset($data[$k]) ? $data[$k] : 0);
+            if ($c !== 0) {
+                $any = true;
+            }
+            if ($c < 0) {
+                $warnings[$k] = 'Negative amount. Use it only for a debit or credit memo.';
+            }
+        }
+        if (!$any) {
+            $errors['other_goods_amount'] = 'Enter at least one purchase amount';
+            return;
+        }
+        $taxable = self::purchaseTaxable($data);
+        $expected = Money::applyRate($taxable, $units);
+        $given = Money::parse(isset($data['input_vat']) ? $data['input_vat'] : '');
+        if (!isset($data['input_vat']) || $data['input_vat'] === null || $given['blank']) {
+            $data['input_vat'] = Money::toPlain($expected);
+        } elseif ($taxable === 0 && $given['cents'] !== 0) {
+            $errors['input_vat'] = 'Input VAT needs a taxable amount (services, capital goods or other goods)';
+        } elseif (abs($given['cents'] - $expected) > 1) {
+            $warnings['input_vat'] = 'Input VAT ' . Money::fmt($given['cents']) . ' differs from ' . Money::rateFormat($units, 'pct2') . '% of ' . Money::fmt($taxable) . ' (' . Money::fmt($expected) . ').';
+        }
+        $nc = Money::fromDb(isset($data['non_creditable_vat']) ? $data['non_creditable_vat'] : 0);
+        if ($nc > 0 && $nc > Money::fromDb($data['input_vat'])) {
+            $errors['non_creditable_vat'] = 'Non-creditable input VAT cannot be more than the input VAT';
+        }
+    }
+
+    /** Gross taxable sales, VAT included, in centavos: taxable sales net of VAT + output VAT. */
+    public static function salesGross($d)
+    {
+        return Money::fromDb(isset($d['taxable_amount']) ? $d['taxable_amount'] : 0) + Money::fromDb(isset($d['output_vat']) ? $d['output_vat'] : 0);
+    }
+
+    /**
+     * Sales rules from the VAT sales workbook. GROSS TAXABLE includes VAT; TAXABLE SALES is net of VAT;
+     * OUTPUT VAT = TAXABLE SALES x VAT RATE / 100; VAT RATE defaults to 12. Given the gross, the taxable
+     * sales are ROUND(gross / (1 + rate / 100), 2) and the VAT is the rest, so the two always add up to the
+     * gross. Given the taxable sales instead, the VAT is ROUND(taxable x rate / 100, 2).
+     * Mutates $data (fills the rate, taxable sales and VAT); $gross is the GROSS TAXABLE input, not stored.
+     */
+    public static function checkSales(&$data, &$errors, &$warnings, $gross)
+    {
+        $units = ($data['vat_rate'] === null || $data['vat_rate'] === '') ? 120000 : Money::rateUnits($data['vat_rate']);
+        if ($units === null || $units > 1000000) {
+            $errors['vat_rate'] = 'VAT rate must be a percentage such as 12';
+            return;
+        }
+        if ($units > 0 && $units < 10000) {
+            $errors['vat_rate'] = 'VAT rate ' . Money::rateFormat($units, 'pct2') . '% looks like a fraction. Enter 12 for 12%.';
+            return;
+        }
+        $data['vat_rate'] = Money::rateString($units);
+        if ($units !== 120000 && $units !== 0) {
+            $warnings['vat_rate'] = 'VAT rate is ' . Money::rateFormat($units, 'pct2') . '%, not the standard 12%.';
+        }
+        $g = Money::parse(is_string($gross) || is_numeric($gross) ? (string)$gross : '');
+        if (!$g['ok']) {
+            $errors['gross_taxable'] = 'Gross taxable: ' . $g['error'];
+            return;
+        }
+        $n = Money::parse($data['taxable_amount'] === null ? '' : $data['taxable_amount']);
+        $v = Money::parse($data['output_vat'] === null ? '' : $data['output_vat']);
+        if (!$g['blank']) {
+            // Gross includes the VAT: net = gross / (1 + rate), half away from zero; VAT = gross - net.
+            $net = self::divRound($g['cents'] * 1000000, 1000000 + $units);
+            if ($n['blank'] && $v['blank']) {
+                $n['cents'] = $net;
+                $v['cents'] = $g['cents'] - $net;
+            } elseif ($n['blank']) {
+                $n['cents'] = $g['cents'] - $v['cents'];
+            } elseif ($v['blank']) {
+                $v['cents'] = $g['cents'] - $n['cents'];
+            }
+            if ($n['cents'] + $v['cents'] !== $g['cents']) {
+                $errors['gross_taxable'] = 'Gross taxable is ' . Money::fmt($g['cents']) . ' but taxable sales ' . Money::fmt($n['cents']) . ' + output VAT ' . Money::fmt($v['cents'])
+                    . ' is ' . Money::fmt($n['cents'] + $v['cents']) . '. Fix one of them, or leave taxable sales and VAT blank to work them out.';
+                return;
+            }
+            if (abs($n['cents'] - $net) > 1) {
+                $warnings['taxable_amount'] = 'Taxable sales ' . Money::fmt($n['cents']) . ' differ from gross taxable / ' . (1 + $units / 1000000) . ' (' . Money::fmt($net) . ').';
+            }
+            $n['blank'] = $v['blank'] = false;
+        }
+        if ($n['blank']) {
+            $n['cents'] = 0;
+        }
+        $expected = Money::applyRate($n['cents'], $units);
+        if ($v['blank']) {
+            $v['cents'] = $expected;
+        } elseif ($n['cents'] === 0 && $v['cents'] !== 0) {
+            $errors['output_vat'] = 'Output VAT needs taxable sales (or a gross taxable amount)';
+            return;
+        } elseif (abs($v['cents'] - $expected) > 1) {
+            $warnings['output_vat'] = 'Output VAT ' . Money::fmt($v['cents']) . ' differs from ' . Money::rateFormat($units, 'pct2') . '% of ' . Money::fmt($n['cents']) . ' (' . Money::fmt($expected) . ').';
+        }
+        $data['taxable_amount'] = Money::toPlain($n['cents']);
+        $data['output_vat'] = Money::toPlain($v['cents']);
+        $any = false;
+        foreach (array('exempt_amount', 'zero_rated_amount', 'taxable_amount') as $k) {
+            $c = Money::fromDb(isset($data[$k]) ? $data[$k] : 0);
+            if ($c !== 0) {
+                $any = true;
+            }
+            if ($c < 0) {
+                $warnings[$k] = 'Negative amount. Use it only for a credit memo or a returned sale.';
+            }
+        }
+        if (!$any) {
+            $errors['gross_taxable'] = 'Enter at least one sales amount: gross taxable, exempt, zero-rated or taxable sales';
+            return;
+        }
+        if ($units === 0 && $n['cents'] !== 0) {
+            $warnings['vat_rate'] = 'VAT rate is 0% on taxable sales. Sales taxed at 0% belong under zero-rated sales.';
+        }
+    }
+
+    /** $a / $b rounded half away from zero, for integers (centavo arithmetic without floats). */
+    private static function divRound($a, $b)
+    {
+        $neg = ($a < 0) !== ($b < 0);
+        $a = abs($a);
+        $b = abs($b);
+        if ($a > PHP_INT_MAX / 4) {
+            $q = (int)floor($a / $b + 0.5);
+            return $neg ? -$q : $q;
+        }
+        $q = intdiv($a, $b);
+        if (($a % $b) * 2 >= $b) {
+            $q++;
+        }
+        return $neg ? -$q : $q;
+    }
+
+    /** YYYY-MM from 2026-03, 03/2026, 3/2026, 2026-03-15, 03/15/2026 or an Excel date serial. */
+    public static function parseMonth($v)
+    {
+        $v = trim((string)$v);
+        if ($v === '') {
+            return null;
+        }
+        if (preg_match('/^(\d{4})-(\d{1,2})$/', $v, $m) || preg_match('/^(\d{1,2})[\/\-.](\d{4})$/', $v, $mm)) {
+            if (isset($mm[0])) {
+                $m = array(0, $mm[2], $mm[1]);
+            }
+            $mo = (int)$m[2];
+            return $mo >= 1 && $mo <= 12 && (int)$m[1] >= 2000 && (int)$m[1] <= 2099 ? sprintf('%04d-%02d', $m[1], $mo) : null;
+        }
+        $d = self::parseDate($v);
+        return $d ? substr($d, 0, 7) : null;
     }
 
     public static function parseDate($v, $fmt = 'auto')
@@ -391,7 +655,8 @@ class Records
         if ($lock) {
             throw new RuntimeException('The period ' . month_label($data['period_month']) . ' is locked. Ask a reviewer to unlock it first.');
         }
-        $data['row_hash'] = self::rowHash($mod, $data);
+        // Imports pass the hash they checked for duplicates (it counts repeated identical rows); otherwise compute it.
+        $data['row_hash'] = !$id && !empty($data['row_hash']) ? $data['row_hash'] : self::rowHash($mod, $data);
         $data['updated_by'] = Auth::id();
         $data['updated_at'] = now();
         if ($id) {
@@ -462,6 +727,95 @@ class Records
             DB::update($mod['table'], array('status' => 'posted', 'void_reason' => null, 'voided_at' => null, 'updated_by' => Auth::id(), 'updated_at' => now()), 'id = ?', array($id));
             Audit::log('record.restore', $mod['table'], $id, 'Restored ' . $mod['singular'], array('status' => 'void'), array('status' => 'posted'), $reason);
         }
+    }
+
+    /**
+     * The vendor of a purchase typed as in the R_Purchases sheet (v_tin, v_branch, v_company, v_last, v_first,
+     * v_middle, v_address1, v_address2). Returns array($party, $errors): $party['id'] is set when the TIN
+     * is already in the directory; otherwise $party['fields'] holds a new directory entry.
+     */
+    public static function purchaseVendor($in, $clientId)
+    {
+        return self::inlineParty($in, $clientId, 'is_supplier', 'vendor');
+    }
+
+    /**
+     * The same inline party for taxes withheld on us: the payor of the SAWT line (TIN with branch,
+     * corporation registered name, or an individual's last, first and middle name).
+     */
+    public static function salesCustomer($in, $clientId)
+    {
+        return self::inlineParty($in, $clientId, 'is_customer', 'customer');
+    }
+
+    public static function sawtPayor($in, $clientId)
+    {
+        return self::inlineParty($in, $clientId, 'is_payor', 'payor');
+    }
+
+    private static function inlineParty($in, $clientId, $flag, $noun)
+    {
+        $g = function ($k) use ($in) {
+            return isset($in[$k]) ? trim(preg_replace('/\s+/', ' ', (string)$in[$k])) : '';
+        };
+        $errors = array();
+        $tin = null;
+        $branch = '0000';
+        if ($g('v_tin') !== '') {
+            $t = Tin::parse($g('v_tin'));
+            if (!$t['ok']) {
+                $errors['v_tin'] = $t['error'];
+            } else {
+                $tin = $t['tin'];
+                if ($t['branch'] !== null) {
+                    $branch = $t['branch'];
+                }
+            }
+        }
+        if ($g('v_branch') !== '') {
+            $b = Tin::branch($g('v_branch'));
+            if ($b === null) {
+                $errors['v_branch'] = 'Branch code must have 4 or 5 digits';
+            } else {
+                $branch = $b;
+            }
+        }
+        if ($tin && !$errors) {
+            $cp = DB::row('SELECT * FROM counterparties WHERE client_id = ? AND tin = ? AND branch_code = ? AND deleted_at IS NULL', array($clientId, $tin, $branch));
+            if ($cp) {
+                return array(array('id' => (int)$cp['id'], 'entity_type' => $cp['entity_type'], 'fields' => null), array());
+            }
+        }
+        $company = $g('v_company');
+        $fields = array('tin' => $tin, 'branch_code' => $branch, 'entity_type' => $company !== '' || $g('v_last') === '' ? 'non_individual' : 'individual',
+            'registered_name' => $company, 'last_name' => $g('v_last'), 'first_name' => $g('v_first'), 'middle_name' => $g('v_middle'),
+            'address1' => $g('v_address1'), 'address2' => $g('v_address2'), $flag => 1);
+        // "DISTRICT, CITY, ZIP CODE": a 4-digit ZIP code at the end of the second line also fills the ZIP code.
+        if (preg_match('/(?:^|[\s,])(\d{4})\s*$/', $fields['address2'], $zm)) {
+            $fields['zip_code'] = $zm[1];
+        }
+        if (!$tin && $company === '' && $g('v_last') === '' && !isset($errors['v_tin'])) {
+            $errors['v_tin'] = 'Enter the ' . $noun . ' TIN, or at least the ' . $noun . ' name';
+            return array(null, $errors);
+        }
+        list($d, $e) = self::counterpartyValidate(array_merge($fields, array('tin' => $tin ? $tin : '', 'branch_code' => $branch)), $clientId);
+        unset($e['tin']);
+        $keys = array('registered_name' => 'v_company', 'last_name' => 'v_last', 'first_name' => 'v_first', 'middle_name' => 'v_middle', 'branch_code' => 'v_branch', 'address1' => 'v_address1', 'address2' => 'v_address2');
+        foreach ($e as $k => $msg) {
+            $errors[isset($keys[$k]) ? $keys[$k] : 'v_tin'] = $k === 'registered_name' ? 'Enter the company name, or the last and first name of a person' : $msg;
+        }
+        $d['tin'] = $tin;
+        $d['branch_code'] = $branch;
+        $d[$flag] = 1;
+        return array(array('id' => null, 'entity_type' => $d['entity_type'], 'fields' => $d), $errors);
+    }
+
+    /** Form values for a purchase vendor from a directory entry. */
+    public static function vendorValues($cp)
+    {
+        return array('counterparty_id' => (int)$cp['id'], 'v_tin' => $cp['tin'] ? Tin::display($cp['tin']) : '', 'v_branch' => $cp['branch_code'],
+            'v_company' => (string)$cp['registered_name'], 'v_last' => (string)$cp['last_name'], 'v_first' => (string)$cp['first_name'],
+            'v_middle' => (string)$cp['middle_name'], 'v_address1' => (string)$cp['address1'], 'v_address2' => (string)$cp['address2']);
     }
 
     // ---------------------------------------------------------------- counterparties

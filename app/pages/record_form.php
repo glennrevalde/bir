@@ -17,6 +17,8 @@ if ($row && !empty($mod['fixed']['direction']) && $row['direction'] !== $mod['fi
 }
 $errors = array();
 $values = $row ?: array();
+$party = null;
+$inlineParty = in_array($key, array('sales', 'purchases', 'withheld_on_us'), true);
 
 if (is_post()) {
     $action = input('action', 'save');
@@ -32,16 +34,41 @@ if (is_post()) {
             redirect(url('record_form', array('m' => $key, 'id' => $id)));
         }
         Ctx::requirePerm('records.edit');
-        list($data, $errors, $warnings) = Records::validate($mod, $_POST, $client['id']);
+        $party = null;
+        if ($inlineParty) {
+            // Vendor or payor typed inline, as in the R_Purchases sheet and the SAWT: an existing TIN uses the
+            // directory entry, anything else becomes a new directory entry when the record is saved.
+            list($party, $pErr) = $key === 'purchases' ? Records::purchaseVendor($_POST, $client['id']) : ($key === 'sales' ? Records::salesCustomer($_POST, $client['id']) : Records::sawtPayor($_POST, $client['id']));
+            $in = $_POST;
+            $in['counterparty_id'] = $party && !empty($party['id']) ? $party['id'] : 0;
+            list($data, $errors, $warnings) = Records::validate($mod, $in, $client['id'], array('skip_party' => empty($party['id']), 'party_entity_type' => $party ? $party['entity_type'] : null));
+            unset($errors['counterparty_id']);
+            $errors = array_merge($pErr, $errors);
+            if (!$errors && !$id && DB::val('SELECT id FROM ' . $mod['table'] . ' WHERE client_id = ? AND row_hash = ? AND status = ?', array($client['id'], Records::rowHash($mod, array_merge($data, array('counterparty_id' => $party && !empty($party['id']) ? $party['id'] : 0))), 'posted'))) {
+                $warnings['dup'] = $key === 'sales' ? 'A sale with the same customer, invoice and amounts already exists. Check that it was not entered twice.'
+                    : ($key === 'purchases' ? 'A purchase with the same vendor, month and amounts already exists; this one was saved as another purchase.'
+                    : 'A line with the same payor, month, ATC and amounts already exists; this one was saved as another line.');
+            }
+        } else {
+            list($data, $errors, $warnings) = Records::validate($mod, $_POST, $client['id']);
+        }
         $values = array_merge($values, $_POST);
         if (!$errors) {
             if ($row && $row['period_month'] && isset($data['period_month']) && $data['period_month'] !== $row['period_month'] && Records::lockedPeriod($client['id'], $data['period_month'], $mod['lock_scope'])) {
                 throw new RuntimeException('The new period is locked.');
             }
-            $newId = Records::save($mod, $data, $id ?: null, $id ? trim((string)input('edit_reason')) : null);
+            if ($inlineParty) {
+                $role = $key === 'purchases' ? 'supplier' : ($key === 'sales' ? 'customer' : 'payor');
+                $newId = DB::tx(function () use ($mod, $data, $id, $party, $client, $role) {
+                    $data['counterparty_id'] = !empty($party['id']) ? (int)$party['id'] : Records::resolveCounterparty($client['id'], $party['fields'], $role, 'manual', null);
+                    return Records::save($mod, $data, $id ?: null, $id ? trim((string)input('edit_reason')) : null);
+                });
+            } else {
+                $newId = Records::save($mod, $data, $id ?: null, $id ? trim((string)input('edit_reason')) : null);
+            }
             flash('success', ($id ? 'Saved changes to ' : 'Added ') . $mod['singular'] . '.' . ($warnings ? ' Note: ' . implode(' ', $warnings) : ''));
             if (input('again')) {
-                redirect(url('record_form', array('m' => $key, 'branch_id' => $data['branch_id'], 'last_date' => $data[$mod['date']])));
+                redirect(url('record_form', array('m' => $key, 'branch_id' => $data['branch_id'], 'last_date' => $data[$mod['date']], 'month' => isset($data['period_month']) ? $data['period_month'] : '')));
             }
             redirect(url('record_form', array('m' => $key, 'id' => $newId)));
         }
@@ -59,6 +86,32 @@ if (!$row && !is_post()) {
     $values[$mod['date']] = input('last_date', '');
     $values['schedule_tag'] = 'A';
     $values['tax_kind'] = 'EWT';
+    if ($inlineParty && $key !== 'sales') {
+        $values['period_month'] = Records::parseMonth((string)input('month', '')) ?: date('Y-m', strtotime('first day of last month'));
+    }
+    if ($key === 'purchases' || $key === 'sales') {
+        $values['vat_rate'] = '12';
+    }
+}
+$vendor = array();
+$vendors = array();
+if ($inlineParty) {
+    if ($row && !is_post()) {
+        $cp = DB::row('SELECT * FROM counterparties WHERE id = ? AND client_id = ?', array($row['counterparty_id'], $client['id']));
+        if ($cp) {
+            $values = array_merge($values, Records::vendorValues($cp));
+        }
+    }
+    $vid = isset($values['counterparty_id']) ? (int)$values['counterparty_id'] : 0;
+    if (is_post() && !empty($party['id'])) {
+        $vid = (int)$party['id'];
+    }
+    $vendor = $vid ? array('id' => $vid) : array();
+    foreach (DB::all('SELECT id, tin, branch_code, entity_type, registered_name, last_name, first_name, middle_name, address1, address2 FROM counterparties
+        WHERE client_id = ? AND deleted_at IS NULL AND status = ? AND tin IS NOT NULL ORDER BY ' . ($key === 'purchases' ? 'is_supplier' : ($key === 'sales' ? 'is_customer' : 'is_payor')) . ' DESC, registered_name, last_name LIMIT 5000', array($client['id'], 'active')) as $cp) {
+        $vendors[] = array('id' => (int)$cp['id'], 'tin' => $cp['tin'], 'branch' => $cp['branch_code'], 'name' => party_name($cp), 'company' => (string)$cp['registered_name'],
+            'last' => (string)$cp['last_name'], 'first' => (string)$cp['first_name'], 'middle' => (string)$cp['middle_name'], 'address1' => (string)$cp['address1'], 'address2' => (string)$cp['address2']);
+    }
 }
 
 $role = null;
@@ -69,7 +122,16 @@ foreach ($mod['fields'] as $fd) {
 }
 $parties = DB::all('SELECT id, tin, branch_code, registered_name, last_name, first_name, middle_name, is_' . $role . ' AS has_role, default_atc FROM counterparties
     WHERE client_id = ? AND deleted_at IS NULL AND status = ? ORDER BY is_' . $role . ' DESC, registered_name, last_name LIMIT 3000', array($client['id'], 'active'));
-$atcs = $mod['table'] === 'withholding_entries' ? Records::atcOptions(null, isset($values['payment_date']) && $values['payment_date'] ? Records::parseDate($values['payment_date']) : null) : array();
+$atcOn = isset($values['payment_date']) && $values['payment_date'] ? Records::parseDate($values['payment_date']) : null;
+if (!$atcOn && $key === 'withheld_on_us' && !empty($values['period_month']) && Records::parseMonth($values['period_month'])) {
+    $atcOn = last_day(Records::parseMonth($values['period_month']));
+}
+$atcs = $mod['table'] === 'withholding_entries' ? Records::atcOptions($key === 'withheld_on_us' ? 'EWT' : null, $atcOn) : array();
+if ($key === 'withheld_on_us') {
+    // Only the codes that fit this client as the payee: corporate codes for a non-individual, individual ones for a person.
+    $fit = $client['taxpayer_type'] === 'individual' ? 'individual' : 'corporate';
+    $atcs = array_values(array_filter($atcs, function ($a) use ($fit) { return $a['payee_type'] === 'any' || $a['payee_type'] === $fit; }));
+}
 $isLocked = $row ? Records::lockedPeriod($client['id'], $row['period_month'], $mod['lock_scope']) : null;
 $canEdit = Ctx::can('records.edit') && !$isLocked && (!$row || $row['status'] !== 'void');
 $revs = $row ? DB::all('SELECT r.*, u.full_name FROM revisions r LEFT JOIN users u ON u.id = r.changed_by WHERE r.subject_type = ? AND r.subject_id = ? ORDER BY r.revision_no DESC', array($mod['table'], $id)) : array();
@@ -147,6 +209,7 @@ View::pageBar($title, View::clientContext($row ? e('#' . $row['id'] . ', ' . mon
 <?php if ($row && $row['status'] === 'void') { ?><div class="notice notice-warning">This record is void: <?= e($row['void_reason']) ?></div><?php } ?>
 <div class="cols cols-main">
   <div>
+    <?php if ($key === 'sales') { $isNew = !$row; include APP_PATH . '/views/sales_form.php'; } elseif ($key === 'purchases') { $isNew = !$row; include APP_PATH . '/views/purchase_form.php'; } elseif ($key === 'withheld_on_us') { $isNew = !$row; include APP_PATH . '/views/withheld_form.php'; } else { ?>
     <form method="post" class="sheet" <?= $mod['table'] === 'withholding_entries' ? 'data-withholding' : '' ?> data-autosave="<?= e($key . '-' . ($id ?: 'new') . '-' . $client['id']) ?>" data-fresh="<?= $row || is_post() ? '0' : '1' ?>">
       <?= csrf_field() ?><input type="hidden" name="action" value="save">
       <div class="sheet-body">
@@ -165,6 +228,7 @@ View::pageBar($title, View::clientContext($row ? e('#' . $row['id'] . ', ' . mon
       </div>
       <?php } ?>
     </form>
+    <?php } ?>
   </div>
   <div>
     <?php if ($row) { ?>
@@ -197,6 +261,9 @@ View::pageBar($title, View::clientContext($row ? e('#' . $row['id'] . ', ' . mon
     <?php } else { ?>
     <div class="sheet"><div class="sheet-body prose small">
       <p><?= e($mod['help']) ?></p>
+      <?php if ($key === 'sales') { ?><p>The fields follow the VAT sales workbook, so a sale typed here and one imported from the workbook are stored alike. Gross taxable is not stored on its own: it is always taxable sales plus output VAT.</p><?php } ?>
+      <?php if ($key === 'purchases') { ?><p>The fields follow the R_Purchases workbook, so a purchase typed here and one imported from the sheet are stored alike.</p><?php } ?>
+      <?php if ($key === 'withheld_on_us') { ?><p>The fields follow the columns of the SAWT, numbered (2) to (8) as on the printout, so a line typed here and one imported from a SAWT are stored alike. Type the amounts as they appear on the payor's Form 2307.</p><?php } ?>
       <p>Amounts are stored to the centavo. Use <em>Save and add another</em> to keep the branch and date for the next entry. For many rows at once use <a href="<?= e(url('grid')) ?>">grid entry</a> or <a href="<?= e(url('imports')) ?>">import a spreadsheet</a>.</p>
     </div></div>
     <?php } ?>

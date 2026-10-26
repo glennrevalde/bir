@@ -62,6 +62,20 @@ function login_as($userId, $orgId, $clientId)
     Auth::setUserForCli(DB::row('SELECT * FROM users WHERE id = ?', array($userId)));
     Ctx::reset();
 }
+function tmp_file($bytes)
+{
+    $f = tempnam(sys_get_temp_dir(), 'gsbx');
+    file_put_contents($f, $bytes);
+    return $f;
+}
+
+function zip_part($bytes, $name)
+{
+    $z = new ZipArchive();
+    $z->open(tmp_file($bytes));
+    return (string)$z->getFromName($name);
+}
+
 function make_org($name, $tin, $role = 'firm_owner', $clientName = null)
 {
     $org = DB::insert('organizations', array('name' => $name, 'org_type' => 'firm', 'status' => 'active', 'created_at' => now()));
@@ -396,6 +410,285 @@ $res = Backup::restoreClient($Dd['client'], $blob, 'correct horse battery', fals
 ok((int)DB::val('SELECT COUNT(*) FROM withholding_entries WHERE client_id = ?', array($Dd['client'])) === $before
     && (int)DB::val('SELECT COUNT(*) FROM withholding_entries WHERE client_id = ? AND status = ?', array($Dd['client'], 'void')) === 4, 'restore brings back the exact pre-backup state');
 ok(Audit::verify()['ok'], 'audit chain still verifies after restore');
+
+// =====================================================================
+section('Purchases in the R_Purchases workbook format');
+$Pp = make_org('Pucara', '444000111', 'firm_owner', 'R PURCHASES TEST CORP');
+login_as($Pp['user'], $Pp['org'], $Pp['client']);
+$ptype = Imports::type('purchases');
+$pcols = Imports::templateColumns($ptype);
+ok(implode(',', array_map(function ($c) { return $c['title']; }, $pcols)) === 'Vendor_TIN,companyName,lastName,firstName,middleName,address1,address2,exempt,zeroRated,services,capitalGoods,otherThancapitalGoods,taxableNetofVat,vatRate,inputVat,totalPurchases',
+    'the purchases template has the 16 R_Purchases columns in order');
+$tpl = Imports::template('purchases', false);
+$tr = new XlsxReader(tmp_file($tpl));
+ok($tr->sheetNames()[0] === 'R_Purchases', 'the template sheet is named R_Purchases');
+ok(strpos(zip_part($tpl, 'xl/worksheets/sheet1.xml'), '<f>ROUND(M2*N2/100,2)</f>') !== false && strpos(zip_part($tpl, 'xl/worksheets/sheet1.xml'), '<f>ROUND(SUM(J2:L2),2)</f>') !== false,
+    'the template carries the workbook formulas for taxableNetofVat, inputVat and totalPurchases');
+$prow = function ($tin, $co, $og) { return array($tin, $co, '', '', '', '', '', 0, 0, 0, 0, $og, '', 12, '', ''); };
+$lines = array($prow('000488793', 'PLDT, INC.', 1695.54), $prow('008381043', 'THREESIXTY PHARMACY', 421.875), $prow('008381043', 'THREESIXTY PHARMACY', 20.7589285714286),
+    $prow('008381043', 'THREESIXTY PHARMACY', 20.7589285714286), array('', '', 'DELA CRUZ', 'JUAN', 'SANTOS', '1 RIZAL ST', 'CEBU', 1500, 0, 0, 0, 0, '', 12, '', ''));
+$pxlsx = XlsxWriter::build(array(array('name' => 'R_Purchases', 'columns' => $pcols, 'rows' => $lines, 'header' => 'bold', 'formula_rows' => 20, 'defaults' => array('vat_rate' => 12))));
+$pimport = function ($bytes, $opts, $sheet = 'R_Purchases') use ($Pp, $ptype) {
+    $rel = 'uploads/rp-' . mt_rand() . '.xlsx';
+    file_put_contents(storage_path($rel), $bytes);
+    $job = DB::insert('import_jobs', array('organization_id' => $Pp['org'], 'client_id' => $Pp['client'], 'branch_id' => $Pp['branch'], 'import_type' => 'purchases', 'original_filename' => 'p.xlsx',
+        'stored_path' => $rel, 'file_sha256' => hash('sha256', $bytes), 'sheet_name' => $sheet, 'header_row' => 1, 'status' => 'uploaded', 'created_by' => $Pp['user'], 'created_at' => now()));
+    $jr = DB::row('SELECT * FROM import_jobs WHERE id = ?', array($job));
+    list($map, $exact) = Imports::suggestMapping($ptype, Imports::headersOf(Imports::readRows($jr), 1));
+    DB::update('import_jobs', array('mapping_json' => json_encode($map), 'options_json' => json_encode($opts)), 'id = ?', array($job));
+    Imports::prepare($job);
+    do { $st = Imports::stageChunk($job, 100); } while (!$st['done']);
+    return array($job, $st, $exact);
+};
+list($pj, $pst, $pexact) = $pimport($pxlsx, array('period_month' => '2026-09'));
+ok($pexact, 'R_Purchases headers are recognised as the template');
+ok($pst['total'] === 5 && $pst['valid'] === 5, 'formula-only template rows are skipped; 5 purchases staged, including two identical lines', json_encode($pst));
+Imports::commit($pj, 'all');
+$pr = DB::all('SELECT p.*, cp.tin, cp.entity_type FROM purchase_entries p JOIN counterparties cp ON cp.id = p.counterparty_id WHERE p.client_id = ? ORDER BY p.id', array($Pp['client']));
+ok(count($pr) === 5 && $pr[0]['input_vat'] === '203.46' && $pr[1]['other_goods_amount'] === '421.88' && $pr[1]['input_vat'] === '50.63' && $pr[2]['input_vat'] === '2.49',
+    'amounts round like Excel ROUND and input VAT is ROUND(taxable x 12 / 100, 2)', json_encode(array_map(function ($r) { return $r['other_goods_amount'] . '/' . $r['input_vat']; }, $pr)));
+ok($pr[4]['entity_type'] === 'individual' && $pr[4]['exempt_amount'] === '1500.00' && $pr[4]['input_vat'] === '0.00' && $pr[0]['period_month'] === '2026-09' && $pr[0]['invoice_date'] === null,
+    'individual vendors, exempt purchases and the chosen month are stored');
+list(, $pst2) = $pimport($pxlsx, array('period_month' => '2026-09'));
+ok($pst2['duplicates'] === 5 && $pst2['valid'] === 0, 're-importing the same sheet finds all 5 rows, the repeated lines too, as duplicates', json_encode($pst2));
+$bad = $lines;
+$bad[0][12] = '9999';
+$typedCols = array_map(function ($c) { unset($c['formula']); return $c; }, $pcols);
+list($bj, $bst) = $pimport(XlsxWriter::build(array(array('name' => 'R_Purchases', 'columns' => $typedCols, 'rows' => array($bad[0]), 'header' => 'bold'))), array('period_month' => '2026-08'));
+$berr = json_decode((string)DB::val('SELECT errors_json FROM import_rows WHERE job_id = ?', array($bj)), true);
+ok($bst['errors'] === 1 && isset($berr['taxable_net']), 'a typed taxableNetofVat that disagrees with its parts is refused');
+list($nj, $nst) = $pimport(XlsxWriter::build(array(array('name' => 'R_Purchases', 'columns' => $pcols, 'rows' => array($lines[0]), 'header' => 'bold'))), array());
+$nerr = json_decode(DB::val('SELECT errors_json FROM import_rows WHERE job_id = ?', array($nj)), true);
+ok(isset($nerr['period_month']), 'without a purchase month the sheet rows are refused with a clear message');
+$pm = Records::module('purchases');
+list($d, $e) = Records::validate($pm, array('branch_id' => $Pp['branch'], 'counterparty_id' => $pr[0]['counterparty_id'], 'period_month' => '2026-07', 'services_amount' => '1,000.00', 'vat_rate' => ''), $Pp['client']);
+ok(!$e && $d['input_vat'] === '120.00' && $d['vat_rate'] === '12.0000', 'a typed purchase defaults to 12% and computes input VAT');
+list($d, $e) = Records::validate($pm, array('branch_id' => $Pp['branch'], 'counterparty_id' => $pr[0]['counterparty_id'], 'period_month' => '2026-07', 'invoice_date' => '2026-08-03', 'other_goods_amount' => '100'), $Pp['client']);
+ok(isset($e['invoice_date']), 'an invoice date outside the purchase month is refused');
+list($d, $e) = Records::validate($pm, array('branch_id' => $Pp['branch'], 'counterparty_id' => $pr[0]['counterparty_id'], 'period_month' => '', 'other_goods_amount' => '100'), $Pp['client']);
+ok(isset($e['period_month']), 'the purchase month is required when there is no invoice date');
+list($party) = Records::purchaseVendor(array('v_tin' => '000-488-793'), $Pp['client']);
+list($party2, $perr2) = Records::purchaseVendor(array('v_tin' => '123456789', 'v_company' => 'NEW VENDOR CORP'), $Pp['client']);
+ok($party['id'] === (int)$pr[0]['counterparty_id'] && !$party2['id'] && !$perr2 && $party2['fields']['registered_name'] === 'NEW VENDOR CORP',
+    'the entry form finds a vendor by TIN, or prepares a new one');
+list($oj) = $pimport(XlsxWriter::build(array(array('name' => 'Data', 'columns' => array(array('title' => 'SUPPLIER TIN', 'format' => 'text'), array('title' => 'REGISTERED NAME', 'format' => 'text'),
+    array('title' => 'INVOICE DATE', 'format' => 'text'), array('title' => 'GOODS OTHER THAN CAPITAL GOODS', 'format' => 'amount'), array('title' => 'INPUT VAT', 'format' => 'amount')),
+    'rows' => array(array('300100999', 'OLD FORMAT SUPPLY', '07/15/2026', '500', '60'))))), array(), 'Data');
+$oraw = json_decode(DB::val('SELECT normalized_json FROM import_rows WHERE job_id = ?', array($oj)), true);
+ok($oraw['record']['period_month'] === '2026-07' && $oraw['record']['input_vat'] === '60.00', 'workbooks in the earlier template layout, with an invoice date, still import');
+$ctxP = Reports::context(array('form' => 'SLP', 'schedule' => 'S1', 'branch_id' => $Pp['branch'], 'year' => 2026, 'part' => 9, 'sawt_form' => null, 'amended' => 0));
+$fp = DB::row('SELECT * FROM dat_files WHERE id = ?', array(Reports::generate($ctxP, true)));
+ok($fp['total_tax'] === '259.07' && (int)$fp['record_count'] === 3, 'the Summary List of Purchases totals the imported input VAT per vendor', $fp['total_tax'] . ' ' . $fp['record_count']);
+
+// =====================================================================
+section('Taxes withheld on us in the SAWT layout');
+$Gg = make_org('Guardia', '004267719', 'firm_owner', 'GUARDIAN ACES SECURITY AGENCY INC');
+login_as($Gg['user'], $Gg['org'], $Gg['client']);
+$stype = Imports::type('withheld_on_us');
+ok(implode('|', array_map(function ($c) { return $c['title']; }, Imports::templateColumns($stype))) === 'SEQ NO|TAXPAYER IDENTIFICATION NUMBER|CORPORATION (Registered Name)|INDIVIDUAL (Last Name, First Name, Middle Name)|ATC CODE|NATURE OF PAYMENT|AMOUNT OF INCOME PAYMENT|TAX RATE|AMOUNT OF TAX WITHHELD',
+    'the import reads the nine SAWT columns (1) to (8) in order');
+// A SAWT printout as the BIR layout has it: title lines, a header on three rows, "(1)".."(8)", dashes,
+// names padded with spaces, an INDIVIDUAL cell of spaces, Grand Total and END OF REPORT.
+$pad = function ($s, $n) { return str_pad($s, $n); };
+$nat160 = $pad('Income payment made by top withholding agents to their local/resident supplier of services other than those covered by other rates of withholding tax  - Corporate', 250);
+$nat120 = $pad('Income payments to prime contractors/sub-contractors - Corporate', 250);
+$sawtLines = array(
+    array('228-755-014-0000', 'ARMORTECH INTERNATIONAL TRANSPORTER CORPORATION', '', 'WC160', $nat160, 948568.5, 18971.37),
+    array('000-438-366-0000', 'BANK OF THE PHILIPPINE ISLANDS', '', 'WC120', $nat120, 1578872.77, 31577.46),
+    array('234-494-328-0000', 'SAFEWAY SECURITY BUILDERS AND TRANSPORT SOLUTIONS ', '', 'WC160', $nat160, 91698, 1833.96),
+    array('202-671-660-0000', 'SAMAHANG KOOPERATIBA NG M LHUILLIER PAWNSHOPS EMP ', '', 'WC160', $nat160, 33954.6, 679.09),
+    array('101-202-303-0000', '', 'DELA CRUZ, JUAN, SANTOS', 'WC160', $nat160, 12000, 240),
+    array('101-202-303-0000', '', 'DELA CRUZ, JUAN, SANTOS', 'WC160', $nat160, 12000, 240),
+);
+$sawtFile = function ($lines, $tin, $month, $grand = null) use ($pad) {
+    $b = function ($v) { return array('v' => $v, 's' => 'bold'); };
+    $cells = array(1 => array($b('BIR FORM 1702Q')), 2 => array($b('SUMMARY ALPHALIST OF WITHHOLDING TAXES (SAWT)')), 3 => array($b('FOR THE MONTH OF ' . $month)),
+        6 => array($b('TIN : ' . $tin)), 7 => array($b("PAYEE'S NAME: GUARDIAN ACES SECURITY AGENCY INC")),
+        11 => array($b('SEQ'), $b('TAXPAYER'), $b('CORPORATION'), $b('INDIVIDUAL'), $b('ATC CODE'), $b('NATURE OF PAYMENT'), $b('AMOUNT OF'), $b('TAX RATE'), $b('AMOUNT OF')),
+        12 => array(0 => $b('NO'), 1 => $b('IDENTIFICATION'), 2 => $b('(Registered Name)'), 3 => $b('(Last Name, First Name, Middle Name)'), 6 => $b('INCOME PAYMENT'), 8 => $b('TAX WITHHELD')),
+        13 => array(1 => $b('NUMBER')), 14 => array(0 => '(1)', 1 => '(2)', 2 => '(3)', 3 => '(4)', 4 => '(5)', 6 => '(6)', 7 => '(7)', 8 => '(8)'), 15 => array_fill(0, 9, str_repeat('-', 30)));
+    $r = 16;
+    $gi = 0;
+    $gt = 0;
+    foreach ($lines as $i => $l) {
+        $cells[$r++] = array($i + 1, $l[0], $l[1] === '' ? '' : $pad($l[1], 50), $l[2] === '' ? str_repeat(' ', 91) : $l[2], $l[3], $l[4], array('v' => $l[5], 's' => 'amount'), array('v' => 2, 's' => 'amount'), array('v' => $l[6], 's' => 'amount'));
+        $gi += (int)round($l[5] * 100);
+        $gt += (int)round($l[6] * 100);
+    }
+    $cells[$r++] = array(6 => str_repeat('-', 18), 7 => str_repeat('-', 18), 8 => str_repeat('-', 18));
+    $cells[$r++] = array(0 => 'Grand Total :', 6 => array('v' => $grand ? $grand[0] : $gi / 100, 's' => 'amount_bold'), 8 => array('v' => $grand ? $grand[1] : $gt / 100, 's' => 'amount_bold'));
+    $cells[$r++] = array(6 => str_repeat('=', 18), 7 => str_repeat('=', 18), 8 => str_repeat('=', 18));
+    $cells[$r] = array(0 => 'END OF REPORT');
+    return XlsxWriter::build(array(array('name' => 'Sheet1', 'columns' => array(array('width' => 25.69), array('width' => 9), array('width' => 50.69)), 'cells' => $cells)));
+};
+$simport = function ($bytes, $opts = array(), $client = null) use ($Gg, $stype) {
+    $client = $client ?: $Gg;
+    $rel = 'uploads/sawt-' . mt_rand() . '.xlsx';
+    file_put_contents(storage_path($rel), $bytes);
+    $job = DB::insert('import_jobs', array('organization_id' => $client['org'], 'client_id' => $client['client'], 'branch_id' => $client['branch'], 'import_type' => 'withheld_on_us', 'original_filename' => 's.xlsx',
+        'stored_path' => $rel, 'file_sha256' => hash('sha256', $bytes), 'sheet_name' => null, 'header_row' => 1, 'status' => 'uploaded', 'created_by' => $client['user'], 'created_at' => now()));
+    $jr = DB::row('SELECT * FROM import_jobs WHERE id = ?', array($job));
+    $rows = Imports::readRows($jr, 80);
+    $det = Imports::detectHeader($stype, $rows);
+    $meta = Imports::reportMeta($rows, $det[0]);
+    list($map, $exact) = Imports::suggestMapping($stype, Imports::headersOf($rows, $det[1], $det[0]));
+    if (empty($opts['period_month']) && $meta['month']) {
+        $opts['period_month'] = $meta['month'];
+    }
+    DB::update('import_jobs', array('header_row' => $det[1], 'mapping_json' => json_encode($map), 'options_json' => json_encode($opts + array('header_from' => $det[0]))), 'id = ?', array($job));
+    Imports::prepare($job);
+    do { $st = Imports::stageChunk($job, 100); } while (!$st['done']);
+    return array($job, $st, $exact, $det, $meta);
+};
+$sx = $sawtFile($sawtLines, '004267719-0000', 'MARCH, 2025');
+list($sj, $sst, $sexact, $sdet, $smeta) = $simport($sx);
+ok($sdet === array(11, 13) && $sexact, 'the header stacked on rows 11 to 13 is found and all nine columns map by themselves', json_encode($sdet));
+ok($smeta['form'] === '1702Q' && $smeta['month'] === '2025-03' && $smeta['tin'] === '004267719' && $smeta['branch'] === '0000' && $smeta['name'] === 'GUARDIAN ACES SECURITY AGENCY INC',
+    'the title lines give the form, month, TIN with branch and payee name', json_encode($smeta));
+list($cp1, $cn1) = Imports::reportCheck($smeta, DB::row('SELECT * FROM client_entities WHERE id = ?', array($Gg['client'])));
+list($cp2) = Imports::reportCheck($smeta, DB::row('SELECT * FROM client_entities WHERE id = ?', array($Pp['client'])));
+ok(!$cp1 && !$cn1 && count($cp2) === 1 && strpos($cp2[0], '004-267-719') !== false, 'a SAWT of another TIN is refused; the right client passes without notes', json_encode($cp2));
+ok($sst['total'] === 6 && $sst['valid'] === 6 && $sst['errors'] === 0, 'numbering, dashes, Grand Total and END OF REPORT are left out; 6 lines staged', json_encode($sst));
+$sjob = DB::row('SELECT * FROM import_jobs WHERE id = ?', array($sj));
+$sopt = json_decode($sjob['options_json'], true);
+ok($sopt['file_totals']['values']['income_amount'] === '2677093.87' && $sopt['file_totals']['values']['tax_withheld'] === '53541.88', 'the Grand Total line is kept to check the lines against', json_encode($sopt['file_totals']));
+Imports::commit($sj, 'all');
+$sr = DB::all('SELECT w.*, cp.tin, cp.branch_code AS cpb, cp.registered_name, cp.last_name, cp.first_name, cp.middle_name, cp.is_payor FROM withholding_entries w JOIN counterparties cp ON cp.id = w.counterparty_id WHERE w.client_id = ? ORDER BY w.id', array($Gg['client']));
+ok(count($sr) === 6 && $sr[0]['direction'] === 'payee' && $sr[0]['period_month'] === '2025-03' && $sr[0]['payment_date'] === null && $sr[0]['tax_withheld'] === '18971.37' && $sr[0]['tax_rate'] === '2.0000',
+    'lines are saved as taxes withheld on us for March 2025, without a payment date, with the certified tax', json_encode($sr[0]));
+ok($sr[2]['registered_name'] === 'SAFEWAY SECURITY BUILDERS AND TRANSPORT SOLUTIONS' && $sr[0]['nature_of_payment'] === 'Income payment made by top withholding agents to their local/resident supplier of services other than those covered by other rates of withholding tax - Corporate'
+    && $sr[0]['tin'] === '228755014' && $sr[0]['cpb'] === '0000' && (int)$sr[0]['is_payor'] === 1, 'report padding is trimmed; the TIN and its branch code are split');
+ok($sr[4]['last_name'] === 'DELA CRUZ' && $sr[4]['first_name'] === 'JUAN' && $sr[4]['middle_name'] === 'SANTOS' && $sr[4]['counterparty_id'] === $sr[5]['counterparty_id'] && $sr[4]['row_hash'] !== $sr[5]['row_hash'],
+    'an INDIVIDUAL written LAST, FIRST, MIDDLE is split; two identical lines are kept as two');
+list(, $sst2) = $simport($sx);
+ok($sst2['duplicates'] === 6 && $sst2['valid'] === 0, 're-importing the same SAWT finds every line as a duplicate', json_encode($sst2));
+$odd = $sawtLines;
+$odd[0][6] = 18900.00;
+$odd[1][3] = 'WI120';
+$odd[2][2] = 'REYES';
+list($oj2, $ost) = $simport($sawtFile(array_slice($odd, 0, 3), '004267719-0000', 'APRIL, 2025'));
+$oe = DB::all('SELECT row_no, status, errors_json, warnings_json FROM import_rows WHERE job_id = ? ORDER BY row_no', array($oj2));
+ok($oe[0]['status'] === 'valid' && strpos($oe[0]['warnings_json'], 'certified') !== false, 'a tax that differs from income x rate is kept as certified, with a warning');
+ok($oe[1]['status'] === 'error' && strpos($oe[1]['errors_json'], 'WI120') !== false, 'an ATC for individual payees is refused for a corporate client');
+ok($oe[2]['status'] === 'valid' && strpos($oe[2]['warnings_json'], 'corporation') !== false, 'a line with both a corporation and an individual is kept under the corporation');
+list($gj, $gst) = $simport($sawtFile(array_slice($sawtLines, 0, 2), '004267719-0000', 'MAY, 2025', array(9, 9)));
+$gopt = json_decode(DB::val('SELECT options_json FROM import_jobs WHERE id = ?', array($gj)), true);
+ok($gopt['file_totals']['values']['income_amount'] === '9' && $gst['valid'] === 2, 'a Grand Total that disagrees with the lines is kept for the review page to show');
+list($tplJob, $tst, $texact, $tdet, $tmeta) = $simport(Imports::template('withheld_on_us', true, array('client' => DB::row('SELECT * FROM client_entities WHERE id = ?', array($Gg['client'])), 'month' => '2025-06')));
+ok($texact && $tdet === array(11, 13) && $tmeta['month'] === '2025-06' && $tmeta['tin'] === '004267719' && $tst['total'] === 3,
+    'the generated template has the SAWT layout and the client title lines; its open formula lines are not rows', json_encode(array($tdet, $tmeta, $tst)));
+$tplXml = zip_part(Imports::template('withheld_on_us', false), 'xl/worksheets/sheet1.xml');
+ok(strpos($tplXml, '<f>SUM(G15:G46)</f>') !== false && strpos($tplXml, 'IF(OR(G16=&quot;&quot;,H16=&quot;&quot;),&quot;&quot;,ROUND(G16*H16/100,2))') !== false, 'the template carries the tax and Grand Total formulas');
+$wm = Records::module('withheld_on_us');
+list($d, $e) = Records::validate($wm, array('branch_id' => $Gg['branch'], 'counterparty_id' => $sr[0]['counterparty_id'], 'period_month' => '2025-07', 'atc_code' => 'WC160', 'income_amount' => '50,000.00'), $Gg['client']);
+ok(!$e && $d['tax_withheld'] === '1000.00' && $d['payment_date'] === null && strpos($d['nature_of_payment'], 'purchase of services') !== false, 'a typed line needs only the month; the rate, tax and nature come from the ATC', json_encode($e));
+list($d, $e) = Records::validate($wm, array('branch_id' => $Gg['branch'], 'counterparty_id' => $sr[0]['counterparty_id'], 'period_month' => '2025-07', 'payment_date' => '2025-08-02', 'atc_code' => 'WC160', 'income_amount' => '100'), $Gg['client']);
+ok(isset($e['payment_date']), 'a payment date outside the month is refused');
+list($d, $e, $w) = Records::validate($wm, array('branch_id' => $Gg['branch'], 'counterparty_id' => $sr[0]['counterparty_id'], 'period_month' => '2025-07', 'atc_code' => 'WC160', 'income_amount' => '100', 'tax_rate' => '0.02'), $Gg['client']);
+ok(!$e && $d['tax_rate'] === '2.0000' && $d['tax_withheld'] === '2.00' && isset($w['tax_rate']), 'a rate written as a fraction is read as the ATC percent');
+list($py) = Records::sawtPayor(array('v_tin' => '228-755-014-0000'), $Gg['client']);
+list($py2, $pe2) = Records::sawtPayor(array('v_tin' => '300400500', 'v_last' => 'REYES', 'v_first' => 'ANA'), $Gg['client']);
+ok($py['id'] === (int)$sr[0]['counterparty_id'] && !$py2['id'] && !$pe2 && $py2['fields']['is_payor'] === 1 && $py2['entity_type'] === 'individual', 'the entry form finds a payor by TIN and branch, or prepares a new one');
+$ctxS = Reports::context(array('form' => 'SAWT', 'schedule' => 'S1', 'branch_id' => $Gg['branch'], 'year' => 2025, 'part' => 1, 'sawt_form' => '1702Q', 'amended' => 0));
+$fs = DB::row('SELECT * FROM dat_files WHERE id = ?', array(Reports::generate($ctxS, true)));
+ok($fs['total_tax'] === '53541.88' && $fs['total_base'] === '2677093.87' && (int)$fs['record_count'] === 5, 'the SAWT for 1702Q Q1 2025 carries the imported lines, one per payor and ATC', $fs['total_base'] . ' ' . $fs['total_tax'] . ' ' . $fs['record_count']);
+$exp = Imports::sawtWorkbook(DB::row('SELECT * FROM client_entities WHERE id = ?', array($Gg['client'])), '1702Q', '2025-03', Imports::sawtLines($Gg['client'], null, '2025-03'), false);
+list($ej, $est, $eexact) = $simport($exp);
+ok($eexact && $est['total'] === 5 && $est['errors'] === 0, 'records exported in the SAWT layout read back in', json_encode($est));
+if (getenv('GSB_SAWT_SAMPLE') && is_file(getenv('GSB_SAWT_SAMPLE'))) {
+    list($rj, $rst, $rexact, $rdet, $rmeta) = $simport(file_get_contents(getenv('GSB_SAWT_SAMPLE')), array('period_month' => '2025-04'));
+    $rsum = DB::row("SELECT COUNT(*) n FROM import_rows WHERE job_id = ? AND status IN ('valid','duplicate')", array($rj));
+    $ropt = json_decode(DB::val('SELECT options_json FROM import_jobs WHERE id = ?', array($rj)), true);
+    $ti = 0; $tt = 0; $bad = 0;
+    foreach (DB::col("SELECT normalized_json FROM import_rows WHERE job_id = ?", array($rj)) as $nj) {
+        $n = json_decode($nj, true);
+        $ti += Money::fromDb($n['record']['income_amount']);
+        $tt += Money::fromDb($n['record']['tax_withheld']);
+        $bad += Money::applyRate(Money::fromDb($n['record']['income_amount']), 20000) !== Money::fromDb($n['record']['tax_withheld']) ? 1 : 0;
+    }
+    ok($rexact && $rdet === array(11, 13) && (int)$rsum['n'] === 16 && $rst['errors'] === 0 && $ti === 445388274 && $tt === 8907765 && $bad === 0
+        && $ropt['file_totals']['values']['income_amount'] === '4453882.74' && $ropt['file_totals']['values']['tax_withheld'] === '89077.65',
+        'the attached SAWT sample: 16 lines, income 4,453,882.74 and tax 89,077.65 equal its Grand Total, and every tax is 2% of the income', json_encode(array($rst, $ti, $tt, $bad)));
+}
+
+// =====================================================================
+section('Sales in the VAT sales workbook format');
+$Ss = make_org('Salinas', '555000111', 'firm_owner', 'VAT SALES TEST CORP');
+login_as($Ss['user'], $Ss['org'], $Ss['client']);
+$sltype = Imports::type('sales');
+$slcols = Imports::templateColumns($sltype);
+ok(implode('|', array_map(function ($c) { return $c['title']; }, $slcols)) === 'CUSTOMER TIN|CUSTOMER BRANCH CODE|REGISTERED NAME|LAST NAME|FIRST NAME|MIDDLE NAME|SUBSTREET, STREET, BARANGAY|DISTRICT, CITY, ZIP CODE|CLIENT BRANCH CODE|INVOICE NO|INVOICE DATE|GROSS TAXABLE|EXEMPT SALES|ZERO RATED SALES|TAXABLE SALES|VAT RATE|OUTPUT VAT',
+    'the sales template has the 17 columns of the VAT sales workbook in order');
+$sltpl = Imports::template('sales', false);
+ok(strpos(zip_part($sltpl, 'xl/worksheets/sheet1.xml'), 'pane') === false && strpos(zip_part($sltpl, 'xl/worksheets/sheet1.xml'), 'sheetProtection') === false, 'the template, like the workbook, has no frozen pane or sheet protection');
+$slrow = function ($tin, $co, $last, $first, $a2, $no, $date, $gross, $ex, $zr, $tx, $rate, $vat) {
+    return array($tin, '', $co, $last, $first, '', '1 MAIN ST', $a2, '', $no, $date, $gross, $ex, $zr, $tx, $rate, $vat);
+};
+$slLines = array(
+    $slrow('100-200-300', 'GROSS ONLY CORP', '', '', 'CEBU CITY 6000', 'SI-1', '09/02/2026', 112000, '', '', '', 12, ''),
+    $slrow('100-200-301', 'NET ONLY CORP', '', '', 'CEBU CITY', 'SI-2', '09/03/2026', '', '', '', 45000, 12, ''),
+    $slrow('100-200-302', 'ALL THREE CORP', '', '', 'CEBU CITY', 'SI-3', '09/04/2026', 1000, '', '', 892.86, 12, 107.14),
+    $slrow('', '', 'DELA CRUZ', 'JUAN', 'TALISAY CITY 6045', 'SI-4', '09/05/2026', '', 8500, '', '', '', ''),
+    $slrow('100-200-303', 'EXPORTER INC', '', '', 'LAPU-LAPU CITY', 'SI-5', '09/06/2026', '', '', 250000, '', 0, ''),
+    $slrow('100-200-304', 'ODD GROSS CORP', '', '', 'CEBU CITY', 'SI-6', '09/07/2026', 99.99, '', '', '', '', ''),
+    $slrow('100-200-305', 'MISMATCH CORP', '', '', 'CEBU CITY', 'SI-7', '09/08/2026', 1000, '', '', 800, 12, 120),
+    $slrow('100-200-306', 'FRACTION CORP', '', '', 'CEBU CITY', 'SI-8', '09/09/2026', 1120, '', '', '', 0.12, ''),
+);
+$slimport = function ($bytes, $sheet = 'Data') use ($Ss, $sltype) {
+    $rel = 'uploads/sl-' . mt_rand() . '.xlsx';
+    file_put_contents(storage_path($rel), $bytes);
+    $job = DB::insert('import_jobs', array('organization_id' => $Ss['org'], 'client_id' => $Ss['client'], 'branch_id' => $Ss['branch'], 'import_type' => 'sales', 'original_filename' => 's.xlsx',
+        'stored_path' => $rel, 'file_sha256' => hash('sha256', $bytes), 'sheet_name' => $sheet, 'header_row' => 1, 'status' => 'uploaded', 'created_by' => $Ss['user'], 'created_at' => now()));
+    $jr = DB::row('SELECT * FROM import_jobs WHERE id = ?', array($job));
+    list($map, $exact) = Imports::suggestMapping($sltype, Imports::headersOf(Imports::readRows($jr), 1));
+    DB::update('import_jobs', array('mapping_json' => json_encode($map), 'options_json' => json_encode(array('date_format' => 'auto'))), 'id = ?', array($job));
+    Imports::prepare($job);
+    do { $st = Imports::stageChunk($job, 100); } while (!$st['done']);
+    return array($job, $st, $exact, $map);
+};
+list($slj, $slst, $slexact) = $slimport(XlsxWriter::build(array(array('name' => 'Data', 'columns' => $slcols, 'rows' => $slLines))));
+$slr = DB::all('SELECT row_no, status, normalized_json, errors_json, warnings_json FROM import_rows WHERE job_id = ? ORDER BY row_no', array($slj));
+$rec = function ($i) use ($slr) { $n = json_decode($slr[$i]['normalized_json'], true); return $n['record']; };
+ok($slexact && $slst['total'] === 8 && $slst['valid'] === 6 && $slst['errors'] === 2, 'the workbook headers map by themselves; 6 rows valid and 2 refused', json_encode($slst));
+ok($rec(0)['taxable_amount'] === '100000.00' && $rec(0)['output_vat'] === '12000.00' && $rec(0)['vat_rate'] === '12.0000', 'GROSS TAXABLE 112,000 at 12% gives taxable sales 100,000 and output VAT 12,000');
+ok($rec(1)['output_vat'] === '5400.00' && Records::salesGross($rec(1)) === 5040000, 'TAXABLE SALES alone gives OUTPUT VAT 12% and a gross of 50,400');
+ok($rec(2)['taxable_amount'] === '892.86' && $rec(2)['output_vat'] === '107.14' && !$slr[2]['errors_json'], 'gross, taxable and VAT that add up are kept as given');
+ok($rec(3)['exempt_amount'] === '8500.00' && $rec(3)['output_vat'] === '0.00' && $rec(3)['taxable_amount'] === '0.00', 'an individual customer with exempt sales only');
+ok($rec(4)['zero_rated_amount'] === '250000.00' && $rec(4)['vat_rate'] === '0.0000', 'zero-rated sales at a 0% rate');
+ok($rec(5)['taxable_amount'] === '89.28' && $rec(5)['output_vat'] === '10.71' && Records::salesGross($rec(5)) === 9999, 'an odd gross is split so taxable sales + VAT equal it to the centavo', json_encode($rec(5)));
+$e6 = json_decode($slr[6]['errors_json'], true);
+$e7 = json_decode($slr[7]['errors_json'], true);
+ok(isset($e6['gross_taxable']) && strpos($e6['gross_taxable'], '920.00') !== false, 'a gross that disagrees with taxable sales + VAT is refused', json_encode($e6));
+ok(isset($e7['vat_rate']), 'a VAT rate written as a fraction (0.12) is refused');
+Imports::commit($slj, 'valid');
+$cp = DB::row('SELECT * FROM counterparties WHERE client_id = ? AND tin = ?', array($Ss['client'], '100200300'));
+$cpi = DB::row('SELECT * FROM counterparties WHERE client_id = ? AND last_name = ?', array($Ss['client'], 'DELA CRUZ'));
+ok($cp['address1'] === '1 MAIN ST' && $cp['address2'] === 'CEBU CITY 6000' && (int)$cp['is_customer'] === 1 && $cpi['tin'] === null, 'customers and their two address lines are added to the directory');
+list(, $slst2) = $slimport(XlsxWriter::build(array(array('name' => 'Data', 'columns' => $slcols, 'rows' => array_slice($slLines, 0, 6)))));
+ok($slst2['duplicates'] === 6 && $slst2['valid'] === 0, 're-importing the same sales finds every row as a duplicate', json_encode($slst2));
+$oldCols = array();
+foreach (array('CUSTOMER TIN', 'CUSTOMER BRANCH CODE', 'REGISTERED NAME', 'LAST NAME', 'FIRST NAME', 'MIDDLE NAME', 'ADDRESS 1', 'ADDRESS 2', 'CLIENT BRANCH CODE', 'INVOICE NO', 'INVOICE DATE', 'EXEMPT SALES', 'ZERO RATED SALES', 'TAXABLE SALES', 'OUTPUT VAT', 'DESCRIPTION') as $t) {
+    $oldCols[] = array('title' => $t, 'format' => 'text');
+}
+list($olj, $olst, , $olmap) = $slimport(XlsxWriter::build(array(array('name' => 'Data', 'columns' => $oldCols, 'rows' => array(array('100-200-399', '0000', 'OLD LAYOUT CORP', '', '', '', '9 OLD ST', 'CEBU CITY', '', 'SI-9', '09/10/2026', '0', '0', '5000', '600', 'Old file'))))));
+$oln = json_decode(DB::val('SELECT normalized_json FROM import_rows WHERE job_id = ?', array($olj)), true);
+ok($olst['valid'] === 1 && $oln['party']['address1'] === '9 OLD ST' && $oln['record']['description'] === 'Old file' && $oln['record']['vat_rate'] === '12.0000', 'workbooks in the earlier sales layout still import', json_encode($olst));
+$sm = Records::module('sales');
+list($d, $e) = Records::validate($sm, array('branch_id' => $Ss['branch'], 'counterparty_id' => $cp['id'], 'invoice_date' => '2026-09-20', 'gross_taxable' => '5,600.00', 'vat_rate' => '12'), $Ss['client']);
+ok(!$e && $d['taxable_amount'] === '5000.00' && $d['output_vat'] === '600.00' && !isset($d['gross_taxable']), 'the entry form takes a gross taxable and stores taxable sales and VAT', json_encode($e));
+list($d, $e) = Records::validate($sm, array('branch_id' => $Ss['branch'], 'counterparty_id' => $cp['id'], 'invoice_date' => '2026-09-20'), $Ss['client']);
+ok(isset($e['gross_taxable']), 'a sale without any amount is refused');
+list($cu) = Records::salesCustomer(array('v_tin' => '100-200-300'), $Ss['client']);
+list($cu2, $cue2) = Records::salesCustomer(array('v_tin' => '', 'v_company' => 'WALK-IN CUSTOMER', 'v_address2' => 'MANDAUE CITY 6014'), $Ss['client']);
+ok($cu['id'] === (int)$cp['id'] && !$cu2['id'] && !$cue2 && $cu2['fields']['zip_code'] === '6014' && $cu2['fields']['is_customer'] === 1, 'the entry form finds a customer by TIN, or prepares a new one with its ZIP code');
+$ctxSl = Reports::context(array('form' => 'SLS', 'schedule' => 'S1', 'branch_id' => $Ss['branch'], 'year' => 2026, 'part' => 9, 'sawt_form' => null, 'amended' => 0));
+$fsl = DB::row('SELECT * FROM dat_files WHERE id = ?', array(Reports::generate($ctxSl, true)));
+ok($fsl['total_tax'] === '17517.85' && (int)$fsl['record_count'] === 6, 'the Summary List of Sales carries the imported output VAT', $fsl['total_tax'] . ' ' . $fsl['record_count']);
+if (getenv('GSB_SALES_SAMPLE') && is_file(getenv('GSB_SALES_SAMPLE'))) {
+    list($uj, $ust, $uexact, $umap) = $slimport(file_get_contents(getenv('GSB_SALES_SAMPLE')), 'Sheet1');
+    $tplWidths = array_map(function ($c) { return $c['width']; }, $slcols);
+    ok($uexact && count($umap) === 17 && $ust['total'] === 1 && $ust['errors'] === 1, 'the attached VAT sales workbook maps all 17 columns by itself; its "New Field" notes are reported, not saved', json_encode(array($ust, $umap)));
+}
 
 // =====================================================================
 section("User's Manual");

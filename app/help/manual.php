@@ -290,23 +290,43 @@ $ch[] = array('title' => 'Keeping records', 'sections' => array(
 H
 ),
 
-'sales' => $S('Sales', 'sales', 'Invoices and receipts issued, for the Summary List of Sales.', <<<'H'
-<p>Record each sales invoice or official receipt: branch, customer, invoice number and date, and the amounts.</p>
+'sales' => $S('Sales', 'sales', 'Invoices and receipts issued, in the columns of the VAT sales workbook, for the Summary List of Sales.', <<<'H'
+<figure><img src="{img:sales_form}" alt="Add sales entry"><figcaption>A sale typed as a gross amount: taxable sales and output VAT work out at the VAT rate.</figcaption></figure>
+<p>Sales follow the 17 columns of the VAT sales workbook, so a sale typed here and one imported from the workbook are stored the same way.</p>
+<ol class="steps">
+<li><b>Customer.</b> Type the customer TIN first. A customer already in the directory fills in and locks its name and address; a new TIN shows <i>New customer</i>, and the customer is added to the directory when you save. Fill in the registered name for a company, or the last, first and middle name for a person, and the two address lines: <i>substreet, street, barangay</i> and <i>district, city, ZIP code</i>. A ZIP code at the end of the second line also fills the customer's ZIP code. Leave the TIN blank for a customer who has none.</li>
+<li><b>Invoice.</b> Choose the client branch that issued it and type the invoice number and date. The date sets the month of the sale.</li>
+<li><b>Amounts.</b> Type either the <b>gross taxable</b> (taxable sales with VAT) or the <b>taxable sales</b> (net of VAT); the amount you typed last decides the other.
+  <ul>
+  <li>From the gross: taxable sales = gross / (1 + VAT rate), rounded to the centavo, and output VAT = gross - taxable sales, so the two always add up to the gross.</li>
+  <li>From the taxable sales: output VAT = taxable sales x VAT rate, rounded to the centavo.</li>
+  </ul></li>
+<li>Add <b>exempt</b> and <b>zero-rated</b> sales in their own boxes. The VAT rate is 12 unless you change it; use 0 for sales without VAT.</li>
+<li>Click <b>Save sale</b>, or <b>Save and add another</b>.</li>
+</ol>
+<div class="mnote"><b>Gross taxable is not stored on its own.</b> It is always taxable sales plus output VAT, and the list shows it in its own column. Type over the output VAT only to match the invoice; a different amount is kept and flagged.</div>
 <ul>
-<li><b>Exempt</b>, <b>zero-rated</b> and <b>taxable</b> amounts are entered separately. Taxable sales are net of VAT.</li>
-<li><b>Output VAT</b> is compared with 12% of taxable sales. A difference is a warning, not a block, so you can match the invoice exactly.</li>
 <li>The Summary List of Sales covers all branches of the TIN for the month and groups the rows per customer TIN.</li>
+<li><b>CSV</b> on the list exports the 17 workbook columns, then the description, month and status.</li>
 </ul>
 <p>See <a href="{sec:record_form}">Adding, editing and voiding records</a> for the parts common to every record page.</p>
 H
 ),
 
-'purchases' => $S('Purchases', 'purchases', 'Supplier invoices for the Summary List of Purchases.', <<<'H'
-<p>Record each supplier invoice with the amount split into <b>exempt</b>, <b>zero-rated</b>, <b>services</b>, <b>capital goods</b> and <b>other goods</b>, plus the input VAT.</p>
+'purchases' => $S('Purchases', 'purchases', 'Purchases per vendor in the R_Purchases columns, for the Summary List of Purchases.', <<<'H'
+<figure><img src="{img:purchase_form}" alt="Add purchase entry"><figcaption>A purchase typed in the R_Purchases columns, with taxable, input VAT and total worked out as you type.</figcaption></figure>
+<p>Purchases follow the 16 columns of the R_Purchases workbook, so a purchase typed here and one imported from that workbook are stored the same way.</p>
+<ol class="steps">
+<li><b>Vendor.</b> Type the vendor TIN first. A vendor already in the directory fills in and locks its name and address; a new TIN shows <i>New vendor</i>, and the vendor is added to the directory when you save. For a company fill in the company name; for a person, the last, first and middle name.</li>
+<li><b>Period.</b> Choose the branch and the <b>purchase month</b>. The invoice number and date are optional; a date must fall inside the month.</li>
+<li><b>Amounts.</b> Enter <b>exempt</b>, <b>zero-rated</b>, <b>services</b>, <b>capital goods</b> and <b>other than capital goods</b>, all net of VAT.</li>
+<li>The form shows <b>taxable net of VAT</b> (services + capital goods + other), <b>input VAT</b> (taxable x VAT rate, rounded to the centavo) and <b>total purchases</b> (exempt + zero-rated + taxable), the same formulas as the workbook.</li>
+<li>The VAT rate is 12 unless you change it; use 0 for purchases without VAT. Type over the input VAT only to match the invoice; a different amount is kept and flagged.</li>
+</ol>
 <ul>
-<li><b>Non-creditable VAT</b> is VAT you cannot claim. It reduces creditable input tax in the summary list header.</li>
-<li>Purchases from non-VAT suppliers go under exempt.</li>
-<li>Purchases from suppliers paid with the ATCs listed under Default SRS ATCs on Platform settings are used for the Semestral List of Regular Suppliers.</li>
+<li><b>Non-creditable input VAT</b> and a description are under <i>Non-creditable VAT and notes</i>. Non-creditable VAT reduces the creditable input tax in the summary list.</li>
+<li>The same vendor and amounts twice in one month, without an invoice number, are kept as two purchases. The form tells you when it saved one like that.</li>
+<li><b>CSV</b> on the list exports the R_Purchases columns, followed by the month, branch and invoice details.</li>
 </ul>
 H
 ),
@@ -334,12 +354,21 @@ H
 H
 ),
 
-'withheld_on_us' => $S('Taxes withheld on us', 'withheld_on_us', '2307 certificates received from customers, for the SAWT.', <<<'H'
-<p>Use this page when the client was paid and the payor withheld tax, usually shown on a 2307 the payor gave you. These records build the SAWT that goes with the client's own income tax or business tax return.</p>
+'withheld_on_us' => $S('Taxes withheld on us', 'withheld_on_us', 'Creditable taxes customers withheld, in the columns of the SAWT.', <<<'H'
+<figure><img src="{img:withheld_form}" alt="Add tax withheld on us"><figcaption>A SAWT line: payor (2) to (4), ATC (5), income (6), rate (7) and tax withheld (8).</figcaption></figure>
+<p>Use this page when the client was paid and the payor withheld tax, as shown on the Form 2307 the payor gave. These lines build the SAWT that goes with the client's own return (1701Q, 1702Q, 2550M/Q and the others). The form follows the columns of the SAWT printout, numbered (2) to (8) as on the printout, so a line typed here and one imported from a SAWT are stored the same way.</p>
+<ol class="steps">
+<li><b>Payor.</b> Type the payor's TIN with its branch code, for example 000-438-366-0000. A payor already in the directory fills in; a new one is added when you save. A corporation goes under <b>Corporation, registered name</b> (3); a person under <b>Individual</b> (4) as last, first and middle name.</li>
+<li><b>Month.</b> Choose the branch and the <b>month of income payment</b>. The date of payment and the 2307 reference are optional; a date must fall inside the month.</li>
+<li><b>ATC code</b> (5). Only codes that fit the client are listed: WC codes for a non-individual client, WI codes for an individual. The nature of payment fills in from the ATC; you may type your own.</li>
+<li><b>Amount of income payment</b> (6). The <b>tax rate</b> (7) comes from the ATC and the <b>tax withheld</b> (8) works out as income x rate, rounded to the centavo.</li>
+<li>Click <b>Save line</b>, or <b>Save and add another</b>.</li>
+</ol>
+<div class="mnote"><b>Amounts as certified.</b> The payor decides what it withheld. If the 2307 shows a different rate or tax, type it in: it is kept, with a warning to check it against the certificate. Use <i>Note on the rate or tax</i> to say why.</div>
 <ul>
-<li>Record one entry per payor, ATC and month as shown on the certificate.</li>
-<li>Keep the certificate number in the reference field so the reconciliation report can match them.</li>
-<li>The ATC must match the client: individual ATCs for individual clients, corporate ATCs for non-individuals.</li>
+<li>Filter the list by month, then click <b>SAWT layout</b> to download that month as a SAWT printout: title lines with the client's TIN and name, the header (1) to (8), one line per payor and ATC, and the Grand Total. It can be imported back.</li>
+<li><b>CSV</b> exports the same columns, one row per saved line.</li>
+<li>To bring in a SAWT you already have, see <a href="{sec:imports}">Import a spreadsheet</a>.</li>
 </ul>
 H
 ),
@@ -405,11 +434,12 @@ $ch[] = array('title' => 'Importing spreadsheets', 'sections' => array(
 
 'templates' => $S('Template library', 'templates', 'Excel templates for every import type.', <<<'H'
 <figure><img src="{img:templates}" alt="Template library"><figcaption>One template per import type, blank or with sample rows.</figcaption></figure>
-<p>Each template is an .xlsx workbook with three sheets:</p>
+<p>Each template is an .xlsx workbook with a data sheet, a <b>Fields</b> sheet that explains every column, and an <b>About</b> sheet with the template code and version.</p>
 <ul>
-<li><b>Data</b>: a locked header row. Enter one record per row underneath.</li>
-<li><b>Fields</b>: what each column means, whether it is required and its format.</li>
-<li><b>About</b>: the template code and version, which the import uses to recognise it.</li>
+<li><b>Sales</b> is the VAT sales workbook: one sheet with its 17 columns and widths, from CUSTOMER TIN to OUTPUT VAT. Fill in GROSS TAXABLE or TAXABLE SALES; leave the other, and OUTPUT VAT, blank to have them worked out at the VAT RATE (12 when blank).</li>
+<li><b>Purchases</b> is the R_Purchases workbook: one sheet named R_Purchases with its 16 columns, and the formulas for taxableNetofVat, inputVat and totalPurchases on every row, with vatRate 12.</li>
+<li><b>Taxes withheld on us</b> is the SAWT printout. Its title lines carry the active client's form (1702Q or 1701Q), last month, TIN and name; under the header (1) to (8) are 30 open lines whose tax works itself out from the income and rate, then the Grand Total. Insert rows between the two lines of dashes for more payors.</li>
+<li>The other templates have one header row and one record per row.</li>
 </ul>
 <p>Download <b>Blank</b> for real work and <b>With sample rows</b> to see the expected format. TIN columns are already formatted as text so leading zeros survive.</p>
 H
@@ -419,21 +449,43 @@ H
 <figure><img src="{img:imports}" alt="Import a spreadsheet"><figcaption>Uploading a workbook. Recent imports are listed on the left.</figcaption></figure>
 <ol class="steps">
 <li>Choose <b>The file contains</b> (for example Taxes we withheld) and the <b>Default branch</b> for rows that do not name one.</li>
+<li>For <b>Purchases</b>, choose the <b>purchase month</b>: the R_Purchases sheet has no date column. For <b>Taxes withheld on us (SAWT)</b> the month is optional: leave it blank to read it from the line FOR THE MONTH OF.</li>
 <li>Choose your .xlsx or .csv file and click <b>Upload and map columns</b>. Large files upload in pieces and resume if the connection drops.</li>
-<li>Map the columns (see <a href="{sec:import_map}">Map columns</a>). A G-SMaRT template maps itself.</li>
+<li>Map the columns (see <a href="{sec:import_map}">Map columns</a>). A G-SMaRT template, an R_Purchases workbook and a SAWT printout map themselves.</li>
 <li>Click <b>Stage and check rows</b>. Rows are checked in batches; nothing touches your records yet.</li>
 <li>Review the results and commit (see <a href="{sec:import_review}">Review an import</a>).</li>
 </ol>
+<h3>Importing sales</h3>
+<p>A workbook in the VAT sales format maps itself, and so does one in the earlier layout with ADDRESS 1 and ADDRESS 2. For each row the system:</p>
+<ul>
+<li>takes GROSS TAXABLE (with VAT) and works out TAXABLE SALES and OUTPUT VAT at the row's VAT RATE when they are blank;</li>
+<li>refuses a row whose GROSS TAXABLE is not TAXABLE SALES + OUTPUT VAT, and a VAT RATE written as a fraction (0.12 instead of 12);</li>
+<li>computes OUTPUT VAT from TAXABLE SALES when only those are given, and flags a typed VAT that differs.</li>
+</ul>
+<p>The review page totals the rows in the workbook's own columns so you can compare them with the sheet.</p>
+<h3>Importing a SAWT</h3>
+<figure><img src="{img:sawt_map}" alt="Mapping a SAWT"><figcaption>A SAWT printout: the title lines are checked against the client and the header on rows 11 to 13 is found by itself.</figcaption></figure>
+<p>Upload the SAWT as it comes, with its title lines (BIR FORM, FOR THE MONTH OF, TIN, PAYEE'S NAME), the header stacked on three rows, the "(1)" to "(8)" line, the dashes, the Grand Total and END OF REPORT. The system:</p>
+<ul>
+<li>finds the header by itself and maps the nine columns;</li>
+<li>reads the form, the month, the TIN with branch code and the payee's name, and <b>refuses a SAWT whose TIN is not the active client's</b>. A different payee's name is shown as a warning;</li>
+<li>files the lines under the branch with the code in the TIN line, and under the month in FOR THE MONTH OF unless you chose another;</li>
+<li>leaves out the numbering, dashes, Grand Total and END OF REPORT lines, and trims the spaces the printout pads names with;</li>
+<li>splits an INDIVIDUAL written as LAST NAME, FIRST NAME, MIDDLE NAME;</li>
+<li>keeps the income and tax as certified, and compares the Grand Total with the lines on the review page.</li>
+</ul>
 <div class="mwarn"><b>TINs stored as numbers.</b> Excel drops leading zeros and may show long numbers as 1.23E+08. Rows whose TIN looks damaged this way are rejected. Format TIN columns as Text before typing.</div>
 <p>Legacy .xls files are not read. Open them in Excel and save as .xlsx first.</p>
 H
 ),
 
 'import_map' => $S('Map columns', 'imports', 'Tell the system which column holds which field.', <<<'H'
-<p>The left side lists the system's fields; required ones are marked. For each, choose the column of your file that holds it. A preview shows the first rows as they will be read.</p>
+<p>Each of the system's fields is listed with a box to choose the column of your file that holds it; required ones are marked. A preview shows the first rows as they will be read.</p>
 <ul>
-<li>Choose the <b>sheet</b> and the <b>header row</b> if your workbook has titles above the headers.</li>
-<li>Choose the <b>date order</b> used in the file (month/day/year or day/month/year) when dates are typed with slashes.</li>
+<li>Choose the <b>sheet</b> and the <b>header row</b> if your workbook has titles above the headers. For a header on several rows, give the last one; the rows above it are joined. A SAWT is found by itself.</li>
+<li><b>Optional columns not in the standard sheet</b> holds extra fields some files carry, such as an invoice date or a 2307 reference.</li>
+<li>For a SAWT, <b>Title lines</b> shows the form, month, TIN and payee's name read from the file and whether the TIN matches the client.</li>
+<li>Choose the <b>date order</b> used in the file when dates are typed with slashes.</li>
 <li>Type a name under <b>Save this mapping as</b> to reuse it next time for files from the same source.</li>
 <li><b>Reload preview</b> refreshes the sample; <b>Stage and check rows</b> continues.</li>
 </ul>
@@ -443,6 +495,8 @@ H
 'import_review' => $S('Review an import', 'imports', 'Valid rows, duplicates, errors, commit and roll back.', <<<'H'
 <figure><img src="{img:import_review}" alt="Review import"><figcaption>A committed import with its row counts and the progress track.</figcaption></figure>
 <p>The track at the top shows where the import stands: Uploaded, Mapped, Staged and checked, Committed. The counts show rows read, ready to commit, with errors, duplicates and committed.</p>
+<p>A sales import shows the totals of GROSS TAXABLE, EXEMPT SALES, ZERO RATED SALES, TAXABLE SALES and OUTPUT VAT. A purchases import also shows the R_Purchases totals of the rows (exempt, zeroRated, taxableNetofVat, inputVat, totalPurchases) to compare with the workbook. A SAWT import shows the total income and tax withheld, and the file's Grand Total line with a note saying whether it agrees with the lines read.</p>
+<figure><img src="{img:sawt_review}" alt="Review of a SAWT import"><figcaption>A SAWT whose Grand Total agrees with its 16 lines.</figcaption></figure>
 <h3>Committing</h3>
 <ul>
 <li>Choose <b>Commit everything</b> (allowed only when no row has errors) or <b>Commit the valid rows and leave the rest</b>, then click <b>Commit rows</b>.</li>

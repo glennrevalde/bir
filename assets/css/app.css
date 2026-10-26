@@ -137,11 +137,10 @@ code { font-family: var(--mono); font-size: .88em; background: var(--sheet-3); p
   border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--ink-2); cursor: pointer; text-decoration: none; font: inherit;
 }
 .tool:hover { background: var(--sheet-2); border-color: var(--line); color: var(--ink); }
-.tool .count, .tab-btn .count {
-  position: absolute; top: 2px; right: 1px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
-  background: var(--canary); color: #3b3000; font-size: 11px; font-weight: 800; line-height: 17px; text-align: center;
-}
-.tab-btn .count { position: static; margin-left: 4px; }
+/* counts are plain text next to their label, never capsules */
+.tool .count, .tab-btn .count { font-size: 13px; font-weight: 800; color: var(--bad); line-height: 1; font-variant-numeric: tabular-nums; }
+.tool .count { margin-left: -3px; }
+.tab-btn .count { margin-left: 2px; color: var(--accent); }
 [data-theme="light"] .ico-moon, [data-theme="dark"] .ico-sun { display: none; }
 .user-name { font-weight: 600; font-size: 14px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quick-search { display: flex; align-items: center; gap: 6px; background: var(--sheet-2); border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; height: 36px; box-shadow: var(--inset); }
@@ -306,7 +305,7 @@ legend { font-weight: 700; font-size: 14px; padding: 0 6px; color: var(--ink); }
 .hl { background: var(--canary-soft); box-shadow: inset 3px 0 0 var(--canary); }
 
 /* ------------------------------------------------------------------ tables */
-.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-wrap { contain: paint; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th { text-align: left; font-size: 12.5px; font-weight: 700; color: var(--ink-2); background: var(--sheet-2); padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 0; }
 .table td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -429,6 +428,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 
 /* ------------------------------------------------------------------ drawer, dock, sheet */
 .drawer { position: fixed; inset: 0; z-index: 70; background: rgba(12, 14, 24, .35); display: flex; justify-content: flex-end; }
+[hidden] { display: none !important; }
 .drawer[hidden] { display: none; }
 .drawer-panel { width: min(460px, 100%); height: 100%; background: var(--sheet); box-shadow: var(--lift-shadow); display: flex; flex-direction: column; animation: slidein .18s ease-out; }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
@@ -472,7 +472,9 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .help-list h3 { font-size: 12.5px; color: var(--ink-3); margin: 14px 12px 4px; }
 
 /* ------------------------------------------------------------------ responsive chrome */
-@media (max-width: 1180px) { .brand-text { display: none; } .quick-search input { width: 120px; } }
+@media (max-width: 1320px) { .brand-text { display: none; } .quick-search input[type=search] { width: 130px; } }
+.client-switch select { min-width: 150px; flex: 0 1 auto; }
+.client-switch .tin-boxes { flex: none; }
 @media (max-width: 900px) {
   .tabs { display: none; }
   .topbar-row { padding: 8px 14px; gap: 10px; flex-wrap: wrap; }
@@ -502,6 +504,63 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
   .kv { grid-template-columns: 1fr; gap: 2px 0; }
   .kv dd { margin-bottom: 8px; }
 }
+/* ------------------------------------------------------------------ purchase entry (R_Purchases layout) */
+.purchase-form { padding: 0; overflow: hidden; }
+.pf-section { padding: 18px 22px 20px; border-bottom: 1px solid var(--line); }
+.pf-section:last-of-type { border-bottom: 0; }
+.pf-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 14px; }
+.pf-head h2 { margin: 0; font-size: 16px; }
+.pf-head p { margin: 0; color: var(--ink-3); font-size: 13.5px; }
+.pf-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 16px; }
+.pf-grid .span-2 { grid-column: span 2; }
+.pf-grid .span-3 { grid-column: span 3; }
+.pf-grid .span-4 { grid-column: 1 / -1; }
+.pf-vendor-note { margin: -6px 0 0; font-size: 13.5px; color: var(--ok); min-height: 0; }
+.pf-vendor-note:empty { display: none; }
+.pf-ledger { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px 14px; padding: 16px; border-radius: 12px; background: var(--sheet-2); border: 1px solid var(--line); box-shadow: var(--inset); }
+.pf-ledger input.num { font-variant-numeric: tabular-nums; }
+.pf-ledger > .field > label, .pf-ledger .pf-out-label { min-height: 2.7em; display: flex; align-items: flex-end; line-height: 1.3; }
+.pf-out { justify-content: flex-start; }
+.pf-out-label { font-weight: 600; font-size: 13.5px; color: var(--ink-2); }
+.pf-out output { display: block; padding: 9px 12px; min-height: 40px; border-radius: var(--r-ctl); background: var(--sheet-3); border: 1px dashed var(--line-strong); font: 600 15px/1.4 var(--mono); color: var(--ink); text-align: right; }
+.pf-total { grid-column: span 2; }
+.pf-total output { background: var(--accent-soft); border: 1px solid var(--accent-edge); color: var(--accent); font-size: 17px; box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 2px 4px -2px rgba(22,26,44,.25); }
+.pf-rate input { max-width: 120px; }
+.pf-more { margin-top: 14px; }
+.pf-more > summary, .map-extras > summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--accent); padding: 6px 0; }
+.pf-more .pf-grid { margin-top: 10px; }
+.map-extras { margin-top: 18px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.map-extras .form-grid { margin-top: 10px; }
+input.is-bad { border-color: var(--bad); background: var(--bad-soft); }
+.hint.warn-text { color: var(--wait); }
+@media (max-width: 1100px) {
+  .pf-ledger { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pf-total { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .pf-section { padding: 16px; }
+  .pf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pf-grid .span-3, .pf-grid .span-2, .pf-vendor-note { grid-column: 1 / -1; }
+  .pf-ledger { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px; }
+  .pf-total { grid-column: 1 / -1; }
+}
+@media (max-width: 420px) {
+  .pf-grid { grid-template-columns: 1fr; }
+  .pf-grid .span-2, .pf-grid .span-3, .pf-grid .span-4 { grid-column: 1 / -1; }
+}
+
+/* import review: workbook totals */
+.import-sum { padding: 16px 20px 18px; border-top: 1px solid var(--line); }
+.import-sum-title { margin: 0 0 10px; font-weight: 600; }
+.import-sum-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 0 0 8px; }
+.import-sum-grid > div { padding: 10px 12px; border-radius: 10px; background: var(--sheet-2); border: 1px solid var(--line); box-shadow: var(--inset); }
+.import-sum-grid dt { font: 600 12.5px/1.3 var(--mono); color: var(--ink-3); }
+.import-sum-grid dd { margin: 4px 0 0; font: 600 16px/1.3 var(--mono); text-align: right; }
+.import-sum-grid .is-total { background: var(--accent-soft); border-color: var(--accent-edge); }
+.import-sum-grid .is-total dd { color: var(--accent); }
+.msg-bad { color: var(--bad); font-weight: 600; white-space: normal; }
+@media (max-width: 760px) { .import-sum-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .import-sum-grid .is-total { grid-column: 1 / -1; } }
+
 /* ------------------------------------------------------------------ User's Manual */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .manual { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
@@ -622,3 +681,37 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; font: 600 12px/1
   body { background: #fff; }
   .sheet { box-shadow: none; border-color: #999; }
 }
+
+/* ---------------------------------------------------------------- taxes withheld on us: the SAWT columns */
+.col-no { margin-left: .3em; font-weight: 500; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.pf-names { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 16px; }
+.pf-names > legend { padding: 0; margin: 0 0 8px; font-weight: 600; font-size: 13.5px; color: var(--ink-2); }
+.sw-ledger { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr); margin-top: 16px; }
+.sw-ledger .pf-rate input { max-width: none; }
+.ok-text { color: var(--ok); }
+.warn-text { color: var(--wait); }
+.kv-cols { grid-template-columns: minmax(110px, max-content) minmax(0, 1fr) minmax(110px, max-content) minmax(0, 1fr); }
+.clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 340px; }
+.import-sum-grid.sum-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 640px; }
+.table-preview td { white-space: nowrap; }
+@media (max-width: 900px) {
+  .kv-cols { grid-template-columns: minmax(110px, max-content) minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .sw-ledger { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sw-ledger > .field:first-child { grid-column: 1 / -1; }
+  .import-sum-grid.sum-2 .is-total { grid-column: auto; }
+  .clamp-2 { max-width: none; }
+}
+@media (max-width: 520px) {
+  .pf-names, .sw-ledger { grid-template-columns: 1fr; }
+  .kv-cols { grid-template-columns: 1fr; }
+}
+
+/* ---------------------------------------------------------------- sales: the VAT sales workbook columns */
+.sl-ledger { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sl-ledger .pf-rate input { max-width: none; }
+.sl-ledger .sl-gross input { font-weight: 600; }
+.sl-ledger .sl-total { grid-column: 1 / -1; }
+@media (max-width: 760px) { .sl-ledger { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sl-ledger .sl-gross { grid-column: 1 / -1; } }
+@media (max-width: 520px) { .sl-ledger { grid-template-columns: 1fr; } }

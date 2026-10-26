@@ -26,29 +26,58 @@ class Imports
     {
         $branch = array('key' => 'client_branch', 'title' => 'CLIENT BRANCH CODE', 'format' => 'text', 'width' => 12, 'help' => 'Branch of this client the entry belongs to. Blank uses the branch chosen at upload.', 'example' => '0000');
         $t = array(
-            'sales' => array('label' => 'Sales', 'code' => 'GSB-SALES', 'module' => 'sales', 'role' => 'customer', 'columns' => array_merge(self::party('CUSTOMER'), array(
-                $branch,
-                array('key' => 'invoice_no', 'title' => 'INVOICE NO', 'format' => 'text', 'width' => 14, 'example' => 'SI-000101'),
-                array('key' => 'invoice_date', 'title' => 'INVOICE DATE', 'format' => 'text', 'width' => 13, 'required' => true, 'help' => 'MM/DD/YYYY', 'example' => '01/15/2026'),
-                array('key' => 'exempt_amount', 'title' => 'EXEMPT SALES', 'format' => 'amount', 'width' => 14, 'example' => '0'),
-                array('key' => 'zero_rated_amount', 'title' => 'ZERO RATED SALES', 'format' => 'amount', 'width' => 14, 'example' => '0'),
-                array('key' => 'taxable_amount', 'title' => 'TAXABLE SALES', 'format' => 'amount', 'width' => 14, 'help' => 'Net of VAT.', 'example' => '100000.00'),
-                array('key' => 'output_vat', 'title' => 'OUTPUT VAT', 'format' => 'amount', 'width' => 14, 'example' => '12000.00'),
-                array('key' => 'description', 'title' => 'DESCRIPTION', 'format' => 'text', 'width' => 24, 'example' => ''),
-            ))),
-            'purchases' => array('label' => 'Purchases', 'code' => 'GSB-PURCHASES', 'module' => 'purchases', 'role' => 'supplier', 'columns' => array_merge(self::party('SUPPLIER'), array(
-                $branch,
-                array('key' => 'invoice_no', 'title' => 'INVOICE NO', 'format' => 'text', 'width' => 14, 'example' => 'INV-5521'),
-                array('key' => 'invoice_date', 'title' => 'INVOICE DATE', 'format' => 'text', 'width' => 13, 'required' => true, 'help' => 'MM/DD/YYYY', 'example' => '01/20/2026'),
-                array('key' => 'exempt_amount', 'title' => 'EXEMPT', 'format' => 'amount', 'width' => 12, 'example' => '0'),
-                array('key' => 'zero_rated_amount', 'title' => 'ZERO RATED', 'format' => 'amount', 'width' => 12, 'example' => '0'),
-                array('key' => 'services_amount', 'title' => 'SERVICES', 'format' => 'amount', 'width' => 12, 'example' => '0'),
-                array('key' => 'capital_goods_amount', 'title' => 'CAPITAL GOODS', 'format' => 'amount', 'width' => 14, 'example' => '0'),
-                array('key' => 'other_goods_amount', 'title' => 'GOODS OTHER THAN CAPITAL GOODS', 'format' => 'amount', 'width' => 16, 'example' => '50000.00'),
-                array('key' => 'input_vat', 'title' => 'INPUT VAT', 'format' => 'amount', 'width' => 12, 'example' => '6000.00'),
-                array('key' => 'non_creditable_vat', 'title' => 'NON-CREDITABLE INPUT VAT', 'format' => 'amount', 'width' => 14, 'example' => '0'),
-                array('key' => 'description', 'title' => 'DESCRIPTION', 'format' => 'text', 'width' => 24, 'example' => ''),
-            ))),
+            // The 17 columns of the VAT sales workbook, in its order, with its headers and widths. GROSS TAXABLE
+            // includes VAT; TAXABLE SALES and OUTPUT VAT may be left blank and are worked out from it and the rate.
+            'sales' => array('label' => 'Sales (VAT sales format)', 'code' => 'GSB-SALES', 'module' => 'sales', 'role' => 'customer', 'sheet' => 'Sheet1', 'version' => '2.0', 'columns' => array(
+                array('key' => 'p_tin', 'title' => 'CUSTOMER TIN', 'format' => 'text', 'width' => 13.86, 'help' => 'Customer TIN, 9 digits, dashes allowed. Keep the column as Text so leading zeros stay. Leave blank for walk-in customers without a TIN.', 'example' => '123-456-789'),
+                array('key' => 'p_branch', 'title' => 'CUSTOMER BRANCH CODE', 'format' => 'text', 'width' => 22.27, 'help' => '4 digits; 0000 for the head office or when blank.', 'example' => '0000'),
+                array('key' => 'p_registered_name', 'title' => 'REGISTERED NAME', 'format' => 'text', 'width' => 16.07, 'help' => 'For a company or other non-individual. Leave blank for individuals.', 'example' => 'ACME TRADING CORP'),
+                array('key' => 'p_last_name', 'title' => 'LAST NAME', 'format' => 'text', 'width' => 13.2, 'help' => 'Individual customers only.', 'example' => ''),
+                array('key' => 'p_first_name', 'title' => 'FIRST NAME', 'format' => 'text', 'width' => 13.66, 'help' => 'Individual customers only.', 'example' => ''),
+                array('key' => 'p_middle_name', 'title' => 'MIDDLE NAME', 'format' => 'text', 'width' => 12.6, 'help' => 'Individual customers only.', 'example' => ''),
+                array('key' => 'p_address1', 'title' => 'SUBSTREET, STREET, BARANGAY', 'format' => 'text', 'width' => 28, 'help' => 'Address line 1.', 'example' => '12 RIZAL ST BRGY CAPITOL'),
+                array('key' => 'p_address2', 'title' => 'DISTRICT, CITY, ZIP CODE', 'format' => 'text', 'width' => 20.73, 'help' => 'Address line 2. A 4-digit ZIP code at the end also fills the customer\'s ZIP code.', 'example' => 'CEBU CITY 6000'),
+                array_merge($branch, array('width' => 18.53)),
+                array('key' => 'invoice_no', 'title' => 'INVOICE NO', 'format' => 'text', 'width' => 10.53, 'help' => 'Sales invoice or official receipt number.', 'example' => 'SI-000101'),
+                array('key' => 'invoice_date', 'title' => 'INVOICE DATE', 'format' => 'text', 'width' => 12.2, 'required' => true, 'help' => 'MM/DD/YYYY. Sets the month of the sale.', 'example' => '01/15/2026'),
+                array('key' => 'gross_taxable', 'title' => 'GROSS TAXABLE', 'format' => 'amount', 'width' => 13.93, 'help' => 'Taxable sales including VAT. TAXABLE SALES and OUTPUT VAT are worked out from it when left blank.', 'example' => '112000.00'),
+                array('key' => 'exempt_amount', 'title' => 'EXEMPT SALES', 'format' => 'amount', 'width' => 12.53, 'help' => 'VAT-exempt sales.', 'example' => '0'),
+                array('key' => 'zero_rated_amount', 'title' => 'ZERO RATED SALES', 'format' => 'amount', 'width' => 16.13, 'help' => 'Zero-rated sales.', 'example' => '0'),
+                array('key' => 'taxable_amount', 'title' => 'TAXABLE SALES', 'format' => 'amount', 'width' => 13.27, 'help' => 'Taxable sales net of VAT. Blank: GROSS TAXABLE / (1 + VAT RATE / 100), rounded to the centavo.', 'example' => '100000.00'),
+                array('key' => 'vat_rate', 'title' => 'VAT RATE', 'format' => 'amount', 'width' => 13.27, 'weak' => true, 'help' => 'Percent. Blank means 12; 0 for sales without VAT.', 'example' => '12'),
+                array('key' => 'output_vat', 'title' => 'OUTPUT VAT', 'format' => 'amount', 'width' => 15.4, 'help' => 'Blank: GROSS TAXABLE - TAXABLE SALES, or TAXABLE SALES x VAT RATE / 100. A different amount is kept and flagged.', 'example' => '12000.00'),
+                array('key' => 'description', 'title' => 'DESCRIPTION', 'format' => 'text', 'extra' => true, 'help' => 'Optional.'),
+            )),
+            // Exactly the 16 columns of the R_Purchases workbook, in its order and with its headers.
+            // Columns marked 'extra' are optional, never in the template, and only used when a file has them.
+            'purchases' => array('label' => 'Purchases (R_Purchases format)', 'code' => 'GSB-PURCHASES', 'module' => 'purchases', 'role' => 'supplier',
+                'sheet' => 'R_Purchases', 'version' => '2.0', 'needs_month' => true, 'repeatable' => true, 'columns' => array(
+                array('key' => 'p_tin', 'title' => 'Vendor_TIN', 'format' => 'text', 'width' => 18.73, 'help' => 'Vendor TIN, 9 digits. Keep the column as Text so leading zeros stay. A 13-digit TIN includes the branch code.', 'example' => '000488793'),
+                array('key' => 'p_registered_name', 'title' => 'companyName', 'format' => 'text', 'width' => 69.13, 'help' => 'Registered name of a non-individual vendor. Leave blank for individuals.', 'example' => 'PLDT, INC.'),
+                array('key' => 'p_last_name', 'title' => 'lastName', 'format' => 'text', 'width' => 10, 'help' => 'Individual vendors only.', 'example' => ''),
+                array('key' => 'p_first_name', 'title' => 'firstName', 'format' => 'text', 'width' => 10.4, 'help' => 'Individual vendors only.', 'example' => ''),
+                array('key' => 'p_middle_name', 'title' => 'middleName', 'format' => 'text', 'width' => 13.6, 'help' => 'Individual vendors only.', 'example' => ''),
+                array('key' => 'p_address1', 'title' => 'address1', 'format' => 'text', 'width' => 9.4, 'help' => 'Street and barangay.', 'example' => ''),
+                array('key' => 'p_address2', 'title' => 'address2', 'format' => 'text', 'width' => 9, 'help' => 'Town or city and province.', 'example' => ''),
+                array('key' => 'exempt_amount', 'title' => 'exempt', 'format' => 'amount', 'xlsx_format' => '0.00', 'width' => 8.4, 'help' => 'Exempt purchases.', 'example' => '0'),
+                array('key' => 'zero_rated_amount', 'title' => 'zeroRated', 'format' => 'amount', 'xlsx_format' => '0.00', 'width' => 10.6, 'help' => 'Zero-rated purchases.', 'example' => '0'),
+                array('key' => 'services_amount', 'title' => 'services', 'format' => 'amount', 'xlsx_format' => '0.00', 'width' => 9.13, 'help' => 'Purchase of services, net of VAT.', 'example' => '0'),
+                array('key' => 'capital_goods_amount', 'title' => 'capitalGoods', 'format' => 'amount', 'xlsx_format' => '0.00', 'width' => 13.6, 'help' => 'Purchase of capital goods, net of VAT.', 'example' => '0'),
+                array('key' => 'other_goods_amount', 'title' => 'otherThancapitalGoods', 'format' => 'amount', 'xlsx_format' => 'red_negative', 'width' => 19.66, 'help' => 'Purchase of goods other than capital goods, net of VAT.', 'example' => '1695.54'),
+                array('key' => 'taxable_net', 'title' => 'taxableNetofVat', 'format' => 'amount', 'xlsx_format' => '0.00', 'width' => 15.27, 'computed' => true,
+                    'formula' => 'ROUND(SUM(J{r}:L{r}),2)', 'help' => 'Formula: services + capitalGoods + otherThancapitalGoods. Checked, not typed.', 'example' => ''),
+                array('key' => 'vat_rate', 'title' => 'vatRate', 'format' => 'amount', 'xlsx_format' => '0.00', 'width' => 8.13, 'weak' => true, 'help' => 'VAT rate in percent. Blank means 12.', 'example' => '12'),
+                array('key' => 'input_vat', 'title' => 'inputVat', 'format' => 'amount', 'xlsx_format' => '0.00', 'width' => 9.27, 'weak' => true,
+                    'formula' => 'ROUND(M{r}*N{r}/100,2)', 'help' => 'Formula: taxableNetofVat x vatRate / 100. A typed amount is kept and compared.', 'example' => ''),
+                array('key' => 'total_purchases', 'title' => 'totalPurchases', 'format' => 'amount', 'xlsx_format' => '0.00', 'width' => 15.13, 'computed' => true,
+                    'formula' => 'ROUND(SUM(H{r}:L{r}),2)', 'help' => 'Formula: exempt + zeroRated + services + capitalGoods + otherThancapitalGoods. Checked, not typed.', 'example' => ''),
+                array('key' => 'p_branch', 'title' => 'Vendor branch code', 'format' => 'text', 'extra' => true, 'help' => 'Optional. 4 digits; 0000 when blank.'),
+                $branch + array('extra' => true),
+                array('key' => 'invoice_no', 'title' => 'Invoice no', 'format' => 'text', 'extra' => true, 'help' => 'Optional.'),
+                array('key' => 'invoice_date', 'title' => 'Invoice date', 'format' => 'text', 'extra' => true, 'help' => 'Optional. MM/DD/YYYY. When mapped, it sets the month of each row.'),
+                array('key' => 'non_creditable_vat', 'title' => 'Non-creditable input VAT', 'format' => 'amount', 'extra' => true, 'help' => 'Optional.'),
+                array('key' => 'description', 'title' => 'Description', 'format' => 'text', 'extra' => true, 'help' => 'Optional.'),
+            )),
             'importations' => array('label' => 'Importations', 'code' => 'GSB-IMPORTS', 'module' => 'importations', 'role' => 'supplier', 'columns' => array_merge(self::party('SELLER'), array(
                 $branch,
                 array('key' => 'import_entry_no', 'title' => 'IMPORT ENTRY NO', 'format' => 'text', 'width' => 16, 'required' => true, 'example' => 'IE-2026-0001'),
@@ -76,16 +105,30 @@ class Imports
                 array('key' => 'reference_no', 'title' => 'REFERENCE NO', 'format' => 'text', 'width' => 14, 'example' => ''),
                 array('key' => 'rate_exception_note', 'title' => 'RATE EXCEPTION NOTE', 'format' => 'text', 'width' => 24, 'help' => 'Required when rate or tax differs from the ATC.', 'example' => ''),
             ))),
-            'withheld_on_us' => array('label' => 'Taxes withheld on us (2307 received, SAWT)', 'code' => 'GSB-WH-RECEIVED', 'module' => 'withheld_on_us', 'role' => 'payor', 'columns' => array_merge(self::party('PAYOR'), array(
-                $branch,
-                array('key' => 'atc_code', 'title' => 'ATC', 'format' => 'text', 'width' => 9, 'required' => true, 'example' => 'WC160'),
-                array('key' => 'payment_date', 'title' => 'PAYMENT DATE', 'format' => 'text', 'width' => 13, 'required' => true, 'example' => '02/28/2026'),
-                array('key' => 'income_amount', 'title' => 'INCOME PAYMENT', 'format' => 'amount', 'width' => 14, 'required' => true, 'example' => '80000.00'),
-                array('key' => 'tax_rate', 'title' => 'TAX RATE', 'format' => 'text', 'width' => 9, 'example' => '2'),
-                array('key' => 'tax_withheld', 'title' => 'TAX WITHHELD', 'format' => 'amount', 'width' => 13, 'example' => '1600.00'),
-                array('key' => 'reference_no', 'title' => 'CERTIFICATE REFERENCE', 'format' => 'text', 'width' => 16, 'example' => ''),
-                array('key' => 'rate_exception_note', 'title' => 'RATE EXCEPTION NOTE', 'format' => 'text', 'width' => 24, 'example' => ''),
-            ))),
+            // The SAWT report layout: title lines (form, month, TIN, payee's name) above a three-row header,
+            // a "(1)".."(8)" line, dashes, one line per payor and ATC, then Grand Total and END OF REPORT.
+            // Only the nine columns are read; the title lines are checked against this client.
+            'withheld_on_us' => array('label' => 'Taxes withheld on us (SAWT)', 'code' => 'GSB-SAWT', 'module' => 'withheld_on_us', 'role' => 'payor',
+                'sheet' => 'Sheet1', 'version' => '2.0', 'needs_month' => true, 'month_from_file' => true, 'repeatable' => true, 'report' => 'sawt', 'columns' => array(
+                array('key' => 'seq_no', 'title' => 'SEQ NO', 'format' => 'text', 'width' => 25.69, 'weak' => true, 'help' => 'Line number (1). Not stored.', 'example' => '1'),
+                array('key' => 'p_tin', 'title' => 'TAXPAYER IDENTIFICATION NUMBER', 'format' => 'text', 'width' => 18, 'help' => 'Payor TIN with branch code, as 000-000-000-0000 (2). Keep the column as Text.', 'example' => '000-123-456-0000'),
+                array('key' => 'p_registered_name', 'title' => 'CORPORATION (Registered Name)', 'format' => 'text', 'width' => 50.69, 'help' => 'Registered name of a non-individual payor (3).', 'example' => 'SAMPLE BANKING CORPORATION'),
+                array('key' => 'p_individual', 'title' => 'INDIVIDUAL (Last Name, First Name, Middle Name)', 'format' => 'text', 'width' => 36.44, 'help' => 'An individual payor as LAST NAME, FIRST NAME, MIDDLE NAME (4). Leave blank for a corporation.', 'example' => ''),
+                array('key' => 'atc_code', 'title' => 'ATC CODE', 'format' => 'text', 'width' => 25.69, 'required' => true, 'help' => 'Alphanumeric tax code (5), for example WC160 or WC120.', 'example' => 'WC160'),
+                array('key' => 'nature_of_payment', 'title' => 'NATURE OF PAYMENT', 'format' => 'text', 'width' => 50.69, 'help' => 'Description of the income payment. Blank uses the ATC description.', 'example' => ''),
+                array('key' => 'income_amount', 'title' => 'AMOUNT OF INCOME PAYMENT', 'format' => 'amount', 'xlsx_format' => 'sawt', 'width' => 25.69, 'required' => true, 'help' => 'Income payment (6).', 'example' => '100000.00'),
+                array('key' => 'tax_rate', 'title' => 'TAX RATE', 'format' => 'amount', 'xlsx_format' => 'sawt', 'width' => 12, 'weak' => true, 'help' => 'Percent (7), for example 2. Blank uses the ATC rate.', 'example' => '2'),
+                array('key' => 'tax_withheld', 'title' => 'AMOUNT OF TAX WITHHELD', 'format' => 'amount', 'xlsx_format' => 'sawt', 'width' => 18, 'weak' => true,
+                    'formula' => 'IF(G{r}="","",ROUND(G{r}*H{r}/100,2))', 'help' => 'Tax withheld (8), as on the 2307. Blank computes income x rate.', 'example' => ''),
+                array('key' => 'p_branch', 'title' => 'Payor branch code', 'format' => 'text', 'extra' => true, 'help' => 'Optional when the TIN already ends in the branch code.'),
+                array('key' => 'p_last_name', 'title' => 'Last name', 'format' => 'text', 'extra' => true, 'help' => 'Optional: an individual payor in separate columns.'),
+                array('key' => 'p_first_name', 'title' => 'First name', 'format' => 'text', 'extra' => true, 'help' => 'Optional.'),
+                array('key' => 'p_middle_name', 'title' => 'Middle name', 'format' => 'text', 'extra' => true, 'help' => 'Optional.'),
+                $branch + array('extra' => true),
+                array('key' => 'payment_date', 'title' => 'Date of payment', 'format' => 'text', 'extra' => true, 'help' => 'Optional. MM/DD/YYYY. When mapped, it sets the month of each row.'),
+                array('key' => 'reference_no', 'title' => 'Certificate reference', 'format' => 'text', 'extra' => true, 'help' => 'Optional. The 2307 number or reference.'),
+                array('key' => 'rate_exception_note', 'title' => 'Note', 'format' => 'text', 'extra' => true, 'help' => 'Optional.'),
+            )),
             'counterparties' => array('label' => 'Directory: customers, suppliers, payees', 'code' => 'GSB-DIRECTORY', 'module' => null, 'role' => null, 'columns' => array_merge(self::party(''), array(
                 array('key' => 'p_zip', 'title' => 'ZIP CODE', 'format' => 'text', 'width' => 9, 'example' => '6000'),
                 array('key' => 'roles', 'title' => 'ROLES', 'format' => 'text', 'width' => 26, 'help' => 'Any of: SUPPLIER, CUSTOMER, PAYEE, PAYOR (comma separated).', 'example' => 'SUPPLIER,PAYEE'),
@@ -139,10 +182,39 @@ class Imports
     }
 
     // ------------------------------------------------------------------ templates
-    public static function template($typeKey, $withSamples)
+    /** Columns that belong in the template and in an exact-match file (optional extras excluded). */
+    public static function templateColumns($type)
+    {
+        $out = array();
+        foreach ($type['columns'] as $c) {
+            if (empty($c['extra'])) {
+                $out[] = $c;
+            }
+        }
+        return $out;
+    }
+
+    public static function template($typeKey, $withSamples, $ctx = array())
     {
         $type = self::type($typeKey);
-        $cols = $type['columns'];
+        if ($typeKey === 'withheld_on_us') {
+            $client = isset($ctx['client']) ? $ctx['client'] : Ctx::client();
+            $month = isset($ctx['month']) && $ctx['month'] ? $ctx['month'] : date('Y-m', strtotime('first day of last month'));
+            $lines = array();
+            if ($withSamples) {
+                foreach (array(
+                             array('000-123-456-0000', 'SAMPLE BANKING CORPORATION', '', 'WC160', 100000, 2, 2000),
+                             array('000-234-567-0000', 'SAMPLE PROPERTY HOLDINGS INC', '', 'WC120', 45250.5, 2, 905.01),
+                             array('000-345-678-0000', '', 'DELA CRUZ, JUAN, SANTOS', 'WC160', 12000, 2, 240),
+                         ) as $v) {
+                    $tc = Records::taxCode($v[3], 'EWT', last_day($month));
+                    $lines[] = array('tin' => $v[0], 'company' => $v[1], 'individual' => $v[2], 'atc' => $v[3], 'nature' => $tc ? $tc['description'] : '',
+                        'income' => $v[4], 'rate' => $v[5], 'tax' => $v[6]);
+                }
+            }
+            return self::sawtWorkbook($client, isset($ctx['form']) ? $ctx['form'] : null, $month, $lines, true);
+        }
+        $cols = self::templateColumns($type);
         $rows = array();
         if ($withSamples) {
             $rows = self::sampleRows($typeKey, $cols);
@@ -155,11 +227,29 @@ class Imports
         }
         $fieldRows = array();
         foreach ($cols as $c) {
-            $fieldRows[] = array($c['title'], !empty($c['required']) ? 'Yes' : 'No', $c['format'] === 'amount' ? 'Amount, 2 decimals' : 'Text',
+            $fieldRows[] = array($c['title'], !empty($c['required']) ? 'Yes' : 'No', !empty($c['formula']) ? 'Formula (pre-filled)' : ($c['format'] === 'amount' ? 'Amount, 2 decimals' : 'Text'),
                 isset($c['help']) ? $c['help'] : '', !empty($c['list']) ? implode(', ', $c['list']) : '', isset($c['example']) ? $c['example'] : '');
         }
+        $data = array('name' => isset($type['sheet']) ? $type['sheet'] : 'Data', 'columns' => $cols, 'rows' => $rows, 'freeze' => true, 'protect_header' => true, 'lists' => $lists);
+        $rules = 'Keep the header row unchanged. Enter one record per row on the Data sheet. Keep TIN columns as Text so leading zeros stay. Dates as MM/DD/YYYY.';
+        if ($typeKey === 'sales') {
+            // Same layout as the VAT sales workbook: the shaded header row, no frozen pane, no sheet protection.
+            $data['freeze'] = false;
+            $data['protect_header'] = false;
+            $rules = 'Keep the header row unchanged. One invoice per row. Keep CUSTOMER TIN as Text so leading zeros stay. Enter GROSS TAXABLE (with VAT) or TAXABLE SALES (net of VAT); the other and OUTPUT VAT are worked out when left blank. VAT RATE blank means 12. Dates as MM/DD/YYYY.';
+        }
+        if ($typeKey === 'purchases') {
+            // Same layout as the R_Purchases workbook: plain bold headers, no frozen pane, formulas in
+            // taxableNetofVat, inputVat and totalPurchases, vatRate 12, on every row ready for data.
+            $data['header'] = 'bold';
+            $data['freeze'] = false;
+            $data['protect_header'] = false;
+            $data['formula_rows'] = 500;
+            $data['defaults'] = array('vat_rate' => 12, 'exempt_amount' => 0, 'zero_rated_amount' => 0, 'services_amount' => 0, 'capital_goods_amount' => 0);
+            $rules = 'Keep the header row unchanged. One purchase per row. Keep Vendor_TIN as Text so leading zeros stay. Do not type over taxableNetofVat or totalPurchases. The purchase month is chosen when you upload, because this sheet has no date column.';
+        }
         return XlsxWriter::build(array(
-            array('name' => 'Data', 'columns' => $cols, 'rows' => $rows, 'freeze' => true, 'protect_header' => true, 'lists' => $lists),
+            $data,
             array('name' => 'Fields', 'columns' => array(
                 array('title' => 'Column', 'width' => 34, 'format' => 'text'), array('title' => 'Required', 'width' => 10, 'format' => 'text'),
                 array('title' => 'Type', 'width' => 18, 'format' => 'text'), array('title' => 'How to fill', 'width' => 60, 'format' => 'text'),
@@ -167,11 +257,133 @@ class Imports
                 'rows' => $fieldRows, 'freeze' => true),
             array('name' => 'About', 'columns' => array(array('title' => 'Key', 'width' => 22, 'format' => 'text'), array('title' => 'Value', 'width' => 80, 'format' => 'text')),
                 'rows' => array(
-                    array('Template code', $type['code']), array('Template version', self::TEMPLATE_VERSION), array('Import type', $type['label']),
-                    array('Generated', date('Y-m-d H:i')), array('Rules', 'Keep the header row unchanged. Enter one record per row on the Data sheet. Keep TIN columns as Text so leading zeros stay. Dates as MM/DD/YYYY.'),
+                    array('Template code', $type['code']), array('Template version', isset($type['version']) ? $type['version'] : self::TEMPLATE_VERSION), array('Import type', $type['label']),
+                    array('Generated', date('Y-m-d H:i')), array('Rules', $rules),
                     array('Note', 'This workbook is an input template for G-SMaRT BIR. It is not a BIR form and is not submitted to the BIR.'),
                 )),
         ), array('title' => $type['label'] . ' import template'));
+    }
+
+    /**
+     * A workbook in the SAWT report layout (the same rows, columns, widths and number format as the BIR
+     * SAWT printout): title lines, the three-row header, "(1)".."(8)", dashes, one line per payor and ATC,
+     * Grand Total and END OF REPORT. As a template ($blankRows) the lines are left open with formulas for
+     * the tax and the totals; as an export the amounts are written as values.
+     * $lines: tin, company, individual, atc, nature, income, rate, tax.
+     */
+    public static function sawtWorkbook($client, $form, $month, $lines, $template = false)
+    {
+        $form = $form ?: ($client && $client['taxpayer_type'] === 'individual' ? '1701Q' : '1702Q');
+        $name = $client ? Ctx::clientName($client) : '';
+        $branch = '0000';
+        if ($client) {
+            $ho = Ctx::headOffice($client['id']);
+            $branch = $ho ? $ho['branch_code'] : '0000';
+        }
+        $b = function ($v) {
+            return array('v' => $v, 's' => 'bold');
+        };
+        $cells = array(
+            1 => array(0 => $b('BIR FORM ' . $form)),
+            2 => array(0 => $b('SUMMARY ALPHALIST OF WITHHOLDING TAXES (SAWT)')),
+            3 => array(0 => $b('FOR THE MONTH OF ' . strtoupper(date('F', strtotime($month . '-01'))) . ', ' . substr($month, 0, 4))),
+            6 => array(0 => $b('TIN : ' . ($client ? $client['tin'] . '-' . $branch : ''))),
+            7 => array(0 => $b("PAYEE'S NAME: " . strtoupper($name))),
+            11 => array(0 => $b('SEQ'), 1 => $b('TAXPAYER'), 2 => $b('CORPORATION'), 3 => $b('INDIVIDUAL'), 4 => $b('ATC CODE'), 5 => $b('NATURE OF PAYMENT'), 6 => $b('AMOUNT OF'), 7 => $b('TAX RATE'), 8 => $b('AMOUNT OF')),
+            12 => array(0 => $b('NO'), 1 => $b('IDENTIFICATION'), 2 => $b('(Registered Name)'), 3 => $b('(Last Name, First Name, Middle Name)'), 6 => $b('INCOME PAYMENT'), 8 => $b('TAX WITHHELD')),
+            13 => array(1 => $b('NUMBER')),
+            14 => array(0 => $b('(1)'), 1 => $b('(2)'), 2 => $b('(3)'), 3 => $b('(4)'), 4 => $b('(5)'), 6 => $b('(6)'), 7 => $b('(7)'), 8 => $b('(8)')),
+            15 => array_fill(0, 9, str_repeat('-', 30)),
+        );
+        $r = 16;
+        $income = 0;
+        $tax = 0;
+        foreach (array_values($lines) as $i => $l) {
+            $cells[$r] = array(0 => $i + 1, 1 => array('v' => (string)$l['tin'], 's' => 'text'), 2 => (string)$l['company'], 3 => (string)$l['individual'],
+                4 => (string)$l['atc'], 5 => (string)$l['nature'], 6 => array('v' => (float)$l['income'], 's' => 'amount'), 7 => array('v' => (float)$l['rate'], 's' => 'amount'));
+            $cells[$r][8] = $template ? array('f' => 'IF(OR(G' . $r . '="",H' . $r . '=""),"",ROUND(G' . $r . '*H' . $r . '/100,2))', 's' => 'amount') : array('v' => (float)$l['tax'], 's' => 'amount');
+            $income += Money::parse((string)$l['income'])['cents'];
+            $tax += Money::parse((string)$l['tax'])['cents'];
+            $r++;
+        }
+        if ($template) {
+            // Open lines ready for data: the tax works itself out once the income and rate are typed.
+            for ($n = count($lines); $n < 30; $n++, $r++) {
+                $cells[$r] = array(1 => array('v' => '', 's' => 'text'), 6 => array('v' => '', 's' => 'amount'), 7 => array('v' => '', 's' => 'amount'),
+                    8 => array('f' => 'IF(OR(G' . $r . '="",H' . $r . '=""),"",ROUND(G' . $r . '*H' . $r . '/100,2))', 's' => 'amount'));
+            }
+        }
+        $dash = $r;
+        $cells[$dash] = array(6 => str_repeat('-', 18), 7 => str_repeat('-', 18), 8 => str_repeat('-', 18));
+        // The sums run from the dashes above the lines to the dashes below, so lines inserted anywhere between are counted.
+        $cells[$dash + 1] = array(0 => $b('Grand Total :'),
+            6 => $template ? array('f' => 'SUM(G15:G' . $dash . ')', 's' => 'amount_bold') : array('v' => $income / 100, 's' => 'amount_bold'),
+            8 => $template ? array('f' => 'SUM(I15:I' . $dash . ')', 's' => 'amount_bold') : array('v' => $tax / 100, 's' => 'amount_bold'));
+        $cells[$dash + 2] = array(6 => str_repeat('=', 18), 7 => str_repeat('=', 18), 8 => str_repeat('=', 18));
+        $cells[$dash + 3] = array(0 => $b('END OF REPORT'));
+        $cols = array();
+        foreach (self::templateColumns(self::type('withheld_on_us')) as $c) {
+            $cols[] = array('title' => $c['title'], 'width' => $c['width'], 'format' => $c['format'] === 'amount' ? 'amount' : 'general', 'xlsx_format' => $c['format'] === 'amount' ? 'sawt' : null);
+        }
+        foreach ($cols as $k => $c) {
+            if ($c['xlsx_format'] === null) {
+                unset($cols[$k]['xlsx_format']);
+            }
+            if ($k === 1) {
+                $cols[$k]['format'] = 'text';
+            }
+        }
+        $sheets = array(array('name' => 'Sheet1', 'columns' => $cols, 'cells' => $cells));
+        if ($template) {
+            $fieldRows = array();
+            foreach (self::templateColumns(self::type('withheld_on_us')) as $c) {
+                $fieldRows[] = array($c['title'], !empty($c['required']) ? 'Yes' : 'No', isset($c['help']) ? $c['help'] : '');
+            }
+            $sheets[] = array('name' => 'Fields', 'columns' => array(array('title' => 'Column', 'width' => 46, 'format' => 'text'), array('title' => 'Required', 'width' => 10, 'format' => 'text'),
+                array('title' => 'How to fill', 'width' => 80, 'format' => 'text')), 'rows' => $fieldRows, 'freeze' => true);
+            $sheets[] = array('name' => 'About', 'columns' => array(array('title' => 'Key', 'width' => 22, 'format' => 'text'), array('title' => 'Value', 'width' => 90, 'format' => 'text')),
+                'rows' => array(array('Template code', 'GSB-SAWT'), array('Template version', '2.0'), array('Import type', 'Taxes withheld on us (SAWT)'), array('Generated', date('Y-m-d H:i')),
+                    array('Rules', 'Keep the title lines and the header as they are. One line per payor and ATC, between the two lines of dashes; insert rows there for more payors. TIN with branch code as 000-000-000-0000. A corporation goes under CORPORATION; a person under INDIVIDUAL as LAST NAME, FIRST NAME, MIDDLE NAME. The month is read from the line FOR THE MONTH OF.'),
+                    array('Note', 'This workbook is an input template for G-SMaRT BIR in the layout of the SAWT. It is not the SAWT DAT file and is not submitted to the BIR.')));
+        }
+        return XlsxWriter::build($sheets, array('title' => 'SAWT ' . $form . ' ' . month_label($month)));
+    }
+
+    /**
+     * Saved taxes withheld on us as SAWT lines: one per payor, ATC and rate for the months given, in the
+     * order of the SAWT (by payor name), for the SAWT layout export.
+     */
+    public static function sawtLines($clientId, $branchId, $fromMonth, $toMonth = null)
+    {
+        $sql = 'SELECT w.*, cp.tin, cp.branch_code AS cp_branch, cp.entity_type, cp.registered_name, cp.last_name, cp.first_name, cp.middle_name
+            FROM withholding_entries w JOIN counterparties cp ON cp.id = w.counterparty_id
+            WHERE w.client_id = ? AND w.direction = ? AND w.status = ? AND w.period_month >= ? AND w.period_month <= ?';
+        $p = array($clientId, 'payee', 'posted', $fromMonth, $toMonth ?: $fromMonth);
+        if ($branchId) {
+            $sql .= ' AND w.branch_id = ?';
+            $p[] = $branchId;
+        }
+        $out = array();
+        foreach (DB::all($sql . ' ORDER BY COALESCE(cp.registered_name, cp.last_name), cp.first_name, cp.tin, w.atc_code, w.id', $p) as $r) {
+            $k = $r['counterparty_id'] . '|' . $r['atc_code'] . '|' . $r['tax_rate'];
+            if (!isset($out[$k])) {
+                $ind = $r['entity_type'] === 'individual' ? trim($r['last_name'] . ', ' . $r['first_name'] . ($r['middle_name'] ? ', ' . $r['middle_name'] : ''), ', ') : '';
+                $out[$k] = array('tin' => $r['tin'] ? Tin::display($r['tin'], $r['cp_branch'] ?: '0000') : '', 'company' => $r['entity_type'] === 'individual' ? '' : (string)$r['registered_name'],
+                    'individual' => $ind, 'atc' => $r['atc_code'], 'nature' => (string)$r['nature_of_payment'], 'income_c' => 0, 'tax_c' => 0,
+                    'rate' => (float)Money::rateFormat(Money::rateUnits($r['tax_rate']), 'pct2'));
+            }
+            if ($out[$k]['nature'] === '' && $r['nature_of_payment']) {
+                $out[$k]['nature'] = $r['nature_of_payment'];
+            }
+            $out[$k]['income_c'] += Money::fromDb($r['income_amount']);
+            $out[$k]['tax_c'] += Money::fromDb($r['tax_withheld']);
+        }
+        foreach ($out as &$l) {
+            $l['income'] = Money::toPlain($l['income_c']);
+            $l['tax'] = Money::toPlain($l['tax_c']);
+        }
+        unset($l);
+        return array_values($out);
     }
 
     private static function sampleRows($typeKey, $cols)
@@ -181,7 +393,17 @@ class Imports
         foreach ($cols as $c) {
             $base[$c['key']] = isset($c['example']) ? $c['example'] : '';
         }
-        if ($typeKey === 'withholding') {
+        if ($typeKey === 'sales') {
+            $row = function ($tin, $br, $co, $last, $first, $mid, $a1, $a2, $no, $date, $gross, $ex, $zr, $tx, $rate, $vat) {
+                return array('p_tin' => $tin, 'p_branch' => $br, 'p_registered_name' => $co, 'p_last_name' => $last, 'p_first_name' => $first, 'p_middle_name' => $mid,
+                    'p_address1' => $a1, 'p_address2' => $a2, 'client_branch' => '0000', 'invoice_no' => $no, 'invoice_date' => $date, 'gross_taxable' => $gross,
+                    'exempt_amount' => $ex, 'zero_rated_amount' => $zr, 'taxable_amount' => $tx, 'vat_rate' => $rate, 'output_vat' => $vat);
+            };
+            $samples[] = $row('123-456-789', '0000', 'SAMPLE TRADING CORPORATION', '', '', '', '12 RIZAL ST BRGY CAPITOL', 'CEBU CITY 6000', 'SI-000101', '01/15/2026', '112000.00', '', '', '', '12', '');
+            $samples[] = $row('234-567-890', '0001', 'SAMPLE FOODS INC', '', '', '', '8 OSMENA BLVD', 'CEBU CITY 6000', 'SI-000102', '01/18/2026', '', '', '', '45000.00', '12', '5400.00');
+            $samples[] = $row('345-678-901', '0000', '', 'DELA CRUZ', 'JUAN', 'SANTOS', '3 MABINI ST BRGY POBLACION', 'TALISAY CITY 6045', 'SI-000103', '01/20/2026', '', '8500.00', '', '', '', '');
+            $samples[] = $row('456-789-012', '0000', 'SAMPLE EXPORTS INC', '', '', '', 'MEPZ 1', 'LAPU-LAPU CITY 6015', 'SI-000104', '01/25/2026', '', '', '250000.00', '', '0', '');
+        } elseif ($typeKey === 'withholding') {
             $samples[] = $base;
             $b = $base;
             $b['p_tin'] = '234-567-890';
@@ -195,6 +417,17 @@ class Imports
             $b['tax_rate'] = '5';
             $b['tax_withheld'] = '1000.00';
             $samples[] = $b;
+        } elseif ($typeKey === 'purchases') {
+            foreach (array(
+                         array('000123456', 'SAMPLE TELECOM SERVICES INC', '', '', '', '', '', 0, 0, 1695.54, 0, 0),
+                         array('000234567', 'SAMPLE PHARMACY CORPORATION', '', '', '', '', '', 0, 0, 0, 0, 421.875),
+                         array('000345678', '', 'DELA CRUZ', 'JUAN', 'SANTOS', '12 RIZAL ST', 'CEBU CITY', 1500, 0, 0, 0, 0),
+                         array('000456789', 'SAMPLE EQUIPMENT TRADING INC', '', '', '', '', '', 0, 0, 0, 85000, 0),
+                     ) as $v) {
+                $samples[] = array('p_tin' => $v[0], 'p_registered_name' => $v[1], 'p_last_name' => $v[2], 'p_first_name' => $v[3], 'p_middle_name' => $v[4],
+                    'p_address1' => $v[5], 'p_address2' => $v[6], 'exempt_amount' => $v[7], 'zero_rated_amount' => $v[8], 'services_amount' => $v[9],
+                    'capital_goods_amount' => $v[10], 'other_goods_amount' => $v[11], 'taxable_net' => '', 'vat_rate' => 12, 'input_vat' => '', 'total_purchases' => '');
+            }
         } else {
             $samples[] = $base;
         }
@@ -236,17 +469,216 @@ class Imports
         return $r->sheetNames();
     }
 
-    public static function headersOf($rows, $headerRow)
+    /**
+     * Column titles of the header. A header may span stacked rows ($from to $headerRow), as in the SAWT
+     * where "AMOUNT OF" sits above "INCOME PAYMENT": the pieces of each column are joined with a space.
+     */
+    public static function headersOf($rows, $headerRow, $from = null)
     {
+        $from = $from && $from <= $headerRow ? (int)$from : (int)$headerRow;
         $h = array();
-        if (isset($rows[$headerRow])) {
-            foreach ($rows[$headerRow] as $i => $cell) {
-                if (trim($cell['v']) !== '') {
-                    $h[$i] = trim($cell['v']);
+        for ($r = $from; $r <= $headerRow; $r++) {
+            if (!isset($rows[$r])) {
+                continue;
+            }
+            foreach ($rows[$r] as $i => $cell) {
+                $v = trim(preg_replace('/\s+/', ' ', (string)$cell['v']));
+                if ($v !== '') {
+                    $h[$i] = isset($h[$i]) ? $h[$i] . ' ' . $v : $v;
                 }
             }
         }
+        ksort($h);
         return $h;
+    }
+
+    // ------------------------------------------------------------------ printed report layouts (SAWT)
+    /** What a row of a printed report is: blank, marker ("(1)".."(8)" or a line of dashes), total, end, or data. */
+    public static function rowKind($cells)
+    {
+        $texts = array();
+        foreach ($cells as $c) {
+            $v = trim((string)$c['v']);
+            if ($v !== '') {
+                $texts[] = $v;
+            }
+        }
+        if (!$texts) {
+            return 'blank';
+        }
+        $marker = true;
+        foreach ($texts as $t) {
+            if (preg_match('/^(grand\s*total|sub\s*-?\s*total|totals?)\s*:?$/i', $t)) {
+                return 'total';
+            }
+            if (preg_match('/^\**\s*end\s+of\s+(the\s+)?report\b/i', $t)) {
+                return 'end';
+            }
+            if (!preg_match('/^\(\d{1,2}\)$/', $t) && !preg_match('/^[-=_*~.\s]+$/', $t)) {
+                $marker = false;
+            }
+        }
+        return $marker ? 'marker' : 'data';
+    }
+
+    private static function isTitleRow($cells)
+    {
+        $n = 0;
+        foreach ($cells as $c) {
+            if ($c['num'] && trim((string)$c['v']) !== '') {
+                return false;
+            }
+            if (trim((string)$c['v']) !== '') {
+                $n++;
+            }
+        }
+        return $n > 0 && self::rowKind($cells) === 'data';
+    }
+
+    /**
+     * Find the header in the first 60 rows: the row, or 2 to 4 stacked rows, whose titles match the most
+     * fields. Returns array(from, to) or null when nothing matches at least three fields.
+     */
+    public static function detectHeader($type, $rows)
+    {
+        $best = null;
+        $bestN = 2;
+        foreach ($rows as $r => $cells) {
+            if ($r > 60) {
+                break;
+            }
+            for ($depth = 1; $depth <= 4; $depth++) {
+                $to = $r + $depth - 1;
+                if (!isset($rows[$to]) || !self::isTitleRow($rows[$to])) {
+                    break;
+                }
+                list($map) = self::suggestMapping($type, self::headersOf($rows, $to, $r));
+                if (count($map) > $bestN) {
+                    $bestN = count($map);
+                    $best = array($r, $to);
+                }
+            }
+        }
+        return $best;
+    }
+
+    /** First row of a stacked header that ends on $headerRow: the title rows right above it with two or more cells. */
+    public static function headerStart($rows, $headerRow)
+    {
+        $from = (int)$headerRow;
+        for ($i = 1; $i <= 3; $i++) {
+            $r = $headerRow - $i;
+            if (!isset($rows[$r]) || !self::isTitleRow($rows[$r])) {
+                break;
+            }
+            $n = 0;
+            foreach ($rows[$r] as $c) {
+                if (trim((string)$c['v']) !== '') {
+                    $n++;
+                }
+            }
+            if ($n < 2) {
+                break;
+            }
+            $from = $r;
+        }
+        return $from;
+    }
+
+    /** YYYY-MM of the last "MONTH [day,] YEAR" in a title line, such as "FOR THE MONTH OF MARCH, 2025". */
+    public static function monthIn($s)
+    {
+        $months = array('JAN' => 1, 'FEB' => 2, 'MAR' => 3, 'APR' => 4, 'MAY' => 5, 'JUN' => 6, 'JUL' => 7, 'AUG' => 8, 'SEP' => 9, 'OCT' => 10, 'NOV' => 11, 'DEC' => 12);
+        if (preg_match_all('/\b(JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUNE?|JULY?|AUG(?:UST)?|SEPT?(?:EMBER)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?)\b\.?\s*(?:\d{1,2}\s*)?,?\s*((?:19|20)\d{2})\b/i', $s, $m, PREG_SET_ORDER)) {
+            $last = end($m);
+            return sprintf('%04d-%02d', $last[2], $months[strtoupper(substr($last[1], 0, 3))]);
+        }
+        if (preg_match('/\b(\d{1,2})\s*[\/-]\s*((?:19|20)\d{2})\b/', $s, $x) && (int)$x[1] >= 1 && (int)$x[1] <= 12) {
+            return sprintf('%04d-%02d', $x[2], $x[1]);
+        }
+        return null;
+    }
+
+    /**
+     * Title lines above the header of a printed report: BIR form, month, the payee's TIN (with branch)
+     * and name. Missing items are null.
+     */
+    public static function reportMeta($rows, $before)
+    {
+        $m = array('form' => null, 'month' => null, 'tin' => null, 'branch' => null, 'name' => null, 'lines' => array());
+        foreach ($rows as $rn => $cells) {
+            if ($rn >= $before) {
+                break;
+            }
+            $parts = array();
+            foreach ($cells as $c) {
+                if (trim((string)$c['v']) !== '') {
+                    $parts[] = trim(preg_replace('/\s+/', ' ', (string)$c['v']));
+                }
+            }
+            $line = implode(' ', $parts);
+            if ($line === '') {
+                continue;
+            }
+            if (count($m['lines']) < 8) {
+                $m['lines'][] = $line;
+            }
+            if (!$m['form'] && preg_match('/\bFORM\s*(?:NO\.?\s*)?(\d{4}[A-Z]{0,2})\b/i', $line, $x)) {
+                $m['form'] = strtoupper($x[1]);
+            }
+            if (!$m['tin'] && preg_match('/\bTIN\b\s*(?:NO\.?)?\s*:?\s*(\d[\d\- ]{7,19}\d)/i', $line, $x)) {
+                $t = Tin::parse(trim($x[1]));
+                if ($t['ok']) {
+                    $m['tin'] = $t['tin'];
+                    $m['branch'] = $t['branch'];
+                }
+            }
+            if (!$m['name'] && preg_match('/(?:PAYEE|TAXPAYER|REGISTERED)\s*\'?\s*S?\s+NAME\s*:\s*(.+)$/i', $line, $x)) {
+                $m['name'] = trim($x[1]);
+            }
+            if (!$m['month'] && preg_match('/\b(FOR\s+THE|MONTH|QUARTER|PERIOD|YEAR\s+ENDED)\b/i', $line)) {
+                $m['month'] = self::monthIn($line);
+            }
+        }
+        return $m;
+    }
+
+    /** Names compared loosely: case, punctuation and spacing ignored. */
+    public static function sameName($a, $b)
+    {
+        $n = function ($s) {
+            return preg_replace('/[^A-Z0-9]/', '', strtoupper((string)$s));
+        };
+        return $n($a) !== '' && $n($a) === $n($b);
+    }
+
+    /**
+     * Problems and notes of a SAWT's title lines against the active client. Returns array($problems, $notes,
+     * $branchId): a TIN of another taxpayer or an unknown branch code stops the import.
+     */
+    public static function reportCheck($meta, $client)
+    {
+        $problems = array();
+        $notes = array();
+        $branchId = null;
+        $clientName = Ctx::clientName($client);
+        if ($meta['tin'] && $meta['tin'] !== $client['tin']) {
+            $problems[] = 'This SAWT is for TIN ' . Tin::display($meta['tin'], $meta['branch']) . ($meta['name'] ? ' (' . $meta['name'] . ')' : '') . ', but the active client is '
+                . $clientName . ', TIN ' . Tin::display($client['tin']) . '. Switch to that client, or upload the SAWT of this one.';
+        }
+        if ($meta['tin'] && $meta['tin'] === $client['tin'] && $meta['branch'] !== null) {
+            $branchId = DB::val('SELECT id FROM branches WHERE client_id = ? AND branch_code = ?', array($client['id'], $meta['branch']));
+            if (!$branchId) {
+                $problems[] = 'The SAWT is for branch ' . $meta['branch'] . ', which ' . $clientName . ' does not have. Add the branch under the client, then map again.';
+            }
+        }
+        if ($meta['name'] && !self::sameName($meta['name'], $clientName) && !self::sameName($meta['name'], $client['trade_name'])) {
+            $notes[] = 'The payee\'s name in the file is ' . $meta['name'] . '; the client is registered as ' . $clientName . '. Check that this is the right SAWT.';
+        }
+        if (!$meta['tin']) {
+            $notes[] = 'The file has no "TIN :" line above the header, so it could not be matched to the client. Check that it belongs to ' . $clientName . '.';
+        }
+        return array($problems, $notes, $branchId ? (int)$branchId : null);
     }
 
     /** Suggest target->source mapping; returns array($mapping, $exactTemplate). */
@@ -263,14 +695,28 @@ class Imports
             'p_last_name' => array('SURNAME', 'LASTNAME'), 'income_amount' => array('INCOMEPAYMENT', 'AMOUNTOFINCOMEPAYMENT', 'TAXBASE', 'AMOUNT'),
             'tax_withheld' => array('TAXWITHHELD', 'AMOUNTOFTAXWITHHELD', 'EWT', 'WITHHOLDINGTAX', 'CWT'), 'atc_code' => array('ATC', 'ATCCODE'),
             'invoice_date' => array('DATE', 'INVOICEDATE', 'TRANSACTIONDATE'), 'payment_date' => array('DATE', 'PAYMENTDATE', 'DATEOFPAYMENT'),
-            'taxable_amount' => array('TAXABLESALES', 'TAXABLE', 'NETTAXABLE'), 'output_vat' => array('OUTPUTVAT', 'OUTPUTTAX', 'VAT'), 'input_vat' => array('INPUTVAT', 'INPUTTAX'));
+            'taxable_amount' => array('TAXABLESALES', 'TAXABLE', 'NETTAXABLE'), 'output_vat' => array('OUTPUTVAT', 'OUTPUTTAX', 'VAT'), 'input_vat' => array('INPUTVAT', 'INPUTTAX'),
+            'other_goods_amount' => array('GOODSOTHERTHANCAPITALGOODS', 'OTHERGOODS', 'GOODS'), 'p_branch' => array('SUPPLIERBRANCHCODE', 'VENDORBRANCH', 'BRANCHCODE'),
+            'taxable_net' => array('TAXABLENETOFVAT', 'TAXABLEPURCHASES'), 'total_purchases' => array('TOTALPURCHASES', 'TOTAL'), 'vat_rate' => array('VATRATE', 'RATE'));
+        $aliases['p_registered_name'][] = 'REGISTEREDNAME';
+        $aliases['p_address1'] = array('ADDRESS1', 'ADDRESS', 'SUBSTREETSTREETBARANGAY');
+        $aliases['p_address2'] = array('ADDRESS2', 'DISTRICTCITYZIPCODE', 'CITY');
+        $aliases['gross_taxable'] = array('GROSSTAXABLE', 'GROSSTAXABLESALES', 'GROSSSALES', 'VATINCLUSIVE');
+        if ($type['key'] === 'sales') {
+            $aliases['p_tin'][] = 'CUSTOMERSTIN';
+            $aliases['taxable_amount'] = array('TAXABLESALES', 'TAXABLE', 'NETTAXABLE', 'TAXABLESALESNETOFVAT');
+        }
+        $aliases['p_tin'][] = 'VENDORTIN';
+        $aliases['p_tin'][] = 'VENDORSTIN';
         foreach ($type['columns'] as $c) {
             $n = self::normHeader($c['title']);
-            if (isset($byNorm[$n])) {
+            if (isset($byNorm[$n]) && !in_array($byNorm[$n], $map, true)) {
                 $map[$c['key']] = $byNorm[$n];
                 continue;
             }
-            $exact = false;
+            if (empty($c['extra'])) {
+                $exact = false;
+            }
             if (isset($aliases[$c['key']])) {
                 foreach ($aliases[$c['key']] as $a) {
                     if (isset($byNorm[$a]) && !in_array($byNorm[$a], $map, true)) {
@@ -280,7 +726,7 @@ class Imports
                 }
             }
         }
-        return array($map, $exact && count($headers) === count($type['columns']));
+        return array($map, $exact && count($headers) === count(self::templateColumns($type)));
     }
 
     public static function mappingProblems($type, $map)
@@ -302,7 +748,8 @@ class Imports
             }
         }
         if (in_array($type['key'], array('sales', 'purchases', 'importations', 'withholding', 'withheld_on_us', 'counterparties'), true)) {
-            $hasName = isset($map['p_registered_name']) && $map['p_registered_name'] !== '' || isset($map['p_last_name']) && $map['p_last_name'] !== '';
+            $hasName = isset($map['p_registered_name']) && $map['p_registered_name'] !== '' || isset($map['p_last_name']) && $map['p_last_name'] !== ''
+                || isset($map['p_individual']) && $map['p_individual'] !== '';
             if (!$hasName) {
                 $p[] = 'Map a registered name or last name column so each row has a counterparty name.';
             }
@@ -317,15 +764,46 @@ class Imports
         $job = DB::row('SELECT * FROM import_jobs WHERE id = ?', array($jobId));
         $rows = self::readRows($job);
         $map = json_decode($job['mapping_json'], true);
+        $cols = array();
+        foreach (self::type($job['import_type'])['columns'] as $c) {
+            $cols[$c['key']] = $c;
+        }
         DB::q('DELETE FROM import_rows WHERE job_id = ?', array($jobId));
         $batch = array();
         $count = 0;
+        $totals = null;
         foreach ($rows as $rowNo => $cells) {
             if ($rowNo <= (int)$job['header_row']) {
                 continue;
             }
+            // Printed-report lines are not records: "(1)".."(8)", dashes, Grand Total, END OF REPORT.
+            $kind = self::rowKind($cells);
+            if ($kind === 'end') {
+                break;
+            }
+            if ($kind === 'blank' || $kind === 'marker') {
+                continue;
+            }
+            if ($kind === 'total') {
+                $grand = false;
+                foreach ($cells as $c) {
+                    if (preg_match('/grand/i', (string)$c['v'])) {
+                        $grand = true;
+                    }
+                }
+                if ($totals === null || $grand) {
+                    $totals = array('row' => $rowNo, 'values' => array());
+                    foreach ($map as $target => $src) {
+                        if ($src !== '' && $src !== null && isset($cols[$target]) && $cols[$target]['format'] === 'amount' && isset($cells[(int)$src]) && trim((string)$cells[(int)$src]['v']) !== '') {
+                            $totals['values'][$target] = self::excelNumber($cells[(int)$src]['v'], $cells[(int)$src]['num']);
+                        }
+                    }
+                }
+                continue;
+            }
             $raw = array();
             $numeric = array();
+            $formula = array();
             $empty = true;
             foreach ($map as $target => $src) {
                 if ($src === '' || $src === null) {
@@ -337,7 +815,14 @@ class Imports
                 if ($cell['num']) {
                     $numeric[] = $target;
                 }
-                if (trim((string)$v) !== '') {
+                if (!empty($cell['f'])) {
+                    $formula[] = $target;
+                }
+                // Formula columns, the VAT rate and zero amounts do not make a row: a template row
+                // with only formulas, 12 and zeros is still an empty row.
+                $c = isset($cols[$target]) ? $cols[$target] : array();
+                $blankish = trim((string)$v) === '' || (!empty($c['format']) && $c['format'] === 'amount' && is_numeric(trim((string)$v)) && (float)$v == 0.0);
+                if (!$blankish && empty($c['computed']) && empty($c['weak'])) {
                     $empty = false;
                 }
             }
@@ -345,6 +830,7 @@ class Imports
                 continue;
             }
             $raw['__numeric'] = $numeric;
+            $raw['__formula'] = $formula;
             $batch[] = array($jobId, $rowNo, json_encode($raw));
             $count++;
             if (count($batch) >= 400) {
@@ -355,8 +841,13 @@ class Imports
         if ($batch) {
             self::flushRaw($batch);
         }
+        $opts = json_decode((string)$job['options_json'], true) ?: array();
+        unset($opts['file_totals']);
+        if ($totals && $totals['values']) {
+            $opts['file_totals'] = $totals;
+        }
         DB::update('import_jobs', array('total_rows' => $count, 'processed_rows' => 0, 'valid_rows' => 0, 'error_rows' => 0, 'duplicate_rows' => 0,
-            'status' => 'mapped', 'updated_at' => now()), 'id = ?', array($jobId));
+            'options_json' => $opts ? json_encode($opts) : null, 'status' => 'mapped', 'updated_at' => now()), 'id = ?', array($jobId));
         return $count;
     }
 
@@ -386,6 +877,22 @@ class Imports
             $raw = json_decode($r['raw_json'], true);
             list($norm, $errors, $warnings, $hash) = self::normalizeRow($type, $raw, $job, $opts);
             $status = $errors ? 'error' : 'valid';
+            $repeatKey = !empty($type['module']) ? Records::module($type['module']) : array();
+            $repeatKey = isset($repeatKey['repeat_key']) ? $repeatKey['repeat_key'] : 'invoice_no';
+            if (!$errors && $hash && !empty($type['repeatable']) && empty($norm['record'][$repeatKey])) {
+                // Several identical lines (same party, month and amounts, no invoice or certificate number) are
+                // separate entries. Number them so the first keeps the plain hash and later ones get their own;
+                // importing the same file again still finds every one of them as a duplicate.
+                $base = $hash;
+                $n = 1;
+                while (DB::val('SELECT id FROM import_rows WHERE job_id = ? AND row_hash = ? AND row_no < ? LIMIT 1', array($jobId, $hash, $r['row_no']))) {
+                    $n++;
+                    $hash = sha1($base . '|' . $n);
+                }
+                if ($n > 1) {
+                    $warnings['repeat'] = 'Same ' . ($type['key'] === 'purchases' ? 'vendor' : 'payor') . ' and amounts as an earlier row; kept as entry ' . $n . ' of these.';
+                }
+            }
             if (!$errors && $hash) {
                 $inFile = DB::val('SELECT row_no FROM import_rows WHERE job_id = ? AND row_hash = ? AND id <> ? AND status IN (?, ?) LIMIT 1', array($jobId, $hash, $r['id'], 'valid', 'duplicate'));
                 if ($inFile) {
@@ -459,10 +966,195 @@ class Imports
         if ($p['entity_type'] === 'non_individual') {
             $p['last_name'] = $p['first_name'] = $p['middle_name'] = null;
         }
-        if (!$p['tin']) {
+        if (!$p['tin'] && !isset($errors['p_tin'])) {
             $warnings['p_tin'] = 'No TIN: the counterparty will be matched by name';
         }
         return $p;
+    }
+
+    /**
+     * Excel's view of a numeric cell: the value rounded to 15 significant digits, as Excel shows and
+     * computes it (so 2.6749999999999998 is 2.675). Text cells pass through unchanged.
+     */
+    public static function excelNumber($v, $isNumeric)
+    {
+        $s = trim((string)$v);
+        if (!$isNumeric || $s === '' || !is_numeric($s)) {
+            return $s;
+        }
+        $g = sprintf('%.15G', (float)$s);
+        if (stripos($g, 'E') !== false) {
+            $g = rtrim(rtrim(sprintf('%.12F', (float)$g), '0'), '.');
+        }
+        return $g;
+    }
+
+    /** ROUND(x, 2) the way Excel does it, on a 15-digit value, into centavos. */
+    private static function excelRound2($s)
+    {
+        $p = Money::parse($s);
+        return $p['ok'] ? $p['cents'] : null;
+    }
+
+    /**
+     * R_Purchases rules: the month comes from the upload (the sheet has no date), amounts are rounded the
+     * way Excel rounds them, and the three formula columns are checked against the inputs, never trusted.
+     */
+    private static function purchaseRow($raw, &$in, $opts, &$errors, &$warnings)
+    {
+        $num = isset($raw['__numeric']) ? $raw['__numeric'] : array();
+        $fx = isset($raw['__formula']) ? $raw['__formula'] : array();
+        $parts = array('exempt_amount', 'zero_rated_amount', 'services_amount', 'capital_goods_amount', 'other_goods_amount');
+        $exact = array();
+        foreach ($parts as $k) {
+            $v = isset($raw[$k]) ? self::excelNumber($raw[$k], in_array($k, $num, true)) : '';
+            $in[$k] = $v;
+            $exact[$k] = $v === '' ? 0.0 : (is_numeric(str_replace(',', '', $v)) ? (float)str_replace(',', '', $v) : 0.0);
+        }
+        if (isset($raw['vat_rate'])) {
+            $in['vat_rate'] = self::excelNumber($raw['vat_rate'], in_array('vat_rate', $num, true));
+        }
+        // The month: an invoice date column when the file has one, otherwise the month chosen at upload.
+        if (empty($raw['invoice_date']) && !empty($opts['period_month'])) {
+            $in['period_month'] = $opts['period_month'];
+        }
+        // Excel: taxableNetofVat = ROUND(SUM(J:L),2), totalPurchases = ROUND(SUM(H:L),2) on unrounded cells.
+        $taxable = self::excelRound2(self::excelNumber($exact['services_amount'] + $exact['capital_goods_amount'] + $exact['other_goods_amount'], true));
+        $total = self::excelRound2(self::excelNumber($exact['exempt_amount'] + $exact['zero_rated_amount'] + $exact['services_amount'] + $exact['capital_goods_amount'] + $exact['other_goods_amount'], true));
+        // Store centavos that reproduce the sheet's own rounded totals: when rounding each amount on its
+        // own drifts from ROUND(SUM()) by a centavo, move that centavo to the amount nearest the boundary.
+        if ($taxable !== null && $total !== null) {
+            $moved = self::allocateRounding($in, $exact, array('services_amount', 'capital_goods_amount', 'other_goods_amount'), $taxable);
+            $moved += self::allocateRounding($in, $exact, array('exempt_amount', 'zero_rated_amount'), $total - $taxable);
+            if ($moved) {
+                $warnings['taxable_net'] = 'Amounts with more than two decimals were rounded so they add up to the sheet\'s taxableNetofVat ' . Money::fmt($taxable) . ' and totalPurchases ' . Money::fmt($total) . '.';
+            }
+        }
+        foreach (array('taxable_net' => array($taxable, 'taxableNetofVat', 'services + capitalGoods + otherThancapitalGoods'),
+                     'total_purchases' => array($total, 'totalPurchases', 'exempt + zeroRated + services + capitalGoods + otherThancapitalGoods')) as $k => $c) {
+            if (!isset($raw[$k]) || trim((string)$raw[$k]) === '') {
+                continue;
+            }
+            $given = self::excelRound2(self::excelNumber($raw[$k], in_array($k, $num, true)));
+            if ($given === null) {
+                $errors[$k] = $c[1] . ' is not a number';
+            } elseif ($given !== $c[0]) {
+                $errors[$k] = $c[1] . ' is ' . Money::fmt($given) . ' but ' . $c[2] . ' is ' . Money::fmt($c[0]) . '. Fix the row so they agree.';
+            }
+        }
+        // inputVat: a formula is recomputed from the rate; a typed amount is kept and checked against it.
+        $rateBlank = !isset($in['vat_rate']) || trim((string)$in['vat_rate']) === '';
+        if ($rateBlank && isset($raw['input_vat']) && trim((string)$raw['input_vat']) !== '' && in_array('input_vat', $fx, true) && $taxable) {
+            $errors['vat_rate'] = 'vatRate is blank, so the sheet computed inputVat as ' . Money::fmt((int)self::excelRound2(self::excelNumber($raw['input_vat'], true))) . '. Enter 12, or 0 for purchases without VAT.';
+            $in['input_vat'] = '';
+            return;
+        }
+        $rateUnits = Money::rateUnits(isset($in['vat_rate']) && trim((string)$in['vat_rate']) !== '' ? $in['vat_rate'] : '12');
+        if ($rateUnits !== null && $taxable !== null) {
+            $vat = Money::applyRate($taxable, $rateUnits);
+            $hasVat = isset($raw['input_vat']) && trim((string)$raw['input_vat']) !== '';
+            if (!$hasVat || in_array('input_vat', $fx, true)) {
+                if ($hasVat) {
+                    $cached = self::excelRound2(self::excelNumber($raw['input_vat'], in_array('input_vat', $num, true)));
+                    if ($cached !== null && $cached !== $vat) {
+                        $errors['input_vat'] = 'inputVat in the file is ' . Money::fmt($cached) . ' but taxableNetofVat x vatRate / 100 is ' . Money::fmt($vat) . '.';
+                    }
+                }
+                $in['input_vat'] = Money::toPlain($vat);
+            } else {
+                $in['input_vat'] = self::excelNumber($raw['input_vat'], in_array('input_vat', $num, true));
+            }
+        }
+    }
+
+    /**
+     * Round $keys to centavos so they add up to $target, moving the leftover centavos to the amounts whose
+     * rounding was closest to the half (largest remainder). Returns how many centavos moved.
+     */
+    private static function allocateRounding(&$in, $exact, $keys, $target)
+    {
+        $cents = array();
+        $sum = 0;
+        foreach ($keys as $k) {
+            $cents[$k] = (int)self::excelRound2($in[$k] === '' ? '0' : $in[$k]);
+            $sum += $cents[$k];
+        }
+        $diff = $target - $sum;
+        if ($diff === 0 || abs($diff) > count($keys)) {
+            return 0;
+        }
+        // Order by how far each rounded amount is from its exact value, in the direction we need to move.
+        $order = $keys;
+        usort($order, function ($a, $b) use ($exact, $cents, $diff) {
+            $da = ($exact[$a] * 100 - $cents[$a]) * ($diff > 0 ? 1 : -1);
+            $db = ($exact[$b] * 100 - $cents[$b]) * ($diff > 0 ? 1 : -1);
+            return $da < $db ? 1 : ($da > $db ? -1 : 0);
+        });
+        $step = $diff > 0 ? 1 : -1;
+        for ($i = 0; $i < abs($diff); $i++) {
+            $k = $order[$i];
+            $cents[$k] += $step;
+            $in[$k] = Money::toPlain($cents[$k]);
+        }
+        return abs($diff);
+    }
+
+    /**
+     * SAWT payor columns: CORPORATION (Registered Name) for a non-individual, or INDIVIDUAL written as
+     * "LAST NAME, FIRST NAME, MIDDLE NAME". Report padding (cells of spaces) is blank.
+     */
+    private static function sawtParty(&$raw, &$errors, &$warnings)
+    {
+        foreach (array('p_registered_name', 'p_individual', 'p_last_name', 'p_first_name', 'p_middle_name') as $k) {
+            if (isset($raw[$k])) {
+                $raw[$k] = trim(preg_replace('/\s+/', ' ', (string)$raw[$k]));
+            }
+        }
+        $ind = isset($raw['p_individual']) ? $raw['p_individual'] : '';
+        if ($ind === '') {
+            return;
+        }
+        if (!empty($raw['p_registered_name'])) {
+            $warnings['p_individual'] = 'Both CORPORATION and INDIVIDUAL are filled; the line is kept under the corporation, ' . $raw['p_registered_name'] . '.';
+            return;
+        }
+        if (!empty($raw['p_last_name'])) {
+            return;
+        }
+        $parts = array_map('trim', explode(',', $ind));
+        if (count($parts) < 2 || $parts[0] === '' || $parts[1] === '') {
+            $errors['p_individual'] = 'Write the individual payor as LAST NAME, FIRST NAME, MIDDLE NAME (found "' . $ind . '")';
+            return;
+        }
+        $raw['p_last_name'] = $parts[0];
+        $raw['p_first_name'] = $parts[1];
+        $raw['p_middle_name'] = isset($parts[2]) ? implode(' ', array_slice($parts, 2)) : '';
+    }
+
+    /**
+     * SAWT amounts: the income payment and tax withheld are taken as the payor certified them (rounded to
+     * centavos the way Excel shows them); the rate is in percent. The month comes from the title line
+     * "FOR THE MONTH OF ..." or the month chosen at upload, unless a date column is mapped.
+     */
+    private static function sawtRow($raw, &$in, $opts, &$errors, &$warnings)
+    {
+        $num = isset($raw['__numeric']) ? $raw['__numeric'] : array();
+        foreach (array('income_amount', 'tax_rate', 'tax_withheld') as $k) {
+            if (isset($raw[$k])) {
+                $in[$k] = self::excelNumber($raw[$k], in_array($k, $num, true));
+            }
+        }
+        if (isset($raw['nature_of_payment'])) {
+            $in['nature_of_payment'] = trim(preg_replace('/\s+/', ' ', (string)$raw['nature_of_payment']));
+        }
+        if (isset($raw['atc_code'])) {
+            $in['atc_code'] = strtoupper(preg_replace('/\s+/', '', (string)$raw['atc_code']));
+        }
+        if (empty($raw['payment_date']) && !empty($opts['period_month'])) {
+            $in['period_month'] = $opts['period_month'];
+        }
+        // The SEQ NO column is the report's line number; it is not stored.
+        unset($in['seq_no'], $in['p_individual']);
     }
 
     public static function normalizeRow($type, $raw, $job, $opts)
@@ -528,14 +1220,46 @@ class Imports
             return array(array('employee' => $emp, 'record' => $d), $errors, $warnings, $hash);
         }
         $mod = Records::module($type['module']);
+        if ($type['key'] === 'withheld_on_us') {
+            self::sawtParty($raw, $errors, $warnings);
+        }
         $p = self::partyFrom($raw, $errors, $warnings);
         $in = $raw;
         $in['branch_id'] = $branchId;
+        if ($type['key'] === 'purchases') {
+            self::purchaseRow($raw, $in, $opts, $errors, $warnings);
+        }
+        if ($type['key'] === 'withheld_on_us') {
+            self::sawtRow($raw, $in, $opts, $errors, $warnings);
+        }
+        if ($type['key'] === 'sales') {
+            // Amounts as Excel shows them (15 significant digits); GROSS TAXABLE is checked and split by the sales rules.
+            $num = isset($raw['__numeric']) ? $raw['__numeric'] : array();
+            foreach (array('gross_taxable', 'exempt_amount', 'zero_rated_amount', 'taxable_amount', 'vat_rate', 'output_vat') as $k) {
+                if (isset($raw[$k])) {
+                    $in[$k] = self::excelNumber($raw[$k], in_array($k, $num, true));
+                }
+            }
+        }
         if ($type['key'] === 'withholding') {
             $in['tax_kind'] = isset($raw['tax_kind']) && trim($raw['tax_kind']) !== '' ? strtoupper(trim($raw['tax_kind'])) : 'EWT';
             $in['schedule_tag'] = isset($raw['schedule_tag']) && trim($raw['schedule_tag']) !== '' ? strtoupper(trim($raw['schedule_tag'])) : 'A';
         }
         list($d, $e2, $w2) = Records::validate($mod, $in, $clientId, array('skip_party' => true, 'skip_scope' => true, 'date_format' => $dateFmt, 'party_entity_type' => $p['entity_type']));
+        if ($type['key'] === 'withheld_on_us' && isset($e2['period_month']) && empty($in['period_month']) && empty($raw['payment_date'])) {
+            $e2['period_month'] = 'Choose the month for this import: the file has no "FOR THE MONTH OF" line and no date column';
+        }
+        if ($type['key'] === 'purchases') {
+            if (isset($e2['period_month']) && empty($in['period_month']) && empty($raw['invoice_date'])) {
+                $e2['period_month'] = 'Choose the purchase month for this import: the sheet has no date column';
+            }
+            // Amounts net of VAT carry long decimals in this sheet; its own formulas round them, and so do we.
+            foreach (array('exempt_amount', 'zero_rated_amount', 'services_amount', 'capital_goods_amount', 'other_goods_amount') as $k) {
+                if (isset($w2[$k]) && strpos($w2[$k], 'more than 2 decimals') !== false) {
+                    unset($w2[$k]);
+                }
+            }
+        }
         $errors = array_merge($errors, $e2);
         $warnings = array_merge($warnings, $w2);
         if (!empty($d['period_month']) && Records::lockedPeriod($clientId, $d['period_month'], $mod['lock_scope'])) {
@@ -609,6 +1333,7 @@ class Imports
                     $cpId = Records::resolveCounterparty($clientId, $norm['party'], $type['role'], 'import', $job['id']);
                     $rec = $norm['record'];
                     $rec['counterparty_id'] = $cpId;
+                    $rec['row_hash'] = $r['row_hash'];
                     $id = Records::save($mod, $rec, null, null, 'import', $job['id']);
                 }
                 DB::update('import_rows', array('status' => 'committed', 'target_id' => $id), 'id = ?', array($r['id']));

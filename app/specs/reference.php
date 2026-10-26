@@ -136,6 +136,7 @@ function gsb_reference()
     );
 
     $config = array(
+        'schema_version' => '4',
         'registration_open' => '1',
         'enforce_mfa_privileged' => '0',
         'mail_mode' => 'outbox',

@@ -37,6 +37,10 @@ Every DAT is written by one serializer from a versioned layout registry, whether
 5. Open `http://localhost/gsmart-bir/check.php` on the server. Fix anything marked Missing (on XAMPP, enable `extension=zip` in `php.ini` if needed and restart Apache).
 6. Open `http://localhost/gsmart-bir/` and sign in. Delete `check.php` when everything works.
 
+### Updating an existing installation
+
+Copy the new files over the old ones (keep your `config.php` and storage folder). The database is brought up to date by itself the first time a page is opened: sales gain the VAT rate of the VAT sales workbook, purchases gain the R_Purchases columns, and taxes withheld on us gain the SAWT layout (the payment date becomes optional). If your MySQL user may not run `ALTER TABLE`, run the files in `database/migrations/` in name order in phpMyAdmin instead; `check.php` says when one is still needed. Nothing has to be deleted.
+
 From the command line you can install instead of importing SQL:
 
 ```
@@ -66,8 +70,8 @@ What the demo contains (all names and TINs invented, except the public validator
 
 | Client | What is in it |
 |---|---|
-| Kalamansi Trading Corp, 111-222-333 (Cebu, two branches, top withholding agent) | Sales, purchases and withholding for January to September 2026, one importation, 8 employees with TY2025 compensation, QAP files for each month, SLS/SLP/SLI files, a 1604-C, 2307 and 2316 certificates, a corrected sale with its revision, a voided duplicate purchase, and January to March locked by the reviewer |
-| Banwa Agri-Ventures Inc, 333-444-555 (Iloilo and Bacolod) | January to June sales loaded through a committed Excel import with a saved column mapping, July to September encoded directly, purchases and withholding all year, QAP and SLS/SLP files, 2307s |
+| Kalamansi Trading Corp, 111-222-333 (Cebu, two branches, top withholding agent) | Sales, purchases and withholding for January to September 2026, October purchases imported from an R_Purchases workbook, September taxes withheld by customers imported from a SAWT printout (with its 1702Q SAWT for Q3), one importation, 8 employees with TY2025 compensation, QAP files for each month, SLS/SLP/SLI files, a 1604-C, 2307 and 2316 certificates, a corrected sale with its revision, a voided duplicate purchase, and January to March locked by the reviewer |
+| Banwa Agri-Ventures Inc, 333-444-555 (Iloilo and Bacolod) | January to June sales loaded through a committed Excel import in the VAT sales format (gross taxable amounts) with a saved column mapping, July to September encoded directly, purchases and withholding all year, QAP and SLS/SLP files, 2307s |
 | Juan Dela Cruz, 222-333-444 | Taxes withheld by his clients and a SAWT |
 | Tala Bakeshop (Clarissa Mendoza), 444-555-666 | Non-VAT; taxes withheld by three customers and SAWT files for Q1 to Q3 |
 | Validator Sample Employer, 684-785-510 | The public 1604-C sample from the test fixtures. Its file reproduces the validator-passed bytes, the genuine validator report is recorded and accepted, and approval of the file and of the 1604-C layout wait in the approvals queue for reviewer@demo.local |
@@ -138,5 +142,3 @@ The built-in User's Manual (Overview, User's Manual, or your name menu) has nine
 - SRS submission may no longer be required; confirm before relying on it.
 - The system does not submit anything to BIR. Validation and submission happen in BIR's own tools.
 - Outgoing mail (verification, password reset, approval notices) is kept in an outbox on the System page. Switch the mail mode there to send through PHP `mail()` once the server has a mail transport.
-#   b i r  
- 

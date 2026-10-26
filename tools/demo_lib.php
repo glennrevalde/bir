@@ -411,7 +411,8 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
             $vals = array('p_tin' => substr($by[0], 0, 3) . '-' . substr($by[0], 3, 3) . '-' . substr($by[0], 6), 'p_branch' => '0000', 'p_registered_name' => $by[1],
                 'p_address2' => $by[2], 'client_branch' => $i === 1 ? '0001' : '0000', 'invoice_no' => sprintf('BSI-%02d%03d', $m, 101 + $i),
                 'invoice_date' => sprintf('%02d/%02d/2026', $m, mt_rand(3, 26)), 'exempt_amount' => '0.00', 'zero_rated_amount' => '0.00',
-                'taxable_amount' => Money::toPlain($net), 'output_vat' => Money::toPlain(Money::applyRate($net, 120000)), 'description' => 'Rice and vegetables');
+                // The VAT sales workbook layout: the gross with VAT, the rate, and the net and VAT left for the system to work out.
+                'gross_taxable' => Money::toPlain($net + Money::applyRate($net, 120000)), 'vat_rate' => '12', 'description' => 'Rice and vegetables');
             $r = array();
             foreach ($type['columns'] as $col) {
                 $r[] = isset($vals[$col['key']]) ? $vals[$col['key']] : '';
@@ -419,17 +420,17 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
             $xrows[] = $r;
         }
     }
-    $xlsx = XlsxWriter::build(array(array('name' => 'Data', 'columns' => $type['columns'], 'rows' => $xrows, 'freeze' => true)));
+    $xlsx = XlsxWriter::build(array(array('name' => 'Sheet1', 'columns' => $type['columns'], 'rows' => $xrows)));
     $rel = 'uploads/demo/banwa-sales-jan-jun-2026.xlsx';
     if (!is_dir(dirname(storage_path($rel)))) {
         mkdir(dirname(storage_path($rel)), 0775, true);
     }
     file_put_contents(storage_path($rel), $xlsx);
     $job = DB::insert('import_jobs', array('organization_id' => $orgId, 'client_id' => $c3, 'branch_id' => $b3, 'import_type' => 'sales', 'original_filename' => 'Banwa sales Jan-Jun 2026.xlsx',
-        'stored_path' => $rel, 'file_sha256' => hash('sha256', $xlsx), 'sheet_name' => 'Data', 'header_row' => 1, 'status' => 'uploaded', 'created_by' => $users['encoder'], 'created_at' => now()));
+        'stored_path' => $rel, 'file_sha256' => hash('sha256', $xlsx), 'sheet_name' => 'Sheet1', 'header_row' => 1, 'status' => 'uploaded', 'created_by' => $users['encoder'], 'created_at' => now()));
     $jobRow = DB::row('SELECT * FROM import_jobs WHERE id = ?', array($job));
     list($map) = Imports::suggestMapping($type, Imports::headersOf(Imports::readRows($jobRow), 1));
-    DB::update('import_jobs', array('mapping_json' => json_encode($map), 'options_json' => json_encode(array('date_format' => 'mdy')), 'template_version' => Imports::TEMPLATE_VERSION), 'id = ?', array($job));
+    DB::update('import_jobs', array('mapping_json' => json_encode($map), 'options_json' => json_encode(array('date_format' => 'mdy')), 'template_version' => '2.0'), 'id = ?', array($job));
     DB::insert('column_mappings', array('organization_id' => $orgId, 'import_type' => 'sales', 'name' => 'Banwa sales ledger export', 'mapping_json' => json_encode($map),
         'created_by' => $users['encoder'], 'created_at' => now()));
     gsb_demo_login($users['encoder'], $orgId, $c3);
@@ -439,6 +440,77 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
     } while (!$st['done']);
     gsb_demo_login($users['preparer'], $orgId, $c3);
     Imports::commit($job, 'all');
+    // ------------------------------------------------------------------ Kalamansi: October purchases from an R_Purchases workbook
+    gsb_demo_login($users['encoder'], $orgId, $c1);
+    $ptype = Imports::type('purchases');
+    $pcols = Imports::templateColumns($ptype);
+    $prow = function ($tin, $company, $last, $first, $middle, $a1, $a2, $ex, $zr, $sv, $cg, $og) {
+        return array($tin, $company, $last, $first, $middle, $a1, $a2, $ex, $zr, $sv, $cg, $og, '', 12, '', '');
+    };
+    $plines = array(
+        $prow('000488793', 'PLDT, INC.', '', '', '', '', '', 0, 0, 0, 0, 1695.54),
+        $prow('300100201', 'SUGBO HARDWARE SUPPLY CORP', '', '', '', '101 N. BACALSO AVE', 'CEBU CITY', 0, 0, 0, 0, 18750.00),
+        $prow('300100203', 'ISLA LOGISTICS CORPORATION', '', '', '', 'PIER 3 RECLAMATION AREA', 'CEBU CITY', 0, 0, 23214.2857142857, 0, 0),
+        $prow('310500600', 'CEBU OFFICE DEPOT INC', '', '', '', '22 JUAN LUNA AVE', 'CEBU CITY', 0, 0, 0, 48000.00, 0),
+        $prow('310500601', '', 'ABELLANA', 'MARICEL', 'TAN', '7 SANCIANGKO ST', 'CEBU CITY', 3500.00, 0, 0, 0, 0),
+    );
+    foreach (array(421.875, 37.5, 34.375, 29.4642857142857, 29.4642857142857, 26.3392857142857, 20.7589285714286, 20.7589285714286) as $amt) {
+        $plines[] = $prow('008381043', 'THREESIXTY PHARMACY - NORTHROAD BRANCH', '', '', '', '', '', 0, 0, 0, 0, $amt);
+    }
+    $pxlsx = XlsxWriter::build(array(array('name' => 'R_Purchases', 'columns' => $pcols, 'rows' => $plines, 'header' => 'bold')));
+    $prel = 'uploads/demo/kalamansi-r-purchases-oct-2026.xlsx';
+    file_put_contents(storage_path($prel), $pxlsx);
+    $pjob = DB::insert('import_jobs', array('organization_id' => $orgId, 'client_id' => $c1, 'branch_id' => $b0, 'import_type' => 'purchases', 'original_filename' => 'SAMPLE_Purchases October 2026.xlsx',
+        'stored_path' => $prel, 'file_sha256' => hash('sha256', $pxlsx), 'sheet_name' => 'R_Purchases', 'header_row' => 1, 'status' => 'uploaded',
+        'options_json' => json_encode(array('period_month' => '2026-10')), 'created_by' => $users['encoder'], 'created_at' => now()));
+    $pjr = DB::row('SELECT * FROM import_jobs WHERE id = ?', array($pjob));
+    list($pmap) = Imports::suggestMapping($ptype, Imports::headersOf(Imports::readRows($pjr), 1));
+    DB::update('import_jobs', array('mapping_json' => json_encode($pmap), 'options_json' => json_encode(array('date_format' => 'auto', 'period_month' => '2026-10'))), 'id = ?', array($pjob));
+    Imports::prepare($pjob);
+    do {
+        $st = Imports::stageChunk($pjob, 200);
+    } while (!$st['done']);
+    gsb_demo_login($users['preparer'], $orgId, $c1);
+    Imports::commit($pjob, 'all');
+    // ------------------------------------------------------------------ Kalamansi: September creditable taxes withheld by customers, from a SAWT printout
+    gsb_demo_login($users['encoder'], $orgId, $c1);
+    $stype = Imports::type('withheld_on_us');
+    $sawtLines = array();
+    foreach (array(
+                 array('400-200-101-0000', 'MINDANAO RETAIL HOLDINGS INC', '', 'WC158', 186450.00, 1),
+                 array('400-200-102-0000', 'CEBU GRAND HOTELS CORPORATION', '', 'WC160', 92317.86, 2),
+                 array('400-200-103-0000', 'VISAYAS POWER DISTRIBUTION CORP', '', 'WC120', 254000.00, 2),
+                 array('400-200-104-0000', '', 'VILLANUEVA, ROSARIO, LIM', 'WC158', 15600.00, 1),
+                 array('400-200-105-0000', 'BOHOL COASTAL RESORTS INC', '', 'WC160', 41075.25, 2),
+             ) as $l) {
+        $tc = Records::taxCode($l[3], 'EWT', '2026-09-30');
+        $sawtLines[] = array('tin' => $l[0], 'company' => $l[1], 'individual' => $l[2], 'atc' => $l[3], 'nature' => $tc['description'], 'income' => $l[4], 'rate' => $l[5],
+            'tax' => Money::toPlain(Money::applyRate((int)round($l[4] * 100), $l[5] * 10000)));
+    }
+    $sxlsx = Imports::sawtWorkbook(DB::row('SELECT * FROM client_entities WHERE id = ?', array($c1)), '1702Q', '2026-09', $sawtLines, false);
+    $srel = 'uploads/demo/kalamansi-sawt-sep-2026.xlsx';
+    file_put_contents(storage_path($srel), $sxlsx);
+    $sjob = DB::insert('import_jobs', array('organization_id' => $orgId, 'client_id' => $c1, 'branch_id' => $b0, 'import_type' => 'withheld_on_us', 'original_filename' => 'SAWT 1702Q September 2026.xlsx',
+        'stored_path' => $srel, 'file_sha256' => hash('sha256', $sxlsx), 'sheet_name' => 'Sheet1', 'header_row' => 1, 'status' => 'uploaded', 'created_by' => $users['encoder'], 'created_at' => now()));
+    $sjr = DB::row('SELECT * FROM import_jobs WHERE id = ?', array($sjob));
+    $srows = Imports::readRows($sjr, 80);
+    list($sfrom, $sto) = Imports::detectHeader($stype, $srows);
+    $smeta = Imports::reportMeta($srows, $sfrom);
+    list($smap) = Imports::suggestMapping($stype, Imports::headersOf($srows, $sto, $sfrom));
+    DB::update('import_jobs', array('header_row' => $sto, 'mapping_json' => json_encode($smap), 'options_json' => json_encode(array('date_format' => 'auto', 'header_from' => $sfrom,
+        'period_month' => $smeta['month'], 'report' => array('form' => $smeta['form'], 'month' => $smeta['month'], 'tin' => $smeta['tin'], 'branch' => $smeta['branch'], 'name' => $smeta['name'])))), 'id = ?', array($sjob));
+    Imports::prepare($sjob);
+    do {
+        $st = Imports::stageChunk($sjob, 200);
+    } while (!$st['done']);
+    if ($st['valid'] !== count($sawtLines)) {
+        throw new RuntimeException('Demo SAWT import staged ' . $st['valid'] . ' of ' . count($sawtLines) . ' lines.');
+    }
+    gsb_demo_login($users['preparer'], $orgId, $c1);
+    Imports::commit($sjob, 'all');
+    gsb_demo_gen('SAWT', 'S1', $b0, 2026, 3, '1702Q');
+    gsb_demo_login($users['preparer'], $orgId, $c3);
+
     // July to September sales encoded directly; purchases and withholding all year
     for ($m = 1; $m <= 9; $m++) {
         $ym = sprintf('2026-%02d', $m);

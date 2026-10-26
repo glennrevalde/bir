@@ -4,6 +4,7 @@
  * Every page is app/pages/<name>.php, reached as index.php?p=<name>.
  */
 require __DIR__ . '/app/bootstrap.php';
+Migrations::run();
 
 $page = isset($_GET['p']) ? preg_replace('/[^a-z0-9_]/', '', strtolower($_GET['p'])) : 'dashboard';
 if ($page === '') {

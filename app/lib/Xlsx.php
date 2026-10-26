@@ -204,7 +204,7 @@ class XlsxReader
                 if (preg_match('/<(?:\w+:)?v>(.*?)<\/(?:\w+:)?v>/s', $node, $m)) {
                     $v = html_entity_decode($m[1], ENT_QUOTES | ENT_XML1, 'UTF-8');
                 }
-                $cell = array('v' => '', 'num' => false, 'date' => null);
+                $cell = array('v' => '', 'num' => false, 'date' => null, 'f' => (bool)preg_match('/<(?:\w+:)?f[\s>\/]/', $node));
                 if ($type === 's') {
                     $cell['v'] = isset($this->shared[(int)$v]) ? $this->shared[(int)$v] : '';
                 } elseif ($type === 'inlineStr') {
@@ -273,7 +273,8 @@ class XlsxWriter
         $zip->addFromString('docProps/core.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
             . '<dc:title>' . self::x($title) . '</dc:title><dc:creator>G-SMaRT BIR Integration System</dc:creator>'
             . '<dcterms:created xsi:type="dcterms:W3CDTF">' . gmdate('Y-m-d\TH:i:s\Z') . '</dcterms:created></cp:coreProperties>');
-        $zip->addFromString('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' . $wbSheets . '</sheets></workbook>');
+        // Formulas are written without cached results; ask Excel to calculate them when the file opens.
+        $zip->addFromString('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' . $wbSheets . '</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>');
         $zip->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' . $wbRels . '</Relationships>');
         $zip->addFromString('xl/styles.xml', self::styles());
         $zip->close();
@@ -300,21 +301,29 @@ class XlsxWriter
         return $s;
     }
 
-    /* style ids: 0 default, 1 header (bold, fill, locked), 2 text unlocked, 3 amount unlocked, 4 general unlocked, 5 note (italic) */
+    /* style ids: 0 default, 1 header (bold, fill, locked), 2 text unlocked, 3 amount unlocked, 4 general unlocked, 5 note (italic),
+       6 plain bold header, 7 amount "0.00", 8 amount "0.00_);[Red]\(0.00\)" (negatives red in brackets),
+       9 amount "###,###,###,##0.00" (the SAWT report format), 10 the same in bold */
     private static function styles()
     {
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            . '<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><i/><sz val="10"/><color rgb="FF555555"/><name val="Calibri"/></font></fonts>'
+            . '<numFmts count="2"><numFmt numFmtId="164" formatCode="' . self::x('0.00_);[Red]\(0.00\)') . '"/><numFmt numFmtId="165" formatCode="' . self::x('###,###,###,##0.00') . '"/></numFmts>'
+            . '<fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><i/><sz val="10"/><color rgb="FF555555"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
             . '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF2F3478"/><bgColor indexed="64"/></patternFill></fill></fills>'
             . '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
             . '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-            . '<cellXfs count="6">'
+            . '<cellXfs count="11">'
             . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
             . '<xf numFmtId="49" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyNumberFormat="1"><protection locked="1"/></xf>'
             . '<xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyProtection="1"><protection locked="0"/></xf>'
             . '<xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyProtection="1"><protection locked="0"/></xf>'
             . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyProtection="1"><protection locked="0"/></xf>'
             . '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"><alignment wrapText="1" vertical="top"/></xf>'
+            . '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+            . '<xf numFmtId="2" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyProtection="1"><protection locked="0"/></xf>'
+            . '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyProtection="1"><protection locked="0"/></xf>'
+            . '<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyProtection="1"><protection locked="0"/></xf>'
+            . '<xf numFmtId="165" fontId="3" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>'
             . '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
     }
 
@@ -326,30 +335,59 @@ class XlsxWriter
         foreach ($cols as $i => $c) {
             $fmt = isset($c['format']) ? $c['format'] : 'general';
             $style = $fmt === 'text' ? 2 : ($fmt === 'amount' ? 3 : ($fmt === 'note' ? 5 : 4));
+            if (isset($c['xlsx_format'])) {
+                $style = $c['xlsx_format'] === 'red_negative' ? 8 : ($c['xlsx_format'] === 'sawt' ? 9 : 7);
+            }
             $styleFor[$i] = $style;
             $w = isset($c['width']) ? $c['width'] : 16;
             $n = $i + 1;
             $colsXml .= '<col min="' . $n . '" max="' . $n . '" width="' . $w . '" style="' . $style . '" customWidth="1"/>';
         }
+        if (isset($s['cells'])) {
+            // A free layout (a printed report such as the SAWT): rows of cells by row number and column index.
+            return self::layoutXml($s, $colsXml);
+        }
         $rowsXml = '';
         $r = 1;
         $hasHeader = !empty($cols) && empty($s['no_header']);
         if ($hasHeader) {
+            $hs = isset($s['header']) && $s['header'] === 'bold' ? 6 : 1;
             $rowsXml .= '<row r="1">';
             foreach ($cols as $i => $c) {
-                $rowsXml .= '<c r="' . self::colLetter($i) . '1" t="inlineStr" s="1"><is><t>' . self::x($c['title']) . '</t></is></c>';
+                $rowsXml .= '<c r="' . self::colLetter($i) . '1" t="inlineStr" s="' . $hs . '"><is><t>' . self::x($c['title']) . '</t></is></c>';
             }
             $rowsXml .= '</row>';
             $r = 2;
         }
-        foreach ((isset($s['rows']) ? $s['rows'] : array()) as $row) {
+        $dataRows = isset($s['rows']) ? array_values($s['rows']) : array();
+        $formulaRows = isset($s['formula_rows']) ? (int)$s['formula_rows'] : 0;
+        $hasFormulas = false;
+        foreach ($cols as $c) {
+            if (!empty($c['formula'])) {
+                $hasFormulas = true;
+            }
+        }
+        $last = count($dataRows) + ($hasFormulas ? max(0, $formulaRows - count($dataRows)) : 0);
+        for ($ri = 0; $ri < $last; $ri++) {
+            $row = isset($dataRows[$ri]) ? array_values($dataRows[$ri]) : array();
+            $isBlankRow = !isset($dataRows[$ri]);
             $rowsXml .= '<row r="' . $r . '">';
-            foreach (array_values($row) as $i => $v) {
+            $width = max(count($cols), count($row));
+            for ($i = 0; $i < $width; $i++) {
+                $c = isset($cols[$i]) ? $cols[$i] : array();
+                $ref = self::colLetter($i) . $r;
+                $st = isset($styleFor[$i]) ? $styleFor[$i] : 0;
+                if (!empty($c['formula']) && $hasFormulas) {
+                    $rowsXml .= '<c r="' . $ref . '" s="' . $st . '"><f>' . self::x(str_replace('{r}', (string)$r, $c['formula'])) . '</f></c>';
+                    continue;
+                }
+                $v = isset($row[$i]) ? $row[$i] : null;
+                if ($isBlankRow && isset($c['key']) && isset($s['defaults'][$c['key']])) {
+                    $v = $s['defaults'][$c['key']];
+                }
                 if ($v === null || $v === '') {
                     continue;
                 }
-                $ref = self::colLetter($i) . $r;
-                $st = isset($styleFor[$i]) ? $styleFor[$i] : 0;
                 $isText = $st === 2 || $st === 5 || !is_numeric($v) || (is_string($v) && preg_match('/^0\d/', $v));
                 if ($isText) {
                     $rowsXml .= '<c r="' . $ref . '" t="inlineStr" s="' . $st . '"><is><t xml:space="preserve">' . self::x($v) . '</t></is></c>';
@@ -379,5 +417,43 @@ class XlsxWriter
         }
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
             . $views . ($colsXml ? '<cols>' . $colsXml . '</cols>' : '') . '<sheetData>' . $rowsXml . '</sheetData>' . $prot . $dv . '</worksheet>';
+    }
+
+    /**
+     * Cells of a free layout: $s['cells'][rowNo][colIndex] = value, or array('v' => value, 's' => style, 'f' => formula).
+     * Styles: 'bold', 'amount' (###,###,###,##0.00), 'amount_bold', 'text'. Rows may be sparse.
+     */
+    private static function layoutXml($s, $colsXml)
+    {
+        $styles = array('bold' => 6, 'amount' => 9, 'amount_bold' => 10, 'text' => 2);
+        ksort($s['cells']);
+        $rowsXml = '';
+        foreach ($s['cells'] as $r => $cells) {
+            ksort($cells);
+            $rowsXml .= '<row r="' . (int)$r . '">';
+            foreach ($cells as $i => $c) {
+                if (!is_array($c)) {
+                    $c = array('v' => $c);
+                }
+                $ref = self::colLetter($i) . (int)$r;
+                $st = isset($c['s']) && isset($styles[$c['s']]) ? $styles[$c['s']] : 0;
+                if (!empty($c['f'])) {
+                    $rowsXml .= '<c r="' . $ref . '" s="' . $st . '"><f>' . self::x($c['f']) . '</f></c>';
+                    continue;
+                }
+                $v = isset($c['v']) ? $c['v'] : null;
+                if ($v === null || $v === '') {
+                    continue;
+                }
+                if (is_string($v) || $st === 2 || $st === 6) {
+                    $rowsXml .= '<c r="' . $ref . '" t="inlineStr" s="' . $st . '"><is><t xml:space="preserve">' . self::x($v) . '</t></is></c>';
+                } else {
+                    $rowsXml .= '<c r="' . $ref . '" s="' . $st . '"><v>' . self::x($v) . '</v></c>';
+                }
+            }
+            $rowsXml .= '</row>';
+        }
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            . ($colsXml ? '<cols>' . $colsXml . '</cols>' : '') . '<sheetData>' . $rowsXml . '</sheetData></worksheet>';
     }
 }

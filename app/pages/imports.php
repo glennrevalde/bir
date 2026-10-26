@@ -43,11 +43,26 @@ if (is_post()) {
         if (!in_array($f['ext'], array('xlsx', 'csv'), true)) {
             throw new RuntimeException('Only .xlsx and .csv files can be imported.');
         }
+        $opts = array();
+        if (!empty($types[$type]['month_from_file'])) {
+            // SAWT: the month is read from "FOR THE MONTH OF ..." unless one is chosen here.
+            $pm = Records::parseMonth((string)input('period_month_file'));
+            if ($pm) {
+                $opts['period_month'] = $pm;
+                $opts['month_chosen'] = true;
+            }
+        } elseif (!empty($types[$type]['needs_month'])) {
+            $pm = Records::parseMonth((string)input('period_month'));
+            if (!$pm) {
+                throw new RuntimeException('Choose the purchase month. The R_Purchases sheet has no date column, so every row is filed under this month.');
+            }
+            $opts['period_month'] = $pm;
+        }
         $dup = DB::row('SELECT id, status FROM import_jobs WHERE client_id = ? AND file_sha256 = ? AND import_type = ? AND status IN (?, ?) ORDER BY id DESC LIMIT 1',
             array($client['id'], $f['sha256'], $type, 'committed', 'staged'));
         $jobId = DB::insert('import_jobs', array('organization_id' => Ctx::orgId(), 'client_id' => $client['id'], 'branch_id' => $branch['id'], 'import_type' => $type,
             'original_filename' => mb_substr($f['name'], 0, 200), 'stored_path' => $f['path'], 'file_sha256' => $f['sha256'], 'status' => 'uploaded',
-            'header_row' => 1, 'created_by' => Auth::id(), 'created_at' => now(), 'updated_at' => now()));
+            'header_row' => 1, 'options_json' => $opts ? json_encode($opts) : null, 'created_by' => Auth::id(), 'created_at' => now(), 'updated_at' => now()));
         Audit::log('import.upload', 'import_jobs', $jobId, 'Uploaded ' . $f['name'] . ' (' . $types[$type]['label'] . ')');
         if ($dup) {
             flash('warning', 'This exact file was imported before (import #' . $dup['id'] . ', ' . $dup['status'] . '). Identical rows will be skipped as duplicates.');
@@ -87,8 +102,14 @@ View::pageBar('Import a spreadsheet', View::clientContext('Excel or CSV into sta
     <div class="sheet-head"><div><h2>Upload</h2><p>Nothing is saved to your records until you review and commit.</p></div></div>
     <div class="sheet-body stack">
       <div class="field"><label for="import_type">The file contains</label><?= View::select('import_type', $typeOpts, input('type', 'withholding'), 'id="import_type" required') ?></div>
+      <div class="field" data-show-for="import_type" data-show-values="<?= e(implode(',', array_keys(array_filter($types, function ($t) { return !empty($t['needs_month']) && empty($t['month_from_file']); })))) ?>">
+        <label for="period_month">Purchase month *</label><input id="period_month" name="period_month" type="month" value="<?= e(input('month', date('Y-m', strtotime('first day of last month')))) ?>" data-required>
+        <span class="hint">R_Purchases has no date column, so every row is filed under this month.</span></div>
+      <div class="field" data-show-for="import_type" data-show-values="<?= e(implode(',', array_keys(array_filter($types, function ($t) { return !empty($t['month_from_file']); })))) ?>">
+        <label for="period_month_file">Month</label><input id="period_month_file" name="period_month_file" type="month" value="">
+        <span class="hint">Leave blank to read it from the line FOR THE MONTH OF in the SAWT.</span></div>
       <div class="field"><label for="branch_id">Default branch</label><select id="branch_id" name="branch_id"><?php foreach (Ctx::branches() as $b) { ?><option value="<?= (int)$b['id'] ?>" <?= $ho && (int)$ho['id'] === (int)$b['id'] ? 'selected' : '' ?>><?= e($b['branch_code'] . ' ' . $b['name']) ?></option><?php } ?></select>
-        <span class="hint">Used when a row has no CLIENT BRANCH CODE.</span></div>
+        <span class="hint">The client branch the rows belong to, unless a row names its own.</span></div>
       <div class="field"><label for="file">Spreadsheet (.xlsx or .csv, up to <?= (int)sys_config('max_upload_mb', 20) ?> MB)</label><input id="file" name="file" type="file" accept=".xlsx,.csv" required></div>
       <div class="progress" aria-hidden="true"><i></i></div><p class="small muted" data-upload-status>Large files upload in pieces and resume if the connection drops.</p>
     </div>
