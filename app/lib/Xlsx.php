@@ -411,7 +411,11 @@ class XlsxWriter
             $items = '';
             foreach ($s['lists'] as $colIdx => $values) {
                 $letter = self::colLetter($colIdx);
-                $items .= '<dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="' . $letter . '2:' . $letter . '20000"><formula1>"' . self::x(implode(',', $values)) . '"</formula1></dataValidation>';
+                // A list is either the values themselves (up to 255 characters) or a range on another sheet,
+                // such as 'ATC codes'!$A$2:$A$120, for lists as long as the ATC registry.
+                $formula = is_array($values) ? '"' . implode(',', $values) . '"' : (string)$values;
+                $items .= '<dataValidation type="list" errorStyle="warning" allowBlank="1" showErrorMessage="1" errorTitle="Not in the list" error="This value is not in the list. Choose Yes to keep it anyway."'
+                    . ' sqref="' . $letter . '2:' . $letter . '20000"><formula1>' . self::x($formula) . '</formula1></dataValidation>';
             }
             $dv = '<dataValidations count="' . count($s['lists']) . '">' . $items . '</dataValidations>';
         }

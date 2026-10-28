@@ -92,19 +92,30 @@ class Imports
                 array('key' => 'or_no', 'title' => 'OR NO', 'format' => 'text', 'width' => 12, 'example' => ''),
                 array('key' => 'vat_payment_date', 'title' => 'VAT PAYMENT DATE', 'format' => 'text', 'width' => 13, 'example' => ''),
             ))),
-            'withholding' => array('label' => 'Taxes we withheld (EWT, FWT, government)', 'code' => 'GSB-WH-AGENT', 'module' => 'withholding', 'role' => 'payee', 'columns' => array_merge(self::party('PAYEE'), array(
-                $branch,
+            // Taxes we withheld: 17 columns. ATC is a dropdown of the codes saved in the system (filled when the
+            // template is made); SCHEDULE is 1 or 2 (3 only for final tax). Reference no. and rate exception note
+            // are no longer in the template but are still read when a file has them.
+            'withholding' => array('label' => 'Taxes we withheld (EWT, FWT, government)', 'code' => 'GSB-WH-AGENT', 'module' => 'withholding', 'role' => 'payee', 'version' => '2.0', 'columns' => array(
+                array('key' => 'p_tin', 'title' => 'PAYEE TIN', 'format' => 'text', 'width' => 18.46, 'help' => '9 digits, dashes allowed; a branch code at the end is read too. Keep the column as Text.', 'example' => '123-456-789'),
+                array('key' => 'p_branch', 'title' => 'PAYEE BRANCH CODE', 'format' => 'text', 'width' => 18.13, 'help' => '4 digits; 0000 for the head office or when blank.', 'example' => '0000'),
+                array('key' => 'p_registered_name', 'title' => 'REGISTERED NAME', 'format' => 'text', 'width' => 22.66, 'help' => 'For non-individuals. Leave blank for individuals.', 'example' => 'ACME TRADING CORP'),
+                array('key' => 'p_last_name', 'title' => 'LAST NAME', 'format' => 'text', 'width' => 10.13, 'help' => 'For individuals only.', 'example' => ''),
+                array('key' => 'p_first_name', 'title' => 'FIRST NAME', 'format' => 'text', 'width' => 10.6, 'help' => 'For individuals only.', 'example' => ''),
+                array('key' => 'p_middle_name', 'title' => 'MIDDLE NAME', 'format' => 'text', 'width' => 12.6, 'help' => 'For individuals only.', 'example' => ''),
+                array('key' => 'p_address1', 'title' => 'ADDRESS 1', 'format' => 'text', 'width' => 42.8, 'help' => 'Street, barangay.', 'example' => '12 RIZAL ST BRGY CAPITOL'),
+                array('key' => 'p_address2', 'title' => 'ADDRESS 2', 'format' => 'text', 'width' => 9.66, 'help' => 'Town or city, province.', 'example' => 'CEBU CITY'),
+                array_merge($branch, array('width' => 18.53)),
                 array('key' => 'tax_kind', 'title' => 'KIND', 'format' => 'text', 'width' => 8, 'help' => 'EWT, FWT, GVAT or GPT. Blank means EWT.', 'example' => 'EWT', 'list' => array('EWT', 'FWT', 'GVAT', 'GPT')),
-                array('key' => 'atc_code', 'title' => 'ATC', 'format' => 'text', 'width' => 9, 'required' => true, 'example' => 'WC158'),
-                array('key' => 'payment_date', 'title' => 'PAYMENT DATE', 'format' => 'text', 'width' => 13, 'required' => true, 'example' => '01/31/2026'),
-                array('key' => 'nature_of_payment', 'title' => 'NATURE OF PAYMENT', 'format' => 'text', 'width' => 24, 'example' => 'Purchase of goods'),
-                array('key' => 'income_amount', 'title' => 'INCOME PAYMENT', 'format' => 'amount', 'width' => 14, 'required' => true, 'example' => '100000.00'),
-                array('key' => 'tax_rate', 'title' => 'TAX RATE', 'format' => 'text', 'width' => 9, 'help' => 'Percent. Blank uses the ATC rate.', 'example' => '1'),
-                array('key' => 'tax_withheld', 'title' => 'TAX WITHHELD', 'format' => 'amount', 'width' => 13, 'help' => 'Blank computes it from the rate.', 'example' => '1000.00'),
-                array('key' => 'schedule_tag', 'title' => 'SCHEDULE', 'format' => 'text', 'width' => 9, 'help' => 'A, B or C. Blank means A.', 'example' => 'A', 'list' => array('A', 'B', 'C')),
-                array('key' => 'reference_no', 'title' => 'REFERENCE NO', 'format' => 'text', 'width' => 14, 'example' => ''),
-                array('key' => 'rate_exception_note', 'title' => 'RATE EXCEPTION NOTE', 'format' => 'text', 'width' => 24, 'help' => 'Required when rate or tax differs from the ATC.', 'example' => ''),
-            ))),
+                array('key' => 'atc_code', 'title' => 'ATC', 'format' => 'text', 'width' => 11, 'required' => true, 'atc_list' => true, 'help' => 'Choose from the list of tax codes saved in the system (sheet ATC codes). Add missing codes under Admin, Tax codes.', 'example' => 'WC158'),
+                array('key' => 'payment_date', 'title' => 'PAYMENT DATE', 'format' => 'text', 'width' => 13.53, 'required' => true, 'help' => 'MM/DD/YYYY', 'example' => '01/31/2026'),
+                array('key' => 'nature_of_payment', 'title' => 'NATURE OF PAYMENT', 'format' => 'text', 'width' => 18.66, 'help' => 'Blank uses the ATC description.', 'example' => 'Purchase of goods'),
+                array('key' => 'income_amount', 'title' => 'INCOME PAYMENT', 'format' => 'amount', 'width' => 16, 'required' => true, 'example' => '100000.00'),
+                array('key' => 'tax_rate', 'title' => 'TAX RATE', 'format' => 'text', 'width' => 8.53, 'help' => 'Percent (1 for 1%) or a decimal (0.01). Blank uses the ATC rate.', 'example' => '1'),
+                array('key' => 'tax_withheld', 'title' => 'TAX WITHHELD', 'format' => 'amount', 'width' => 13, 'help' => 'Blank computes income x rate. A different amount is refused, so a typing error is caught.', 'example' => '1000.00'),
+                array('key' => 'schedule_tag', 'title' => 'SCHEDULE', 'format' => 'text', 'width' => 9, 'help' => '1 or 2. Blank means 1. Use 3 only for final tax (1601-FQ Schedule 3).', 'example' => '1', 'list' => array('1', '2')),
+                array('key' => 'reference_no', 'title' => 'REFERENCE NO', 'format' => 'text', 'extra' => true, 'help' => 'Optional; no longer in the template.'),
+                array('key' => 'rate_exception_note', 'title' => 'RATE EXCEPTION NOTE', 'format' => 'text', 'extra' => true, 'help' => 'Optional; no longer in the template.'),
+            )),
             // The SAWT report layout: title lines (form, month, TIN, payee's name) above a three-row header,
             // a "(1)".."(8)" line, dashes, one line per payor and ATC, then Grand Total and END OF REPORT.
             // Only the nine columns are read; the title lines are checked against this client.
@@ -228,7 +239,25 @@ class Imports
         $fieldRows = array();
         foreach ($cols as $c) {
             $fieldRows[] = array($c['title'], !empty($c['required']) ? 'Yes' : 'No', !empty($c['formula']) ? 'Formula (pre-filled)' : ($c['format'] === 'amount' ? 'Amount, 2 decimals' : 'Text'),
-                isset($c['help']) ? $c['help'] : '', !empty($c['list']) ? implode(', ', $c['list']) : '', isset($c['example']) ? $c['example'] : '');
+                isset($c['help']) ? $c['help'] : '', !empty($c['list']) ? implode(', ', $c['list']) : (!empty($c['atc_list']) ? 'The codes on the sheet ATC codes' : ''), isset($c['example']) ? $c['example'] : '');
+        }
+        // A dropdown of the tax codes saved in the system, read from a sheet of its own.
+        $atcSheet = null;
+        foreach ($cols as $i => $c) {
+            if (!empty($c['atc_list'])) {
+                $codes = TaxCodes::current();
+                if ($codes) {
+                    $lists[$i] = "'ATC codes'!\$A\$2:\$A\$" . (count($codes) + 1);
+                    $atcRows = array();
+                    foreach ($codes as $tc) {
+                        $atcRows[] = array($tc['atc_code'], $tc['tax_kind'], TaxCodes::payeeLabel($tc['payee_type']), Money::rateFormat(Money::rateUnits($tc['rate']), 'pct2') . '%', $tc['description'],
+                            $tc['status'] === 'approved' ? 'Approved' : 'Pending review');
+                    }
+                    $atcSheet = array('name' => 'ATC codes', 'columns' => array(array('title' => 'ATC', 'width' => 11, 'format' => 'text'), array('title' => 'KIND', 'width' => 8, 'format' => 'text'),
+                        array('title' => 'PAYEE TYPE', 'width' => 16, 'format' => 'text'), array('title' => 'RATE', 'width' => 9, 'format' => 'text'),
+                        array('title' => 'DESCRIPTION', 'width' => 70, 'format' => 'text'), array('title' => 'STATUS', 'width' => 16, 'format' => 'text')), 'rows' => $atcRows, 'freeze' => true);
+                }
+            }
         }
         $data = array('name' => isset($type['sheet']) ? $type['sheet'] : 'Data', 'columns' => $cols, 'rows' => $rows, 'freeze' => true, 'protect_header' => true, 'lists' => $lists);
         $rules = 'Keep the header row unchanged. Enter one record per row on the Data sheet. Keep TIN columns as Text so leading zeros stay. Dates as MM/DD/YYYY.';
@@ -248,8 +277,16 @@ class Imports
             $data['defaults'] = array('vat_rate' => 12, 'exempt_amount' => 0, 'zero_rated_amount' => 0, 'services_amount' => 0, 'capital_goods_amount' => 0);
             $rules = 'Keep the header row unchanged. One purchase per row. Keep Vendor_TIN as Text so leading zeros stay. Do not type over taxableNetofVat or totalPurchases. The purchase month is chosen when you upload, because this sheet has no date column.';
         }
-        return XlsxWriter::build(array(
-            $data,
+        if ($typeKey === 'withholding') {
+            $data['freeze'] = false;
+            $data['protect_header'] = false;
+            $rules = 'Keep the header row unchanged. One payment per row. Keep PAYEE TIN as Text so leading zeros stay. Pick the ATC from the list (sheet ATC codes). SCHEDULE is 1 or 2. Dates as MM/DD/YYYY.';
+        }
+        $sheetsOut = array($data);
+        if ($atcSheet) {
+            $sheetsOut[] = $atcSheet;
+        }
+        return XlsxWriter::build(array_merge($sheetsOut, array(
             array('name' => 'Fields', 'columns' => array(
                 array('title' => 'Column', 'width' => 34, 'format' => 'text'), array('title' => 'Required', 'width' => 10, 'format' => 'text'),
                 array('title' => 'Type', 'width' => 18, 'format' => 'text'), array('title' => 'How to fill', 'width' => 60, 'format' => 'text'),
@@ -261,7 +298,7 @@ class Imports
                     array('Generated', date('Y-m-d H:i')), array('Rules', $rules),
                     array('Note', 'This workbook is an input template for G-SMaRT BIR. It is not a BIR form and is not submitted to the BIR.'),
                 )),
-        ), array('title' => $type['label'] . ' import template'));
+        )), array('title' => $type['label'] . ' import template'));
     }
 
     /**
@@ -416,6 +453,7 @@ class Imports
             $b['income_amount'] = '20000.00';
             $b['tax_rate'] = '5';
             $b['tax_withheld'] = '1000.00';
+            $b['schedule_tag'] = '1';
             $samples[] = $b;
         } elseif ($typeKey === 'purchases') {
             foreach (array(
@@ -1260,7 +1298,11 @@ class Imports
         }
         if ($type['key'] === 'withholding') {
             $in['tax_kind'] = isset($raw['tax_kind']) && trim($raw['tax_kind']) !== '' ? strtoupper(trim($raw['tax_kind'])) : 'EWT';
-            $in['schedule_tag'] = isset($raw['schedule_tag']) && trim($raw['schedule_tag']) !== '' ? strtoupper(trim($raw['schedule_tag'])) : 'A';
+            // SCHEDULE is 1, 2 or 3 in the file (A, B or C in older files); blank is schedule 1.
+            $in['schedule_tag'] = isset($raw['schedule_tag']) && trim((string)$raw['schedule_tag']) !== '' ? strtoupper(trim((string)$raw['schedule_tag'])) : '1';
+            if (isset($raw['tax_rate'])) {
+                $in['tax_rate'] = self::excelNumber($raw['tax_rate'], in_array('tax_rate', isset($raw['__numeric']) ? $raw['__numeric'] : array(), true));
+            }
         }
         list($d, $e2, $w2) = Records::validate($mod, $in, $clientId, array('skip_party' => true, 'skip_scope' => true, 'date_format' => $dateFmt, 'party_entity_type' => $p['entity_type']));
         if ($type['key'] === 'withheld_on_us' && isset($e2['period_month']) && empty($in['period_month']) && empty($raw['payment_date'])) {

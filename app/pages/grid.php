@@ -48,7 +48,7 @@ foreach ($mod['fields'] as $f) {
     if (in_array($f['key'], array('description', 'nature_of_payment', 'rate_exception_note'), true)) {
         continue;
     }
-    if (isset($mod['fixed'][$f['key']])) {
+    if (isset($mod['fixed'][$f['key']]) || !empty($f['hidden'])) {
         continue;
     }
     $cols[] = $f;

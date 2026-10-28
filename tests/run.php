@@ -270,12 +270,12 @@ foreach ($payees as $i => $p) {
         'p_middle_name' => $p[5], 'p_address1' => '', 'p_address2' => '', 'client_branch' => '', 'tax_kind' => 'EWT', 'atc_code' => $p[6], 'payment_date' => '03/' . (10 + $i) . '/2026',
         'nature_of_payment' => '', 'income_amount' => $p[7], 'tax_rate' => '', 'tax_withheld' => '', 'schedule_tag' => 'A', 'reference_no' => '', 'rate_exception_note' => '');
     $r = array();
-    foreach ($type['columns'] as $col) {
+    foreach (Imports::templateColumns($type) as $col) {
         $r[] = $vals[$col['key']];
     }
     $rowsX[] = $r;
 }
-$xlsx = XlsxWriter::build(array(array('name' => 'Data', 'columns' => $type['columns'], 'rows' => $rowsX, 'freeze' => true)));
+$xlsx = XlsxWriter::build(array(array('name' => 'Data', 'columns' => Imports::templateColumns($type), 'rows' => $rowsX, 'freeze' => true)));
 $rel = 'uploads/test-import.xlsx';
 file_put_contents(storage_path($rel), $xlsx);
 $job = DB::insert('import_jobs', array('organization_id' => $Dd['org'], 'client_id' => $Dd['client'], 'branch_id' => $Dd['branch'], 'import_type' => 'withholding', 'original_filename' => 'test.xlsx',
@@ -313,8 +313,8 @@ ok($st2['duplicates'] === 4 && $st2['valid'] === 0, 're-importing the same file 
 // bad rows
 $bad = $rowsX;
 $bad[0][0] = '1.23457E+11';
-$bad[1][array_search('atc_code', array_column($type['columns'], 'key'))] = 'ZZ999';
-$xb = XlsxWriter::build(array(array('name' => 'Data', 'columns' => $type['columns'], 'rows' => $bad)));
+$bad[1][array_search('atc_code', array_column(Imports::templateColumns($type), 'key'))] = 'ZZ999';
+$xb = XlsxWriter::build(array(array('name' => 'Data', 'columns' => Imports::templateColumns($type), 'rows' => $bad)));
 file_put_contents(storage_path('uploads/bad.xlsx'), $xb);
 $job3 = DB::insert('import_jobs', array('organization_id' => $Dd['org'], 'client_id' => $Dd['client'], 'branch_id' => $Dd['branch'], 'import_type' => 'withholding', 'original_filename' => 'bad.xlsx',
     'stored_path' => 'uploads/bad.xlsx', 'file_sha256' => hash('sha256', $xb), 'sheet_name' => 'Data', 'header_row' => 1, 'status' => 'uploaded', 'mapping_json' => json_encode($map),
@@ -704,6 +704,87 @@ if (getenv('GSB_SALES_SAMPLE') && is_file(getenv('GSB_SALES_SAMPLE'))) {
     $tplWidths = array_map(function ($c) { return $c['width']; }, $slcols);
     ok($uexact && count($umap) === 17 && $ust['total'] === 1 && $ust['errors'] === 1, 'the attached VAT sales workbook maps all 17 columns by itself; its "New Field" notes are reported, not saved', json_encode(array($ust, $umap)));
 }
+
+// =====================================================================
+section('Taxes we withheld: revised template, schedule 1 or 2, tax codes from Excel');
+$Ww = make_org('Wendell', '605188970', 'firm_owner', 'A3 FACILITY TEST CORP');
+$wb1226 = DB::insert('branches', array('organization_id' => $Ww['org'], 'client_id' => $Ww['client'], 'branch_code' => '1226', 'name' => 'Branch 1226', 'is_head_office' => 0, 'rdo_code' => '081', 'status' => 'active', 'created_at' => now()));
+$rev = DB::insert('users', array('email' => 'wendell.reviewer@test.local', 'password_hash' => Auth::hash('Test@123456'), 'full_name' => 'Wendell reviewer', 'status' => 'active', 'email_verified_at' => now(), 'created_at' => now()));
+DB::insert('memberships', array('user_id' => $rev, 'organization_id' => $Ww['org'], 'role_code' => 'reviewer', 'all_clients' => 1, 'status' => 'active', 'created_at' => now()));
+login_as($Ww['user'], $Ww['org'], $Ww['client']);
+$wtype = Imports::type('withholding');
+$wcols = Imports::templateColumns($wtype);
+ok(implode('|', array_map(function ($c) { return $c['title']; }, $wcols)) === 'PAYEE TIN|PAYEE BRANCH CODE|REGISTERED NAME|LAST NAME|FIRST NAME|MIDDLE NAME|ADDRESS 1|ADDRESS 2|CLIENT BRANCH CODE|KIND|ATC|PAYMENT DATE|NATURE OF PAYMENT|INCOME PAYMENT|TAX RATE|TAX WITHHELD|SCHEDULE',
+    'the template ends at SCHEDULE: REFERENCE NO and RATE EXCEPTION NOTE are removed');
+$wtpl = Imports::template('withholding', true);
+$wx = zip_part($wtpl, 'xl/worksheets/sheet1.xml');
+$wr = new XlsxReader(tmp_file($wtpl));
+ok(strpos($wx, "<formula1>&apos;ATC codes&apos;!\$A\$2:\$A\$") !== false && strpos($wx, 'sqref="K2:K20000"') !== false && $wr->sheetNames()[1] === 'ATC codes',
+    'the ATC column is a dropdown of the tax codes saved in the system, listed on the sheet ATC codes');
+ok(strpos($wx, '<formula1>&quot;1,2&quot;</formula1>') !== false && strpos($wx, 'sqref="Q2:Q20000"') !== false, 'SCHEDULE is a dropdown of 1 and 2');
+$wm = Records::module('withholding');
+$visible = array_values(array_filter(array_map(function ($f) { return empty($f['hidden']) ? $f['key'] : null; }, $wm['fields'])));
+ok(!in_array('reference_no', $visible, true) && !in_array('rate_exception_note', $visible, true) && strpos($wm['fields'][array_search('schedule_tag', array_column($wm['fields'], 'key'))]['options']['A'], '1:') === 0,
+    'the entry form no longer asks for the reference or the rate note, and shows schedule 1 and 2');
+// Your sample row: TIN with a 3-digit branch, client branch 1226, ATC WC860 not yet in the system, rate 0.005.
+$sampleRow = array('006-034-537-000', '', 'PTT Philippines Corporation', '', '', '', '32/F Tower 6801 Ayala Ave., Makati City, Philippines', '', 1226, 'EWT', 'WC860', '07/31/2026',
+    'INCOME FAYMENTS MADE BY TOP WITHHOLDING AGENTS', 4154566.44, 0.005, 20772.83, 'A');
+$wimport = function ($rows) use ($Ww, $wtype, $wcols) {
+    $bytes = XlsxWriter::build(array(array('name' => 'Data', 'columns' => $wcols, 'rows' => $rows)));
+    $rel = 'uploads/wh-' . mt_rand() . '.xlsx';
+    file_put_contents(storage_path($rel), $bytes);
+    $job = DB::insert('import_jobs', array('organization_id' => $Ww['org'], 'client_id' => $Ww['client'], 'branch_id' => $Ww['branch'], 'import_type' => 'withholding', 'original_filename' => 'qap.xlsx',
+        'stored_path' => $rel, 'file_sha256' => hash('sha256', $bytes), 'sheet_name' => 'Data', 'header_row' => 1, 'status' => 'uploaded', 'created_by' => $Ww['user'], 'created_at' => now()));
+    list($map) = Imports::suggestMapping($wtype, Imports::headersOf(Imports::readRows(DB::row('SELECT * FROM import_jobs WHERE id = ?', array($job))), 1));
+    DB::update('import_jobs', array('mapping_json' => json_encode($map), 'options_json' => json_encode(array('date_format' => 'auto'))), 'id = ?', array($job));
+    Imports::prepare($job);
+    do { $st = Imports::stageChunk($job, 100); } while (!$st['done']);
+    return array($job, $st);
+};
+list($wj1, $wst1) = $wimport(array($sampleRow));
+$we1 = json_decode(DB::val('SELECT errors_json FROM import_rows WHERE job_id = ?', array($wj1)), true);
+ok($wst1['errors'] === 1 && isset($we1['atc_code']) && strpos($we1['atc_code'], 'WC860') !== false, 'before WC860 is in the system, the row is refused at the ATC cell', json_encode($we1));
+// Add WC860 from an Excel upload, approved by a second person.
+$atcBook = XlsxWriter::build(array(array('name' => 'Tax codes', 'columns' => TaxCodes::columns(), 'rows' => array(
+    array('WC860', 'EWT', 'Non-individual', '0.5', 'Income payments made by top withholding agents'),
+    array('WC158', 'EWT', 'Non-individual', '1', 'Top withholding agent: purchase of goods'),
+    array('WC160', 'EWT', 'Non-individual', '2', 'Top withholding agent: purchase of services, revised wording'),
+    array('WI860', 'EWT', 'Non-individual', 'abc', ''),
+    array('WC860', 'EWT', 'Any', '0.5', 'Twice in the file'),
+))));
+$atcRead = TaxCodes::read(tmp_file($atcBook), 'xlsx');
+$plans = array_map(function ($r) { return $r['errors'] ? 'error' : $r['plan']; }, $atcRead['rows']);
+ok($plans === array('new', 'same', 'change', 'error', 'error'), 'an ATC upload is checked row by row: new, unchanged, changed, and errors', json_encode($plans));
+$e4 = $atcRead['rows'][3]['errors'];
+ok($e4['rate']['ref'] === 'D5' && isset($e4['description']) && isset($atcRead['rows'][4]['errors']['atc_code']), 'upload errors point at their cells (D5 RATE, a blank DESCRIPTION, a code twice in the file)', json_encode($e4));
+foreach ($atcRead['rows'] as $r) {
+    if (!$r['errors'] && in_array($r['plan'], array('new', 'change'), true)) {
+        TaxCodes::propose($r['data'], 'test upload');
+    }
+}
+$wc860 = DB::row('SELECT * FROM tax_codes WHERE atc_code = ?', array('WC860'));
+$wc160new = DB::row('SELECT * FROM tax_codes WHERE atc_code = ? AND status = ?', array('WC160', 'pending_review'));
+ok($wc860['status'] === 'pending_review' && $wc860['effective_from'] === TaxCodes::FROM_START && $wc860['rate'] === '0.5000' && $wc160new['effective_from'] === today(),
+    'a new code applies from the start, a change from today; both wait for approval');
+throws(function () use ($wc860) { TaxCodes::approve($wc860['id']); }, 'the person who added a code cannot approve it', 'Someone other');
+login_as($rev, $Ww['org'], $Ww['client']);
+TaxCodes::approve($wc860['id']);
+TaxCodes::approve($wc160new['id']);
+$cur = array();
+foreach (TaxCodes::current('WC') as $r) { $cur[$r['atc_code']] = $r; }
+ok($cur['WC860']['status'] === 'approved' && strpos($cur['WC160']['description'], 'revised wording') !== false && count($cur['WC160']['older']) >= 1, 'a second person approves; the list shows one current row per code');
+ok(Records::taxCode('WC160', 'EWT', '2025-01-15')['description'] !== $cur['WC160']['description'], 'earlier periods keep the version they had');
+login_as($Ww['user'], $Ww['org'], $Ww['client']);
+list($wj2, $wst2) = $wimport(array($sampleRow, array_replace($sampleRow, array(10 => 'WC860', 16 => '2', 15 => 20700))));
+$wr2 = DB::all('SELECT row_no, status, normalized_json, errors_json, warnings_json FROM import_rows WHERE job_id = ? ORDER BY row_no', array($wj2));
+$wn2 = json_decode($wr2[0]['normalized_json'], true);
+ok($wr2[0]['status'] === 'valid' && $wn2['record']['tax_rate'] === '0.5000' && $wn2['record']['tax_withheld'] === '20772.83' && $wn2['record']['schedule_tag'] === 'A' && $wn2['record']['branch_id'] === $wb1226
+    && $wn2['party']['tin'] === '006034537' && strpos($wr2[0]['warnings_json'], 'decimal') !== false, 'your sample row imports once WC860 is added: rate 0.005 read as 0.5%, tax 20,772.83, client branch 1226', json_encode(array($wr2[0], $wn2['record'])));
+$we2 = json_decode($wr2[1]['errors_json'], true);
+ok($wr2[1]['status'] === 'error' && isset($we2['tax_withheld']) && strpos($we2['tax_withheld'], 'Correct the tax withheld or the tax rate') !== false, 'a tax that is not income x rate is refused with what to correct', json_encode($we2));
+list($d, $e, $w) = Records::validate($wm, array('branch_id' => $Ww['branch'], 'counterparty_id' => DB::val('SELECT id FROM counterparties WHERE client_id = ? LIMIT 1', array($Ww['client'])) ?: 0,
+    'tax_kind' => 'EWT', 'atc_code' => 'WC158', 'payment_date' => '2026-07-10', 'income_amount' => '1000', 'tax_rate' => '2', 'schedule_tag' => '2'), $Ww['client'], array('skip_party' => true, 'party_entity_type' => 'non_individual'));
+ok(!$e && $d['schedule_tag'] === 'B' && $d['tax_withheld'] === '20.00' && isset($w['tax_rate']), 'schedule 2 is saved as the second schedule; a rate other than the ATC is kept with a warning', json_encode(array($e, $w)));
 
 // =====================================================================
 section("User's Manual");

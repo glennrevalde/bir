@@ -84,7 +84,7 @@ if (!$row && !is_post()) {
     $ho = Ctx::headOffice();
     $values['branch_id'] = input_int('branch_id') ?: ($ho ? $ho['id'] : 0);
     $values[$mod['date']] = input('last_date', '');
-    $values['schedule_tag'] = 'A';
+    $values['schedule_tag'] = 'A';   // shown as schedule 1
     $values['tax_kind'] = 'EWT';
     if ($inlineParty && $key !== 'sales') {
         $values['period_month'] = Records::parseMonth((string)input('month', '')) ?: date('Y-m', strtotime('first day of last month'));
@@ -138,7 +138,7 @@ $revs = $row ? DB::all('SELECT r.*, u.full_name FROM revisions r LEFT JOIN users
 
 $fieldHtml = function ($fd) use ($values, $errors, $parties, $atcs, $canEdit, $mod) {
     $k = $fd['key'];
-    if (isset($mod['fixed'][$k])) {
+    if (isset($mod['fixed'][$k]) || !empty($fd['hidden'])) {
         return '';
     }
     $v = isset($values[$k]) ? $values[$k] : '';

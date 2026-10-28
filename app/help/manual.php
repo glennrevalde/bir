@@ -200,16 +200,24 @@ H
 H
 ),
 
-'atc' => $S('Tax codes (ATC)', 'atc', 'The ATC registry: rates, effective dates and approval.', <<<'H'
-<figure><img src="{img:atc}" alt="Tax codes registry"><figcaption>The ATC registry with status and source of each code.</figcaption></figure>
-<p>Every withholding entry uses an ATC from this registry. Each code has a kind (EWT, FWT, VAT or percentage tax), a payee type (individual or corporate), a rate and an effective date.</p>
+'atc' => $S('Tax codes (ATC)', 'atc', 'The ATC codes, rates and descriptions, adding and changing them, and uploading them from Excel.', <<<'H'
+<figure><img src="{img:atc}" alt="Tax codes"><figcaption>One row per code, with the Excel upload and the form to add or change a code.</figcaption></figure>
+<p>Every withholding entry uses an ATC from this list. Each code has a kind (EWT, FWT, government VAT or percentage tax), a payee type (non-individual, individual or any), a rate and a description. The list is shared by every client, and the ATC dropdown of the Taxes we withheld template is made from it.</p>
 <ul>
-<li>The seeded codes come from the 1601-EQ January 2019 ATC annex. They start as <b>pending review</b>.</li>
-<li>Check each code you use against the ATC table installed with your BIR validator (and its latest patch), then have a reviewer approve it.</li>
-<li>A file that uses a pending code is always labelled an unvalidated draft.</li>
+<li>Check each code you use against the ATC table installed with your BIR validator (and its latest patch).</li>
+<li>Every new code and every change waits for a second person to approve it. A file that uses a code waiting for approval is always labelled an unvalidated draft.</li>
+<li><b>Approve all pending</b> on the page bar approves, in one step, every waiting code added by someone else.</li>
 </ul>
-<h3>Changing a rate</h3>
-<p>Rates are never edited in place. Under <b>Propose a code or new version</b>, enter the code, kind, payee type, rate, the date it takes effect and the BIR issuance that supports it, then <b>Submit for approval</b>. Payments before that date keep the old rate; payments on or after it use the new one.</p>
+<h3>Adding or changing one code</h3>
+<p>Under <b>Add or change a code</b>, enter the ATC, kind, payee type, rate and description, then <b>Submit for approval</b>. Typing an ATC that is already listed changes it: the change applies from that day, and earlier periods keep the rate they had, so files already filed never change.</p>
+<h3>Uploading codes from Excel</h3>
+<ol class="steps">
+<li>Download the <b>blank template</b>, or <b>Download codes</b> to get every current code in the same columns: ATC, KIND, PAYEE TYPE, RATE and DESCRIPTION.</li>
+<li>Add or edit rows. RATE is a percent (1 for 1%, 0.5 for 0.5%). KIND blank means EWT; PAYEE TYPE blank means Any.</li>
+<li>Under <b>Upload from Excel</b>, choose the file and click <b>Upload and check</b>.</li>
+<li>Nothing is saved yet. The check shows what each row will do (new code, change from today, already up to date) and the rows with errors, each pointing at its cell (for example <i>D5</i> for a rate that is not a number).</li>
+<li>Click <b>Submit for approval</b>. Rows with errors are left out; fix them in the file and upload it again.</li>
+</ol>
 H
 ),
 
@@ -346,10 +354,10 @@ H
 <li>Choose the <b>kind of withholding</b>. The ATC list then shows only codes of that kind that are in force on the payment date.</li>
 <li>Choose the <b>ATC</b>, enter the <b>payment date</b> and the <b>income payment</b>.</li>
 <li>The <b>tax rate</b> fills from the registry and <b>tax withheld</b> is computed to the centavo. Click <b>Fill from rate</b> to recompute after a change.</li>
-<li>Choose the <b>schedule placement</b>. Most payments are placement A (Schedule 1 of the QAP).</li>
+<li>Choose the <b>schedule</b>: 1 for most payments (Schedule 1 of the QAP), 2 for the second schedule. Schedule 3 is only for final tax (1601-FQ Schedule 3).</li>
 <li>Click <b>Save</b>, or <b>Save and add another</b> to keep the branch and date for the next entry.</li>
 </ol>
-<div class="mnote"><b>Different rate or amount?</b> You can keep a rate or tax that differs from the registry, but you must write the reason. It is shown to reviewers.</div>
+<div class="mnote"><b>Different rate?</b> A rate other than the ATC's is kept and flagged for the reviewer. The tax withheld must be the income times the rate you entered; a different amount is refused so a typing error is caught. If the ATC you need is not in the list, add it under <a href="{sec:atc}">Tax codes</a>.</div>
 <div class="mwarn">Individual ATCs (starting with WI) need an individual payee, and corporate ATCs (WC) a non-individual payee. The form refuses a mismatch.</div>
 H
 ),
@@ -455,6 +463,8 @@ H
 <li>Click <b>Stage and check rows</b>. Rows are checked in batches; nothing touches your records yet.</li>
 <li>Review the results and commit (see <a href="{sec:import_review}">Review an import</a>).</li>
 </ol>
+<h3>Importing taxes we withheld</h3>
+<p>Pick each ATC from the dropdown in the template; it lists the codes saved under <a href="{sec:atc}">Tax codes</a> (add a missing code there first, one by one or from Excel). SCHEDULE is 1 or 2, and 3 only for final tax (1601-FQ Schedule 3); blank means 1. TAX RATE may be a percent (0.5) or a decimal (0.005): when it is below 1, the tax withheld or the ATC's own rate decides which was meant. A TAX WITHHELD that is not income x rate is refused, so a typing error is caught; a rate other than the ATC's is kept with a warning. Files in the earlier layout, with REFERENCE NO and RATE EXCEPTION NOTE, still import.</p>
 <h3>Importing sales</h3>
 <p>A workbook in the VAT sales format maps itself, and so does one in the earlier layout with ADDRESS 1 and ADDRESS 2. For each row the system:</p>
 <ul>

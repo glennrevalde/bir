@@ -90,10 +90,13 @@ class Records
                     $amount('income_amount', 'Income payment', true),
                     array('key' => 'tax_rate', 'label' => 'Tax rate (%)', 'type' => 'rate'),
                     $amount('tax_withheld', 'Tax withheld'),
-                    array('key' => 'rate_exception_note', 'label' => 'Reason when rate or tax differs from the ATC', 'type' => 'text', 'max' => 255),
-                    array('key' => 'schedule_tag', 'label' => 'Schedule placement', 'type' => 'select', 'required' => true,
-                        'options' => array('A' => 'A: QAP Schedule 1 / annual Schedule 4', 'B' => 'B: second schedule (1601-EQ S2, 1604-E S3, 1604-F S5)', 'C' => 'C: final third schedule (1601-FQ S3, 1604-F S6)')),
-                    array('key' => 'reference_no', 'label' => 'Voucher or reference no.', 'type' => 'text', 'max' => 40),
+                    // Kept for records made earlier and for the API, but no longer asked for on screen or in the template.
+                    array('key' => 'rate_exception_note', 'label' => 'Reason when rate or tax differs from the ATC', 'type' => 'text', 'max' => 255, 'hidden' => true),
+                    // Stored as A, B or C; typed and shown as schedule 1, 2 or 3.
+                    array('key' => 'schedule_tag', 'label' => 'Schedule', 'type' => 'select', 'required' => true,
+                        'options' => array('A' => '1: QAP Schedule 1 / annual Schedule 4', 'B' => '2: second schedule (1601-EQ S2, 1604-E S3, 1604-F S5)', 'C' => '3: final tax only (1601-FQ S3, 1604-F S6)'),
+                        'aliases' => array('1' => 'A', '2' => 'B', '3' => 'C')),
+                    array('key' => 'reference_no', 'label' => 'Voucher or reference no.', 'type' => 'text', 'max' => 40, 'hidden' => true),
                 ),
                 'list' => array('payment_date', 'counterparty_id', 'tax_kind', 'atc_code', 'income_amount', 'tax_withheld'),
                 'totals' => array('income_amount', 'tax_withheld'),
@@ -273,6 +276,11 @@ class Records
                     $data[$k] = (int)$v;
                     break;
                 case 'select':
+                    if (isset($f['aliases'][strtoupper((string)$v)])) {
+                        $v = $f['aliases'][strtoupper((string)$v)];
+                    } elseif (is_string($v)) {
+                        $v = isset($f['options'][strtoupper($v)]) ? strtoupper($v) : $v;
+                    }
                     if ($v === '' && $req) {
                         $errors[$k] = $f['label'] . ' is required';
                     } elseif ($v !== '' && !isset($f['options'][$v])) {
@@ -375,10 +383,18 @@ class Records
         }
         $atcUnits = Money::rateUnits($tc['rate']);
         $units = ($data['tax_rate'] === null || $data['tax_rate'] === '') ? $atcUnits : Money::rateUnits($data['tax_rate']);
-        if ($received && $units > 0 && $units < 10000 && $units * 100 === $atcUnits) {
-            // A rate written as a fraction (0.02) where the ATC says 2%.
-            $warnings['tax_rate'] = 'Tax rate ' . rtrim(rtrim(Money::rateString($units), '0'), '.') . ' was read as ' . Money::rateFormat($atcUnits, 'pct2') . '%.';
-            $units = $atcUnits;
+        if ($units > 0 && $units < 10000) {
+            // Below 1%: either a small percent (0.5 for 0.5%) or a decimal (0.005 for 0.5%). The tax withheld
+            // decides when it is given; otherwise the ATC's own rate does.
+            $asDecimal = $units * 100;
+            $incomeC = Money::fromDb($data['income_amount']);
+            $taxGiven = Money::parse(isset($data['tax_withheld']) ? $data['tax_withheld'] : '');
+            $fitsDecimal = !$taxGiven['blank'] && $taxGiven['ok'] && abs(Money::applyRate($incomeC, $asDecimal) - $taxGiven['cents']) <= 1;
+            $fitsPercent = !$taxGiven['blank'] && $taxGiven['ok'] && abs(Money::applyRate($incomeC, $units) - $taxGiven['cents']) <= 1;
+            if (($fitsDecimal && !$fitsPercent) || (!$fitsPercent && $asDecimal === $atcUnits)) {
+                $warnings['tax_rate'] = 'Tax rate ' . rtrim(rtrim(Money::rateString($units), '0'), '.') . ' was read as a decimal: ' . Money::rateFormat($asDecimal, 'pct2') . '%.';
+                $units = $asDecimal;
+            }
         }
         $data['tax_rate'] = Money::rateString($units);
         $income = Money::fromDb($data['income_amount']);
@@ -392,7 +408,7 @@ class Records
             if ($diff > 1 && $received) {
                 $warnings['tax_withheld'] = $msg . '. It is kept as certified by the payor; check it against the 2307.';
             } elseif ($diff > 1 && empty($data['rate_exception_note'])) {
-                $errors['tax_withheld'] = 'Tax withheld should be ' . Money::fmt($expected) . ' (' . Money::rateFormat($units, 'pct2') . '% of ' . Money::fmt($income) . '). Enter a reason to keep a different amount.';
+                $errors['tax_withheld'] = 'Tax withheld should be ' . Money::fmt($expected) . ' (' . Money::rateFormat($units, 'pct2') . '% of ' . Money::fmt($income) . '). Correct the tax withheld or the tax rate.';
             } elseif ($diff === 1) {
                 $warnings['tax_withheld'] = 'Tax withheld differs from the computed amount by 0.01.';
             }
@@ -401,7 +417,8 @@ class Records
             if ($received) {
                 $warnings['tax_rate'] = 'The rate ' . Money::rateFormat($units, 'pct2') . '% differs from the ' . Money::rateFormat($atcUnits, 'pct2') . '% registered for ' . $data['atc_code'] . '. It is kept as certified by the payor.';
             } elseif (empty($data['rate_exception_note'])) {
-                $errors['tax_rate'] = 'The rate differs from the ' . Money::rateFormat($atcUnits, 'pct2') . '% registered for ' . $data['atc_code'] . '. Enter a reason to keep it.';
+                // The rate is kept as typed (a reduced rate, for example) and flagged for the reviewer.
+                $warnings['tax_rate'] = 'The rate ' . Money::rateFormat($units, 'pct2') . '% differs from the ' . Money::rateFormat($atcUnits, 'pct2') . '% registered for ' . $data['atc_code'] . '. Check that it is right.';
             }
         }
     }

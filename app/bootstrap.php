@@ -44,7 +44,7 @@ ini_set('log_errors', '1');
 
 $libs = array('core', 'Db', 'Money', 'Tin', 'Crypto', 'Auth', 'Ctx', 'Audit', 'View', 'Mailer', 'Totp',
     'Xlsx', 'Csv', 'Pdf', 'Records', 'Imports', 'Specs', 'DatWriter', 'DatReader', 'Datasets', 'Checks',
-    'Reports', 'Evidence', 'Certificates', 'Backup', 'Help', 'Workflow', 'Migrations');
+    'Reports', 'Evidence', 'Certificates', 'Backup', 'Help', 'Workflow', 'Migrations', 'TaxCodes');
 foreach ($libs as $lib) {
     require_once APP_PATH . '/lib/' . $lib . '.php';
 }

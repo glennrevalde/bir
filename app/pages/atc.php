@@ -1,117 +1,208 @@
 <?php
+/**
+ * Tax codes (ATC). One row per code: add or change a code, or upload many from Excel (checked and shown
+ * before anything is saved). Every addition or change waits for a second person's approval.
+ */
 Ctx::requirePerm('reference.view');
+
+if ($dl = input('dl')) {
+    $withCodes = $dl === 'codes';
+    send_bytes(TaxCodes::template($withCodes), $withCodes ? 'ATC-codes-' . date('Ymd') . '.xlsx' : 'ATC-upload-template.xlsx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+}
+
+$upload = isset($_SESSION['atc_upload']) ? $_SESSION['atc_upload'] : null;
+$readUpload = function () use ($upload) {
+    if (!$upload || !is_file(storage_path($upload['path']))) {
+        throw new RuntimeException('The uploaded file is no longer on the server. Upload it again.');
+    }
+    return TaxCodes::read(storage_path($upload['path']), $upload['ext']);
+};
+
 if (is_post()) {
     $action = input('action');
+    $back = array('q' => input('q'));
     try {
         if ($action === 'propose') {
             Ctx::requirePerm('reference.manage');
-            $code = strtoupper(preg_replace('/\s+/', '', (string)input('atc_code')));
-            if (!preg_match('/^[A-Z0-9]{3,10}$/', $code)) {
-                throw new RuntimeException('Enter a valid ATC.');
+            list($d, $e) = TaxCodes::validate($_POST);
+            if ($e) {
+                throw new RuntimeException(implode('. ', $e) . '.');
             }
-            $kind = in_array(input('tax_kind'), array('EWT', 'FWT', 'GVAT', 'GPT'), true) ? input('tax_kind') : null;
-            $u = Money::rateUnits(input('rate'));
-            $from = Records::parseDate(input('effective_from'));
-            if (!$kind || $u === null || !$from || trim((string)input('description')) === '' || trim((string)input('source_ref')) === '') {
-                throw new RuntimeException('Kind, rate, effective date, description and the BIR source are all required.');
+            list($what) = TaxCodes::plan($d);
+            if ($what === 'same') {
+                flash('info', $d['atc_code'] . ' already has this rate, payee type and description. Nothing changed.');
+            } else {
+                TaxCodes::propose($d, 'entered on the Tax codes page');
+                flash('success', $d['atc_code'] . ($what === 'new' ? ' added' : ' changed') . '. A second person with approval rights must approve it before files use it as approved.');
             }
-            if (DB::val('SELECT id FROM tax_codes WHERE atc_code = ? AND effective_from = ?', array($code, $from))) {
-                throw new RuntimeException('A version of ' . $code . ' starting ' . $from . ' already exists.');
-            }
-            $id = DB::insert('tax_codes', array('atc_code' => $code, 'tax_kind' => $kind, 'payee_type' => in_array(input('payee_type'), array('individual', 'corporate'), true) ? input('payee_type') : 'any',
-                'description' => mb_substr(trim(input('description')), 0, 255), 'rate' => Money::rateString($u), 'effective_from' => $from,
-                'effective_to' => Records::parseDate(input('effective_to')) ?: null, 'version_tag' => mb_substr((string)input('version_tag'), 0, 40) ?: null,
-                'source_ref' => mb_substr(trim(input('source_ref')), 0, 255), 'status' => 'pending_review', 'submitted_by' => Auth::id(), 'created_at' => now()));
-            Workflow::request('tax_codes', $id, 'approve_tax_code', 'New or changed ATC ' . $code . ' from ' . $from);
-            flash('success', $code . ' proposed. A second person with approval rights must approve it.');
+        } elseif ($action === 'upload') {
+            Ctx::requirePerm('reference.manage');
+            $f = store_upload(isset($_FILES['file']) ? $_FILES['file'] : null, 'uploads', array('xlsx', 'csv'), 5 * 1024 * 1024);
+            $_SESSION['atc_upload'] = array('path' => $f['path'], 'name' => $f['name'], 'ext' => $f['ext']);
+            Audit::log('taxcode.upload', 'tax_codes', null, 'Uploaded ' . $f['name'] . ' for checking');
+            $back = array('review' => 1);
+        } elseif ($action === 'apply') {
+            Ctx::requirePerm('reference.manage');
+            $res = $readUpload();
+            $n = array('new' => 0, 'change' => 0);
+            DB::tx(function () use ($res, $upload, &$n) {
+                foreach ($res['rows'] as $r) {
+                    if (!$r['errors'] && in_array($r['plan'], array('new', 'change'), true)) {
+                        TaxCodes::propose($r['data'], 'uploaded from ' . $upload['name']);
+                        $n[$r['plan']]++;
+                    }
+                }
+            });
+            unset($_SESSION['atc_upload']);
+            Audit::log('taxcode.upload_apply', 'tax_codes', null, 'From ' . $upload['name'] . ': ' . $n['new'] . ' new, ' . $n['change'] . ' changed');
+            flash($n['new'] + $n['change'] ? 'success' : 'info', $n['new'] + $n['change']
+                ? 'Submitted ' . plural($n['new'], 'new code') . ' and ' . plural($n['change'], 'change') . ' for approval.'
+                : 'Nothing to submit: every code in the file is already in the system as it is.');
+        } elseif ($action === 'cancel_upload') {
+            unset($_SESSION['atc_upload']);
         } elseif ($action === 'approve') {
             Ctx::requirePerm('reference.approve');
-            $t = DB::row('SELECT * FROM tax_codes WHERE id = ?', array(input_int('id')));
-            if (!$t || $t['status'] !== 'pending_review') {
-                throw new RuntimeException('Nothing to approve.');
-            }
-            if ((int)$t['submitted_by'] === Auth::id()) {
-                throw new RuntimeException('Someone other than the proposer must approve.');
-            }
-            $req = DB::val('SELECT id FROM approval_requests WHERE subject_type = ? AND subject_id = ? AND decision = ?', array('tax_codes', $t['id'], 'pending'));
-            if ($req) {
-                Workflow::decide($req, true, 'Approved from the tax code registry');
-            } else {
-                DB::update('tax_codes', array('status' => 'approved', 'approved_by' => Auth::id(), 'approved_at' => now()), 'id = ?', array($t['id']));
-                Audit::log('taxcode.approve', 'tax_codes', $t['id'], 'Approved ATC ' . $t['atc_code'] . ' ' . $t['rate'] . '%', null, null, trim((string)input('note')));
-            }
+            $t = TaxCodes::approve(input_int('id'), trim((string)input('note')));
             flash('success', $t['atc_code'] . ' approved.');
-        } elseif ($action === 'retire') {
+        } elseif ($action === 'approve_all') {
             Ctx::requirePerm('reference.approve');
-            $t = DB::row('SELECT * FROM tax_codes WHERE id = ?', array(input_int('id')));
-            $to = Records::parseDate(input('effective_to'));
-            if (!$t || !$to) {
-                throw new RuntimeException('Give the last effective date.');
+            $ids = DB::col('SELECT id FROM tax_codes WHERE status = ? AND (submitted_by IS NULL OR submitted_by <> ?) ORDER BY atc_code', array('pending_review', Auth::id()));
+            $done = 0;
+            $skipped = array();
+            foreach ($ids as $id) {
+                try {
+                    TaxCodes::approve((int)$id, 'Approved with all pending codes');
+                    $done++;
+                } catch (RuntimeException $e) {
+                    $skipped[] = $e->getMessage();
+                }
             }
-            DB::update('tax_codes', array('effective_to' => $to, 'status' => $to < today() ? 'retired' : $t['status']), 'id = ?', array($t['id']));
-            Audit::log('taxcode.retire', 'tax_codes', $t['id'], 'Set ' . $t['atc_code'] . ' to end on ' . $to);
-            flash('success', 'Effective end date saved. Historical files keep using the old version for their periods.');
+            flash($skipped ? 'warning' : 'success', 'Approved ' . plural($done, 'tax code') . '.' . ($skipped ? ' Not approved: ' . implode(' ', array_slice($skipped, 0, 3)) : ''));
         }
     } catch (RuntimeException $e) {
         flash('error', $e->getMessage());
+        if ($action === 'apply') {
+            $back = array('review' => 1);
+        }
     }
-    redirect(url('atc', array('q' => input('q'))));
+    redirect(url('atc', $back));
 }
+
 $q = trim((string)input('q', ''));
 $kind = (string)input('kind', '');
-$where = '1=1';
-$p = array();
-if ($q !== '') {
-    $where .= ' AND (atc_code LIKE ? OR description LIKE ?)';
-    $p[] = '%' . $q . '%';
-    $p[] = '%' . $q . '%';
+$rows = TaxCodes::current($q, $kind);
+$pending = (int)DB::val('SELECT COUNT(*) FROM tax_codes WHERE status = ?', array('pending_review'));
+$mine = (int)DB::val('SELECT COUNT(*) FROM tax_codes WHERE status = ? AND submitted_by = ?', array('pending_review', Auth::id()));
+$review = null;
+if ($upload && input('review')) {
+    try {
+        $review = $readUpload();
+    } catch (RuntimeException $e) {
+        unset($_SESSION['atc_upload']);
+        flash('error', $e->getMessage());
+    }
 }
-if ($kind !== '') {
-    $where .= ' AND tax_kind = ?';
-    $p[] = $kind;
-}
-$rows = DB::all('SELECT t.*, a.full_name AS approver, s.full_name AS submitter FROM tax_codes t LEFT JOIN users a ON a.id = t.approved_by LEFT JOIN users s ON s.id = t.submitted_by
-    WHERE ' . $where . ' ORDER BY t.atc_code, t.effective_from DESC', $p);
-$pending = 0;
-foreach ($rows as $r) {
-    $pending += $r['status'] === 'pending_review' ? 1 : 0;
+$canManage = Ctx::can('reference.manage');
+$canApprove = Ctx::can('reference.approve');
+$kinds = TaxCodes::kinds();
+
+$actions = '<a class="btn" href="' . e(url('atc', array('dl' => 'codes'))) . '">' . View::icon('download') . 'Download codes</a>';
+if ($canApprove && $pending > $mine) {
+    $actions .= '<form method="post" class="inline-form" style="display:inline-flex">' . csrf_field() . '<input type="hidden" name="action" value="approve_all">'
+        . '<button class="btn btn-primary" data-confirm="Approve all ' . (int)($pending - $mine) . ' pending tax codes? Check them against the official ATC table first.">Approve all pending (' . (int)($pending - $mine) . ')</button></form>';
 }
 View::header('Tax codes (ATC)');
-View::pageBar('Tax codes (ATC)', 'Versioned registry; files use the version effective for their period');
+View::pageBar('Tax codes (ATC)', 'The codes, rates and descriptions used by every client', $actions);
 ?>
-<?php if ($pending) { ?><div class="notice notice-warning"><?= plural($pending, 'tax code') ?> pending review. Files using them stay unvalidated drafts. Approve each after checking the ATC table of the installed validator (<?= e(sys_config('current_validator_patch', '')) ?>).</div><?php } ?>
+<?php if ($pending) { ?><div class="notice notice-warning"><?= plural($pending, 'tax code') ?> waiting for approval. Files that use a code waiting for approval stay unvalidated drafts.
+  <?= $mine && $canApprove ? ($mine === $pending ? 'You added them, so someone else must approve.' : plural($mine, 'of them was', 'of them were') . ' added by you and need someone else.') : '' ?></div><?php } ?>
+
+<?php if ($review) {
+    $count = array('new' => 0, 'change' => 0, 'same' => 0, 'waiting' => 0, 'error' => 0);
+    foreach ($review['rows'] as $r) {
+        $count[$r['errors'] ? 'error' : $r['plan']]++;
+    }
+    $ok = $count['new'] + $count['change']; ?>
+<div class="sheet atc-review">
+  <div class="sheet-head"><div><h2>Check the upload: <?= e($upload['name']) ?></h2>
+    <p>Nothing is saved yet. <?= plural($ok, 'code') ?> will be submitted for approval<?= $count['error'] ? '; ' . plural($count['error'], 'row') . ' with errors will be left out' : '' ?>.</p></div></div>
+  <?php foreach ($review['problems'] as $pb) { ?><div class="notice notice-error" style="margin:12px 16px 0"><?= e($pb) ?></div><?php } ?>
+  <div class="figures">
+    <div><strong><?= (int)$count['new'] ?></strong><span>New codes</span></div>
+    <div><strong><?= (int)$count['change'] ?></strong><span>Changed codes</span></div>
+    <div><strong><?= (int)$count['same'] ?></strong><span>Already up to date</span></div>
+    <div><strong><?= (int)$count['waiting'] ?></strong><span>Already waiting for approval</span></div>
+    <div><strong><?= (int)$count['error'] ?></strong><span>With errors</span></div>
+  </div>
+  <?php if ($review['rows']) { ?>
+  <div class="table-wrap"><table class="table table-stack">
+    <thead><tr><th>Row</th><th>What happens</th><th>ATC</th><th>Description</th><th class="num">Rate</th><th>Payee type</th></tr></thead>
+    <tbody><?php foreach ($review['rows'] as $r) { $d = $r['data']; $cur = $r['current']; ?>
+      <tr class="<?= $r['errors'] ? 'row-error' : '' ?>">
+        <td data-label="Row"><?= (int)$r['row'] ?></td>
+        <td data-label="What happens"><?php if ($r['errors']) { foreach ($r['errors'] as $k => $m) { ?>
+            <div class="rmsg rmsg-bad"><?php if ($m['ref']) { ?><span class="rmsg-where"><?= e($m['ref']) ?></span><?php } ?><span class="rmsg-text"><?= e($m['text']) ?></span><span class="rmsg-found">In the file: <?= $m['value'] === '' ? '<em>blank</em>' : e($m['value']) ?></span></div>
+          <?php } } elseif ($r['plan'] === 'new') { ?><strong class="ok-text">New code</strong><?php } elseif ($r['plan'] === 'change') { ?><strong>Change from today</strong>
+            <span class="sub">Now <?= e(Money::rateFormat(Money::rateUnits($cur['rate']), 'pct2')) ?>%, <?= e(TaxCodes::payeeLabel($cur['payee_type'])) ?>: <?= e(mb_strimwidth($cur['description'], 0, 80, '...')) ?></span>
+          <?php } elseif ($r['plan'] === 'waiting') { ?><span class="muted">A change is already waiting for approval</span><?php } else { ?><span class="muted">Already up to date</span><?php } ?></td>
+        <td data-label="ATC"><strong><?= e($d['atc_code']) ?></strong><span class="sub"><?= e($d['tax_kind']) ?></span></td>
+        <td data-label="Description"><?= e($d['description']) ?></td>
+        <td data-label="Rate" class="num"><?= $d['rate'] !== null ? e(Money::rateFormat(Money::rateUnits($d['rate']), 'pct2')) . '%' : '' ?></td>
+        <td data-label="Payee type"><?= e(TaxCodes::payeeLabel($d['payee_type'])) ?></td>
+      </tr>
+    <?php } ?></tbody></table></div>
+  <?php } ?>
+  <div class="sheet-foot" style="justify-content:space-between">
+    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="cancel_upload"><button class="btn btn-quiet">Cancel</button></form>
+    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="apply">
+      <button class="btn btn-primary" <?= $ok ? '' : 'disabled' ?>>Submit <?= plural($ok, 'code') ?> for approval</button></form>
+  </div>
+</div>
+<?php } ?>
+
 <div class="cols cols-main">
   <div class="sheet">
     <form class="filters" method="get"><input type="hidden" name="p" value="atc">
       <div class="field grow"><label for="q">ATC or description</label><input id="q" name="q" type="search" value="<?= e($q) ?>"></div>
-      <div class="field"><label for="kind">Kind</label><?= View::select('kind', array('EWT' => 'Expanded', 'FWT' => 'Final', 'GVAT' => 'Government VAT', 'GPT' => 'Government PT'), $kind, 'id="kind"', 'All') ?></div><button class="btn">Filter</button></form>
-    <div class="table-wrap"><table class="table table-stack"><thead><tr><th>ATC</th><th>Description</th><th class="num">Rate</th><th>Effective</th><th>Source</th><th>Status</th><th></th></tr></thead><tbody>
-    <?php foreach ($rows as $r) { ?>
-      <tr class="<?= $r['status'] === 'pending_review' ? 'hl' : ($r['status'] === 'retired' ? 'void' : '') ?>"><td data-label="ATC"><strong><?= e($r['atc_code']) ?></strong><span class="sub"><?= e($r['tax_kind']) ?>, <?= e($r['payee_type']) ?></span></td>
-        <td data-label="Description"><?= e($r['description']) ?></td><td data-label="Rate" class="num"><?= e(Money::rateFormat(Money::rateUnits($r['rate']), 'pct2')) ?>%</td>
-        <td data-label="Effective"><?= e(fmt_date($r['effective_from'], 'm/d/Y')) ?><?= $r['effective_to'] ? ' to ' . e(fmt_date($r['effective_to'], 'm/d/Y')) : ' onward' ?></td>
-        <td data-label="Source" class="small"><?= e($r['source_ref']) ?></td>
-        <td data-label="Status"><?= View::status($r['status']) ?><?= $r['approver'] ? '<span class="sub">' . e($r['approver']) . '</span>' : '' ?></td>
-        <td class="actions"><?php if ($r['status'] === 'pending_review' && Ctx::can('reference.approve') && (int)$r['submitted_by'] !== Auth::id()) { ?>
+      <div class="field"><label for="kind">Kind</label><?= View::select('kind', $kinds, $kind, 'id="kind"', 'All') ?></div><button class="btn">Filter</button></form>
+    <?php if (!$rows) { echo View::empty_state('No tax codes match', 'Change the filter, add a code, or upload them from Excel.'); } else { ?>
+    <div class="table-wrap"><table class="table table-stack atc-table"><thead><tr><th>ATC</th><th>Description</th><th class="num">Rate</th><th>Status</th><th></th></tr></thead><tbody>
+    <?php foreach ($rows as $r) { $was = $r['status'] === 'pending_review' ? TaxCodes::inForce($r) : null; ?>
+      <tr class="<?= $r['status'] === 'pending_review' ? 'hl' : '' ?>">
+        <td data-label="ATC"><strong><?= e($r['atc_code']) ?></strong><span class="sub"><?= e($kinds[$r['tax_kind']] ?? $r['tax_kind']) ?>, <?= e(strtolower(TaxCodes::payeeLabel($r['payee_type']))) ?></span></td>
+        <td data-label="Description"><?= e($r['description']) ?><?php if ($was && $was['description'] !== $r['description']) { ?><span class="sub">Until approved: <?= e($was['description']) ?></span><?php } ?></td>
+        <td data-label="Rate" class="num"><?= e(Money::rateFormat(Money::rateUnits($r['rate']), 'pct2')) ?>%<?php if ($was && $was['rate'] !== $r['rate']) { ?><span class="sub">Now <?= e(Money::rateFormat(Money::rateUnits($was['rate']), 'pct2')) ?>%</span><?php } ?></td>
+        <td data-label="Status"><?= $r['status'] === 'pending_review' ? '<span class="warn-text"><strong>' . ($was ? 'Change waiting' : 'New, waiting') . '</strong></span><span class="sub">Added by ' . e($r['submitter'] ?: 'the system') . '</span>' : View::status($r['status']) . ($r['approver'] ? '<span class="sub">' . e($r['approver']) . '</span>' : '') ?></td>
+        <td class="actions"><?php if ($r['status'] === 'pending_review' && $canApprove && (int)$r['submitted_by'] !== Auth::id()) { ?>
           <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="approve"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-primary" data-confirm="Approve <?= e($r['atc_code']) ?> at <?= e(Money::rateFormat(Money::rateUnits($r['rate']), 'pct2')) ?>%? Confirm it matches the official ATC table.">Approve</button></form><?php } ?></td></tr>
     <?php } ?></tbody></table></div>
+    <div class="sheet-foot small muted"><?= plural(count($rows), 'code') ?>. A change applies from the day it is made; periods before it keep the rate they had.</div>
+    <?php } ?>
   </div>
-  <?php if (Ctx::can('reference.manage')) { ?>
-  <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="propose">
-    <div class="sheet-head"><div><h2>Propose a code or new version</h2><p>Adding a new effective date keeps history intact.</p></div></div>
-    <div class="sheet-body"><div class="form-grid">
-      <div class="field"><label for="atc_code">ATC</label><input id="atc_code" name="atc_code" type="text" maxlength="10" required></div>
-      <div class="field"><label for="tax_kind">Kind</label><?= View::select('tax_kind', array('EWT' => 'Expanded', 'FWT' => 'Final', 'GVAT' => 'Government VAT', 'GPT' => 'Government PT'), 'EWT', 'id="tax_kind"') ?></div>
-      <div class="field"><label for="payee_type">Payee type</label><?= View::select('payee_type', array('individual' => 'Individual', 'corporate' => 'Non-individual', 'any' => 'Any'), 'any', 'id="payee_type"') ?></div>
-      <div class="field"><label for="rate">Rate (%)</label><input id="rate" name="rate" type="text" inputmode="decimal" required></div>
-      <div class="field"><label for="effective_from">Effective from</label><input id="effective_from" name="effective_from" type="date" required></div>
-      <div class="field"><label for="effective_to">Effective until</label><input id="effective_to" name="effective_to" type="date"></div>
-      <div class="field wide"><label for="description">Description</label><input id="description" name="description" type="text" maxlength="255" required></div>
-      <div class="field wide"><label for="source_ref">BIR source (RR, RMC or patch)</label><input id="source_ref" name="source_ref" type="text" maxlength="255" required></div>
-      <div class="field wide"><label for="version_tag">Version tag</label><input id="version_tag" name="version_tag" type="text" maxlength="40" placeholder="ATC patch Nov 2025"></div>
-    </div></div>
-    <div class="sheet-foot"><button class="btn btn-primary">Submit for approval</button></div>
-  </form>
+  <?php if ($canManage) { ?>
+  <div class="stack">
+    <form method="post" enctype="multipart/form-data" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="upload">
+      <div class="sheet-head"><div><h2>Upload from Excel</h2><p>Columns ATC, KIND, PAYEE TYPE, RATE and DESCRIPTION. You see every row before anything is saved.</p></div></div>
+      <div class="sheet-body stack">
+        <div class="field"><label for="atc-file">Workbook (.xlsx or .csv)</label><input id="atc-file" name="file" type="file" accept=".xlsx,.csv" required></div>
+        <p class="small muted">Start from the <a href="<?= e(url('atc', array('dl' => 'template'))) ?>">blank template</a>, or <a href="<?= e(url('atc', array('dl' => 'codes'))) ?>">download the current codes</a>, edit them and upload them back.</p>
+      </div>
+      <div class="sheet-foot"><button class="btn btn-primary"><?= View::icon('upload') ?>Upload and check</button></div>
+    </form>
+    <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="propose">
+      <div class="sheet-head"><div><h2>Add or change a code</h2><p>Type an ATC already listed to change its rate, payee type or description.</p></div></div>
+      <div class="sheet-body"><div class="form-grid">
+        <div class="field"><label for="atc_code">ATC</label><input id="atc_code" name="atc_code" type="text" maxlength="10" required placeholder="WC158" list="atc-known"></div>
+        <datalist id="atc-known"><?php foreach ($rows as $r) { ?><option value="<?= e($r['atc_code']) ?>"><?= e($r['description']) ?></option><?php } ?></datalist>
+        <div class="field"><label for="tax_kind">Kind</label><?= View::select('tax_kind', $kinds, 'EWT', 'id="tax_kind"') ?></div>
+        <div class="field"><label for="payee_type">Payee type</label><?= View::select('payee_type', TaxCodes::payeeTypes(), 'corporate', 'id="payee_type"') ?></div>
+        <div class="field"><label for="rate">Rate (%)</label><input id="rate" name="rate" type="text" inputmode="decimal" required placeholder="1"></div>
+        <div class="field wide"><label for="description">Description</label><input id="description" name="description" type="text" maxlength="255" required></div>
+      </div></div>
+      <div class="sheet-foot"><button class="btn btn-primary">Submit for approval</button></div>
+    </form>
+  </div>
   <?php } ?>
 </div>
 <?php View::footer();

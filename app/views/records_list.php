@@ -146,10 +146,18 @@ if (input('export') === 'csv') {
     }
     $cols = array_merge($cols, array('period_month', 'status', 'source'));
     fputcsv($fh, $cols);
+    // Fields typed as numbers but stored as letters (schedule 1, 2, 3 for A, B, C) export as typed.
+    $shown = array();
+    foreach ($mod['fields'] as $fd) {
+        if (!empty($fd['aliases'])) {
+            $shown[$fd['key']] = array_flip($fd['aliases']);
+        }
+    }
     foreach ($rows as $r) {
         $line = array();
         foreach ($cols as $c) {
-            $line[] = isset($r[$c]) ? $r[$c] : '';
+            $v = isset($r[$c]) ? $r[$c] : '';
+            $line[] = isset($shown[$c][$v]) ? $shown[$c][$v] : $v;
         }
         fputcsv($fh, $line);
     }

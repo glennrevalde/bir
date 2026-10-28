@@ -70,7 +70,7 @@ Scope `records:write`, permission `records.edit`. Body:
       "payment_date": "2026-09-15",
       "income_amount": "10000.00",
       "tax_withheld": "100.00",
-      "schedule_tag": "A"
+      "schedule_tag": "1"
     }
   ]
 }
@@ -98,9 +98,9 @@ Withholding (`r=withholding`):
 | `atc_code` | Must exist in the ATC registry for the payment date |
 | `payment_date` | `YYYY-MM-DD` |
 | `income_amount` | Required. Decimal string, two places |
-| `tax_rate` | Optional. Taken from the ATC registry when blank |
-| `tax_withheld` | Optional. Computed from the rate when blank. A value that differs from the computed tax needs `rate_exception_note` |
-| `schedule_tag` | `A` (default), `B` or `C`: which QAP/alphalist schedule the line belongs to |
+| `tax_rate` | Optional. Percent (`"0.5"`) or decimal (`"0.005"`); taken from the ATC registry when blank. A rate other than the ATC's is kept with a warning |
+| `tax_withheld` | Optional. Computed from the rate when blank. A value that differs from income x rate is refused unless `rate_exception_note` explains it |
+| `schedule_tag` | `1` (default) or `2`; `3` only for final tax (1601-FQ Schedule 3). `A`, `B` and `C` are still accepted |
 | `nature_of_payment`, `reference_no` | Optional text |
 
 Taxes withheld on us (`r=withheld_on_us`), the columns of the SAWT. `party` is the payor (the customer who withheld):
