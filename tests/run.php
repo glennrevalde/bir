@@ -684,6 +684,21 @@ ok($cu['id'] === (int)$cp['id'] && !$cu2['id'] && !$cue2 && $cu2['fields']['zip_
 $ctxSl = Reports::context(array('form' => 'SLS', 'schedule' => 'S1', 'branch_id' => $Ss['branch'], 'year' => 2026, 'part' => 9, 'sawt_form' => null, 'amended' => 0));
 $fsl = DB::row('SELECT * FROM dat_files WHERE id = ?', array(Reports::generate($ctxSl, true)));
 ok($fsl['total_tax'] === '17517.85' && (int)$fsl['record_count'] === 6, 'the Summary List of Sales carries the imported output VAT', $fsl['total_tax'] . ' ' . $fsl['record_count']);
+// Problems are explained cell by cell: a gross typed again as zero-rated, and an invoice number used twice.
+list($pj) = $slimport(XlsxWriter::build(array(array('name' => 'Data', 'columns' => $slcols, 'rows' => array(
+    $slrow('249-048-941', 'INTEGRATED FLOW SYSTEMS', '', '', 'LAPU LAPU CITY', 'SI-000000', '07/03/2026', 970842.07, '0', 970842.07, '0', '0', '0'),
+    $slrow('267-704-538', 'CEBU COFFEE VENTURES INC', '', '', 'MANDAUE CITY', 'SI-000000', '07/08/2026', 8695.96, '0', '0', 7764.25, 12, 931.71))))));
+$pjob = DB::row('SELECT * FROM import_jobs WHERE id = ?', array($pj));
+$psum = Imports::problemSummary($pjob);
+$pe = json_decode(DB::val('SELECT errors_json FROM import_rows WHERE job_id = ? AND row_no = 2', array($pj)), true);
+ok(isset($pe['gross_taxable']) && strpos($pe['gross_taxable'], 'same amount as the zero-rated sales') !== false, 'a gross typed again under ZERO RATED SALES is explained as such', json_encode($pe));
+ok(count($psum) === 2 && $psum[0]['kind'] === 'error' && $psum[0]['col'] === 'L' && $psum[0]['rows'] === array(2) && $psum[1]['key'] === 'invoice_no' && $psum[1]['rows'] === array(2, 3),
+    'the correction list names the column and rows: GROSS TAXABLE (L) on row 2, invoice SI-000000 on rows 2 and 3', json_encode($psum));
+$loc = Imports::locate(Imports::fieldColumns($pjob), 'gross_taxable', 2, json_decode(DB::val('SELECT raw_json FROM import_rows WHERE job_id = ? AND row_no = 2', array($pj)), true), 'x');
+ok($loc['ref'] === 'L2' && $loc['title'] === 'GROSS TAXABLE' && $loc['value'] === '970842.07', 'each message points at its cell and shows what the cell held', json_encode($loc));
+ok(strpos(Imports::correctionsWorkbook($pj), 'PK') === 0, 'the corrections workbook is produced with located messages');
+list($fmsg) = explain_failure(new PDOException("SQLSTATE[42S02]: Base table or view not found: 1146 Table 'gsmart_bir.upload_sessions' doesn't exist", 0));
+ok(strpos($fmsg, 'upload_sessions') !== false && strpos($fmsg, 'Reference GSB-') !== false, 'a server failure is explained in plain words with a reference for the log');
 if (getenv('GSB_SALES_SAMPLE') && is_file(getenv('GSB_SALES_SAMPLE'))) {
     list($uj, $ust, $uexact, $umap) = $slimport(file_get_contents(getenv('GSB_SALES_SAMPLE')), 'Sheet1');
     $tplWidths = array_map(function ($c) { return $c['width']; }, $slcols);

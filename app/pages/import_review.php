@@ -123,6 +123,22 @@ if ($isSales && $job['status'] !== 'mapped') {
         $slTotals['vat'] += Money::fromDb($rec['output_vat']);
     }
 }
+// Every message, located in the file: the cell (column letter and row), the column title and what the cell held.
+$cellCols = Imports::fieldColumns($job);
+$msgHtml = function ($r, $errs, $warns, $raw) use ($cellCols) {
+    $h = '';
+    foreach (array('bad' => $errs, 'warn' => $warns) as $kind => $list) {
+        foreach ($list as $k => $m) {
+            $l = Imports::locate($cellCols, $k, (int)$r['row_no'], is_array($raw) ? $raw : array(), $m);
+            $where = trim($l['ref'] . ' ' . $l['title']);
+            $h .= '<div class="rmsg rmsg-' . $kind . '">' . ($where !== '' ? '<span class="rmsg-where">' . e($where) . '</span>' : '')
+                . '<span class="rmsg-text">' . e($m) . '</span>'
+                . ($kind === 'bad' && $l['ref'] ? '<span class="rmsg-found">In the file: ' . ($l['value'] === '' ? '<em>blank</em>' : e($l['value'])) . '</span>' : '') . '</div>';
+        }
+    }
+    return $h !== '' ? $h : '<span class="muted">OK</span>';
+};
+$problems = in_array($job['status'], array('staged', 'committed', 'rolled_back'), true) ? Imports::problemSummary($job) : array();
 $track = array('Uploaded', 'Mapped', 'Staged and checked', 'Committed');
 $stage = array('uploaded' => 0, 'mapped' => 1, 'staged' => 2, 'committed' => 3, 'rolled_back' => 3, 'failed' => 0);
 $at = isset($stage[$job['status']]) ? $stage[$job['status']] : 0;
@@ -194,6 +210,25 @@ View::pageBar('Review import #' . $job['id'], View::clientContext(e($job['origin
   <?php } ?>
 </div>
 
+<?php if ($problems) { $nErr = 0; foreach ($problems as $pb) { if ($pb['kind'] === 'error') { $nErr++; } } ?>
+<div class="sheet fix-list">
+  <div class="sheet-head"><div><h2><?= $nErr ? 'What to correct in the file' : 'Worth checking before you commit' ?></h2>
+    <p><?= $nErr ? plural((int)$job['error_rows'], 'row') . ' cannot be saved until these cells are corrected. Fix them in your workbook and upload it again, or download the corrections workbook with only those rows.'
+        : 'Nothing stops these rows from being saved, but the cells below look unusual.' ?></p></div>
+    <?php if ($nErr) { ?><a class="btn btn-sm" href="<?= e(url('import_download', array('id' => $job['id'], 'what' => 'corrections'))) ?>"><?= View::icon('download') ?>Corrections workbook</a><?php } ?></div>
+  <div class="table-wrap"><table class="table table-stack fix-table">
+    <thead><tr><th>Column</th><th>What is wrong</th><th>Rows in the file</th></tr></thead>
+    <tbody><?php foreach ($problems as $pb) { $rowsTxt = implode(', ', array_slice($pb['rows'], 0, 12)) . (count($pb['rows']) > 12 ? ' and ' . (count($pb['rows']) - 12) . ' more' : ''); ?>
+      <tr class="fix-<?= $pb['kind'] ?>">
+        <td data-label="Column"><span class="fix-kind"><?= $pb['kind'] === 'error' ? 'Must fix' : 'Check' ?></span>
+          <strong><?= $pb['title'] !== '' ? e($pb['title']) : 'Whole row' ?></strong><?php if ($pb['col']) { ?><span class="sub">Column <?= e($pb['col']) ?></span><?php } ?></td>
+        <td data-label="What is wrong"><?= e($pb['sample']) ?><?php if (count($pb['rows']) > 1) { ?><span class="sub">Shown for row <?= (int)$pb['rows'][0] ?>; the other rows have the same problem with their own values.</span><?php } ?></td>
+        <td data-label="Rows in the file"><a href="<?= e(url('import_review', array('id' => $job['id'], 'show' => $pb['kind'] === 'error' ? 'error' : 'valid'))) ?>"><?= plural(count($pb['rows']), 'row') ?></a><span class="sub">Row <?= e($rowsTxt) ?></span></td>
+      </tr>
+    <?php } ?></tbody></table></div>
+</div>
+<?php } ?>
+
 <?php if ($job['status'] === 'staged') { ?>
 <div class="cols cols-2">
   <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="commit">
@@ -245,8 +280,7 @@ View::pageBar('Review import #' . $job['id'], View::clientContext(e($job['origin
       $errs = json_decode((string)$r['errors_json'], true) ?: array(); $warns = json_decode((string)$r['warnings_json'], true) ?: array(); $raw = json_decode($r['raw_json'], true); ?>
       <tr class="<?= $r['status'] === 'error' ? 'row-error' : ($r['status'] === 'duplicate' ? 'row-dup' : '') ?>">
         <td data-label="Row" class="nowrap"><?= (int)$r['row_no'] ?></td>
-        <td data-label="Messages" class="small" style="min-width:220px"><?php foreach ($errs as $f => $m) { ?><div class="msg-bad"><?= e((isset($labels[$f]) ? $labels[$f] . ': ' : '') . $m) ?></div><?php } ?>
-          <?php foreach ($warns as $f => $m) { ?><div class="muted"><?= e($m) ?></div><?php } ?><?= !$errs && !$warns ? '<span class="muted">OK</span>' : '' ?></td>
+        <td data-label="Messages" class="small" style="min-width:220px"><?= $msgHtml($r, $errs, $warns, $raw) ?></td>
         <td data-label="Vendor"><strong><?= e($pt ? (!empty($pt['registered_name']) ? $pt['registered_name'] : trim((isset($pt['last_name']) ? $pt['last_name'] : '') . ', ' . (isset($pt['first_name']) ? $pt['first_name'] : ''), ', ')) : (isset($raw['p_registered_name']) ? $raw['p_registered_name'] : '')) ?></strong>
           <span class="sub"><?= e(!empty($pt['tin']) ? Tin::display($pt['tin'], $pt['branch_code']) : (isset($raw['p_tin']) && $raw['p_tin'] !== '' ? $raw['p_tin'] : 'No TIN')) ?></span></td>
         <td data-label="Month"><?= e(!empty($rec['period_month']) ? month_label($rec['period_month']) : '') ?></td>
@@ -263,20 +297,27 @@ View::pageBar('Review import #' . $job['id'], View::clientContext(e($job['origin
     <thead><tr><th>Row</th><th>Messages</th><th>Customer</th><th>Invoice</th><th class="num">Gross taxable</th><th class="num">Exempt</th><th class="num">Zero-rated</th><th class="num">Taxable sales</th><th class="num">VAT rate</th><th class="num">Output VAT</th></tr></thead>
     <tbody><?php foreach ($rows as $r) { $n = json_decode((string)$r['normalized_json'], true) ?: array(); $rec = isset($n['record']) ? $n['record'] : array(); $pt = isset($n['party']) ? $n['party'] : array();
       $errs = json_decode((string)$r['errors_json'], true) ?: array(); $warns = json_decode((string)$r['warnings_json'], true) ?: array(); $raw = json_decode($r['raw_json'], true);
-      $done = isset($rec['taxable_amount']) && isset($rec['output_vat']) && $rec['taxable_amount'] !== null && $rec['output_vat'] !== null; ?>
+      // A row with errors shows what the file held, not half-worked-out amounts.
+      $done = $r['status'] !== 'error' && isset($rec['taxable_amount']) && isset($rec['output_vat']) && $rec['taxable_amount'] !== null && $rec['output_vat'] !== null;
+      $rawAmt = function ($k) use ($raw) {
+          if (!isset($raw[$k]) || trim((string)$raw[$k]) === '') {
+              return '';
+          }
+          $pv = Money::parse(Imports::excelNumber($raw[$k], in_array($k, isset($raw['__numeric']) ? $raw['__numeric'] : array(), true)));
+          return $pv['ok'] ? Money::fmt($pv['cents']) : e($raw[$k]);
+      }; ?>
       <tr class="<?= $r['status'] === 'error' ? 'row-error' : ($r['status'] === 'duplicate' ? 'row-dup' : '') ?>">
         <td data-label="Row" class="nowrap"><?= (int)$r['row_no'] ?></td>
-        <td data-label="Messages" class="small" style="min-width:220px"><?php foreach ($errs as $f => $m) { ?><div class="msg-bad"><?= e((isset($labels[$f]) ? $labels[$f] . ': ' : '') . $m) ?></div><?php } ?>
-          <?php foreach ($warns as $f => $m) { ?><div class="muted"><?= e($m) ?></div><?php } ?><?= !$errs && !$warns ? '<span class="muted">OK</span>' : '' ?></td>
+        <td data-label="Messages" class="small" style="min-width:220px"><?= $msgHtml($r, $errs, $warns, $raw) ?></td>
         <td data-label="Customer"><strong><?= e($pt ? (!empty($pt['registered_name']) ? $pt['registered_name'] : trim((isset($pt['last_name']) ? $pt['last_name'] : '') . ', ' . (isset($pt['first_name']) ? $pt['first_name'] : ''), ', ')) : (isset($raw['p_registered_name']) ? $raw['p_registered_name'] : '')) ?></strong>
           <span class="sub"><?= e(!empty($pt['tin']) ? Tin::display($pt['tin'], $pt['branch_code']) : (isset($raw['p_tin']) && $raw['p_tin'] !== '' ? $raw['p_tin'] : 'No TIN')) ?></span></td>
         <td data-label="Invoice" class="nowrap"><?= e(isset($raw['invoice_no']) ? $raw['invoice_no'] : '') ?><span class="sub"><?= e(!empty($rec['invoice_date']) ? fmt_date($rec['invoice_date'], 'm/d/Y') : (isset($raw['invoice_date']) ? $raw['invoice_date'] : '')) ?></span></td>
-        <td data-label="Gross taxable" class="num"><?= $done ? Money::fmt(Records::salesGross($rec)) : e(isset($raw['gross_taxable']) ? $raw['gross_taxable'] : '') ?></td>
-        <td data-label="Exempt" class="num"><?= isset($rec['exempt_amount']) ? Money::fmtDb($rec['exempt_amount']) : '' ?></td>
-        <td data-label="Zero-rated" class="num"><?= isset($rec['zero_rated_amount']) ? Money::fmtDb($rec['zero_rated_amount']) : '' ?></td>
-        <td data-label="Taxable sales" class="num"><?= $done ? Money::fmtDb($rec['taxable_amount']) : '' ?></td>
-        <td data-label="VAT rate" class="num"><?= !empty($rec['vat_rate']) || (isset($rec['vat_rate']) && $rec['vat_rate'] === '0.0000') ? e(rtrim(rtrim(Money::rateFormat((int)Money::rateUnits($rec['vat_rate']), 'pct2'), '0'), '.')) : '' ?></td>
-        <td data-label="Output VAT" class="num"><strong><?= $done ? Money::fmtDb($rec['output_vat']) : '' ?></strong></td>
+        <td data-label="Gross taxable" class="num"><?= $done ? Money::fmt(Records::salesGross($rec)) : $rawAmt('gross_taxable') ?></td>
+        <td data-label="Exempt" class="num"><?= $done ? Money::fmtDb($rec['exempt_amount']) : $rawAmt('exempt_amount') ?></td>
+        <td data-label="Zero-rated" class="num"><?= $done ? Money::fmtDb($rec['zero_rated_amount']) : $rawAmt('zero_rated_amount') ?></td>
+        <td data-label="Taxable sales" class="num"><?= $done ? Money::fmtDb($rec['taxable_amount']) : $rawAmt('taxable_amount') ?></td>
+        <td data-label="VAT rate" class="num"><?= $done && isset($rec['vat_rate']) && Money::rateUnits($rec['vat_rate']) !== null ? e(rtrim(rtrim(Money::rateFormat((int)Money::rateUnits($rec['vat_rate']), 'pct2'), '0'), '.')) : e(isset($raw['vat_rate']) ? $raw['vat_rate'] : '') ?></td>
+        <td data-label="Output VAT" class="num"><strong><?= $done ? Money::fmtDb($rec['output_vat']) : $rawAmt('output_vat') ?></strong></td>
       </tr>
     <?php } ?></tbody></table></div>
   <?php } elseif ($isSawt) { ?>
@@ -287,8 +328,7 @@ View::pageBar('Review import #' . $job['id'], View::clientContext(e($job['origin
       $nature = !empty($rec['nature_of_payment']) ? $rec['nature_of_payment'] : trim(preg_replace('/\s+/', ' ', isset($raw['nature_of_payment']) ? (string)$raw['nature_of_payment'] : '')); ?>
       <tr class="<?= $r['status'] === 'error' ? 'row-error' : ($r['status'] === 'duplicate' ? 'row-dup' : '') ?>">
         <td data-label="Row" class="nowrap"><?= (int)$r['row_no'] ?></td>
-        <td data-label="Messages" class="small" style="min-width:220px"><?php foreach ($errs as $f => $m) { ?><div class="msg-bad"><?= e((isset($labels[$f]) ? $labels[$f] . ': ' : '') . $m) ?></div><?php } ?>
-          <?php foreach ($warns as $f => $m) { ?><div class="muted"><?= e($m) ?></div><?php } ?><?= !$errs && !$warns ? '<span class="muted">OK</span>' : '' ?></td>
+        <td data-label="Messages" class="small" style="min-width:220px"><?= $msgHtml($r, $errs, $warns, $raw) ?></td>
         <td data-label="Payor"><strong><?= e($pt ? (!empty($pt['registered_name']) ? $pt['registered_name'] : trim((isset($pt['last_name']) ? $pt['last_name'] : '') . ', ' . (isset($pt['first_name']) ? $pt['first_name'] : '') . ' ' . (isset($pt['middle_name']) ? $pt['middle_name'] : ''), ', ')) : trim(isset($raw['p_registered_name']) ? (string)$raw['p_registered_name'] : '')) ?></strong>
           <span class="sub"><?= e(!empty($pt['tin']) ? Tin::display($pt['tin'], $pt['branch_code']) : (isset($raw['p_tin']) && $raw['p_tin'] !== '' ? $raw['p_tin'] : 'No TIN')) ?></span></td>
         <td data-label="ATC" class="nowrap"><?= e(!empty($rec['atc_code']) ? $rec['atc_code'] : (isset($raw['atc_code']) ? $raw['atc_code'] : '')) ?></td>
@@ -299,14 +339,13 @@ View::pageBar('Review import #' . $job['id'], View::clientContext(e($job['origin
       </tr>
     <?php } ?></tbody></table></div>
   <?php } else { ?>
-  <div class="table-wrap"><table class="table">
+  <div class="table-wrap"><table class="table table-stack">
     <thead><tr><th>Row</th><th>Messages</th><?php foreach (array_slice($type['columns'], 0, 9) as $c) { ?><th><?= e($c['title']) ?></th><?php } ?></tr></thead>
     <tbody><?php foreach ($rows as $r) { $raw = json_decode($r['raw_json'], true); $errs = json_decode((string)$r['errors_json'], true) ?: array(); $warns = json_decode((string)$r['warnings_json'], true) ?: array(); ?>
       <tr class="<?= $r['status'] === 'error' ? 'row-error' : ($r['status'] === 'duplicate' ? 'row-dup' : '') ?>">
-        <td class="nowrap"><?= (int)$r['row_no'] ?></td>
-        <td class="small" style="min-width:260px"><?php foreach ($errs as $f => $m) { ?><div class="msg-bad"><?= e((isset($labels[$f]) ? $labels[$f] . ': ' : '') . $m) ?></div><?php } ?>
-          <?php foreach ($warns as $f => $m) { ?><div class="muted"><?= e($m) ?></div><?php } ?></td>
-        <?php foreach (array_slice($type['columns'], 0, 9) as $c) { ?><td class="small"><?= e(isset($raw[$c['key']]) ? $raw[$c['key']] : '') ?></td><?php } ?>
+        <td data-label="Row" class="nowrap"><?= (int)$r['row_no'] ?></td>
+        <td data-label="Messages" class="small" style="min-width:260px"><?= $msgHtml($r, $errs, $warns, $raw) ?></td>
+        <?php foreach (array_slice($type['columns'], 0, 9) as $c) { ?><td data-label="<?= e($c['title']) ?>" class="small"><?= e(isset($raw[$c['key']]) ? $raw[$c['key']] : '') ?></td><?php } ?>
       </tr>
     <?php } ?></tbody></table></div>
   <?php } ?>

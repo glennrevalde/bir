@@ -18,11 +18,16 @@ function gsb_take_upload($dir)
         if ($ext === 'xlsx' && substr($sig, 0, 2) !== 'PK') {
             throw new RuntimeException('The file content is not a valid XLSX workbook.');
         }
+        if (!is_file($src)) {
+            throw new RuntimeException('The uploaded file is no longer on the server. Upload it again.');
+        }
         $rel = $dir . '/' . date('Y/m') . '/' . random_token(12) . '.' . $ext;
         if (!is_dir(dirname(storage_path($rel)))) {
-            mkdir(dirname(storage_path($rel)), 0775, true);
+            @mkdir(dirname(storage_path($rel)), 0775, true);
         }
-        rename($src, storage_path($rel));
+        if (!@rename($src, storage_path($rel))) {
+            throw new RuntimeException('The server could not move the uploaded file into ' . dirname(storage_path($rel)) . '. ' . storage_fix_hint());
+        }
         DB::update('upload_sessions', array('status' => 'used', 'updated_at' => now()), 'id = ?', array($s['id']));
         return array('path' => $rel, 'name' => $s['original_filename'], 'size' => filesize(storage_path($rel)), 'sha256' => hash_file('sha256', storage_path($rel)), 'ext' => $ext);
     }
@@ -82,7 +87,13 @@ foreach ($types as $k => $t) {
 View::header('Import a spreadsheet');
 View::pageBar('Import a spreadsheet', View::clientContext('Excel or CSV into staging, then into saved records'),
     '<a class="btn" href="' . e(url('templates')) . '">' . View::icon('sheet') . 'Template library</a>');
+$storageBad = storage_problems();
 ?>
+<?php if ($storageBad) { ?>
+<div class="notice notice-error"><strong>Uploads will fail on this server.</strong> The web server cannot write to
+  <?= e(implode(', ', array_map(function ($b) { return $b[0] . ' (' . $b[1] . ')'; }, $storageBad))) ?>.
+  <?= Ctx::isSuper() || Ctx::can('system.manage') || Ctx::can('users.manage') ? e(storage_fix_hint()) : 'Ask your administrator to make the storage folder writable.' ?></div>
+<?php } ?>
 <div class="cols cols-main">
   <div class="sheet">
     <div class="sheet-head"><h2>Recent imports</h2></div>

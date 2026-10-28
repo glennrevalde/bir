@@ -9,7 +9,16 @@
     var body = data instanceof FormData ? data : (function () { var f = new FormData(); Object.keys(data || {}).forEach(function (k) { f.append(k, data[k]); }); return f; })();
     if (!body.has('_csrf')) body.append('_csrf', csrf);
     return fetch(url, { method: 'POST', body: body, credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } })
-      .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'Unexpected response (' + r.status + ')' }; }); });
+      .then(function (r) {
+        return r.json().catch(function () {
+          // Not JSON: the web server answered before the application could (size limits, timeouts, a crash).
+          var why = { 413: 'The web server refused the data as too large (raise LimitRequestBody, or client_max_body_size on Nginx)',
+            403: 'The web server or a firewall refused the request (403)', 404: 'The upload address was not found on the server (404)',
+            500: 'The server failed while handling the request (500). The server error log has the details',
+            502: 'The server did not answer in time (502)', 503: 'The server is busy or down (503)', 504: 'The server took too long to answer (504)' };
+          return { ok: false, error: why[r.status] || ('Unexpected response from the server (' + r.status + ')') };
+        });
+      }, function () { return { ok: false, error: 'The connection to the server was lost' }; });
   }
   window.GSB = { post: post, csrf: csrf };
 
@@ -452,6 +461,7 @@
       var size = 1024 * 1024;
       var url = form.getAttribute('data-chunked');
       var btn = form.querySelector('[type=submit]'); if (btn) btn.disabled = true;
+      if (label) { label.classList.remove('upload-error'); label.removeAttribute('role'); label.textContent = 'Starting the upload...'; }
       post(url, { action: 'open', name: file.name, total: file.size }).then(function (r) {
         if (!r.ok) throw new Error(r.error);
         var token = r.token, offset = r.received || 0;
@@ -475,7 +485,9 @@
         form.removeAttribute('data-chunked');
         form.submit();
       }).catch(function (err) {
-        if (label) label.textContent = 'Upload failed: ' + err.message + '. Choose the file again to resume.';
+        var m = String(err && err.message ? err.message : err).replace(/\.+$/, '');
+        if (label) { label.textContent = 'Upload failed. ' + m + '.' + (/again/i.test(m) ? '' : ' Choose the file again to resume.'); label.classList.add('upload-error'); label.setAttribute('role', 'alert'); }
+        if (bar) bar.style.width = '0';
         if (btn) btn.disabled = false;
       });
     });

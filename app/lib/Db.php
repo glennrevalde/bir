@@ -20,6 +20,9 @@ class DB
                 PDO::ATTR_STRINGIFY_FETCHES => true,
             ));
             self::$pdo->exec("SET NAMES utf8");
+            // Behave the same on MySQL 5.5 and on newer servers (MySQL 5.7/8, MariaDB 10.2+), whose strict
+            // and ONLY_FULL_GROUP_BY defaults differ from 5.5. The application validates every value itself.
+            self::$pdo->exec("SET SESSION sql_mode = 'NO_ENGINE_SUBSTITUTION'");
             self::$pdo->exec("SET time_zone = '" . date('P') . "'");
         }
         return self::$pdo;

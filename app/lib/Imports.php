@@ -842,7 +842,23 @@ class Imports
             self::flushRaw($batch);
         }
         $opts = json_decode((string)$job['options_json'], true) ?: array();
-        unset($opts['file_totals']);
+        unset($opts['file_totals'], $opts['invoice_rows']);
+        // Invoice numbers used on more than one row of the file, for a warning on each of those rows.
+        if (isset($map['invoice_no']) && $map['invoice_no'] !== null && $map['invoice_no'] !== '') {
+            $seen = array();
+            foreach (DB::all('SELECT row_no, raw_json FROM import_rows WHERE job_id = ?', array($jobId)) as $ir) {
+                $rj = json_decode($ir['raw_json'], true);
+                $no = isset($rj['invoice_no']) ? strtoupper(trim((string)$rj['invoice_no'])) : '';
+                if ($no !== '') {
+                    $seen[$no][] = (int)$ir['row_no'];
+                }
+            }
+            foreach ($seen as $no => $list) {
+                if (count($list) > 1) {
+                    $opts['invoice_rows'][$no] = $list;
+                }
+            }
+        }
         if ($totals && $totals['values']) {
             $opts['file_totals'] = $totals;
         }
@@ -875,6 +891,7 @@ class Imports
         $rows = DB::all('SELECT * FROM import_rows WHERE job_id = ? AND status = ? ORDER BY row_no LIMIT ' . (int)$limit, array($jobId, 'pending'));
         foreach ($rows as $r) {
             $raw = json_decode($r['raw_json'], true);
+            $raw['__row'] = (int)$r['row_no'];
             list($norm, $errors, $warnings, $hash) = self::normalizeRow($type, $raw, $job, $opts);
             $status = $errors ? 'error' : 'valid';
             $repeatKey = !empty($type['module']) ? Records::module($type['module']) : array();
@@ -1262,6 +1279,18 @@ class Imports
         }
         $errors = array_merge($errors, $e2);
         $warnings = array_merge($warnings, $w2);
+        if ($type['key'] === 'sales' && !empty($d['invoice_no'])) {
+            $no = strtoupper(trim($d['invoice_no']));
+            if (!empty($opts['invoice_rows'][$no]) && isset($raw['__row'])) {
+                $others = array_values(array_diff($opts['invoice_rows'][$no], array((int)$raw['__row'])));
+                if ($others) {
+                    $warnings['invoice_no'] = 'Invoice no. ' . $d['invoice_no'] . ' is also on row' . (count($others) > 1 ? 's ' : ' ') . implode(', ', array_slice($others, 0, 8)) . ' of this file. Each sales invoice should have its own number.';
+                }
+            }
+            if (!isset($warnings['invoice_no']) && DB::val('SELECT id FROM sales_entries WHERE client_id = ? AND invoice_no = ? AND status = ? LIMIT 1', array($clientId, $d['invoice_no'], 'posted'))) {
+                $warnings['invoice_no'] = 'Invoice no. ' . $d['invoice_no'] . ' is already on a saved sale of this client. Check that it is not entered twice.';
+            }
+        }
         if (!empty($d['period_month']) && Records::lockedPeriod($clientId, $d['period_month'], $mod['lock_scope'])) {
             $errors['period'] = 'Period ' . month_label($d['period_month']) . ' is locked';
         }
@@ -1270,6 +1299,87 @@ class Imports
         $mod['key'] = $type['module'];
         $hash = Records::rowHash($mod, $hashData);
         return array(array('party' => $p, 'record' => $d), $errors, $warnings, $hash);
+    }
+
+    // ------------------------------------------------------------------ explaining problems
+    /**
+     * Where each message points in the file: field key => array(title, column letter or null).
+     * Messages about record fields that came from another column point at that column.
+     */
+    public static function fieldColumns($job)
+    {
+        $type = self::type($job['import_type']);
+        $map = json_decode((string)$job['mapping_json'], true) ?: array();
+        $out = array();
+        foreach ($type['columns'] as $c) {
+            $src = isset($map[$c['key']]) ? $map[$c['key']] : null;
+            $out[$c['key']] = array('title' => $c['title'], 'col' => $src === null || $src === '' ? null : XlsxWriter::colLetter((int)$src));
+        }
+        $same = array('branch_id' => 'client_branch', 'counterparty_id' => 'p_tin', 'p_tin_branch' => 'p_branch');
+        foreach ($same as $k => $to) {
+            if (!isset($out[$k]) && isset($out[$to])) {
+                $out[$k] = $out[$to];
+            }
+        }
+        if (!isset($out['period_month'])) {
+            $date = isset($out['invoice_date']) ? 'invoice_date' : (isset($out['payment_date']) ? 'payment_date' : null);
+            $out['period_month'] = $date ? $out[$date] : array('title' => 'Month', 'col' => null);
+        }
+        if (!isset($out['period'])) {
+            $out['period'] = $out['period_month'];
+        }
+        return $out;
+    }
+
+    /**
+     * One message, located: array('ref' => 'L2' or '', 'title' => 'GROSS TAXABLE' or '', 'value' => what the cell held,
+     * 'text' => the message). $raw is the row as read from the file.
+     */
+    public static function locate($cols, $key, $rowNo, $raw, $text)
+    {
+        $c = isset($cols[$key]) ? $cols[$key] : null;
+        $value = '';
+        if ($c && isset($raw[$key]) && !is_array($raw[$key])) {
+            $value = trim(preg_replace('/\s+/', ' ', (string)$raw[$key]));
+            if (in_array($key, isset($raw['__numeric']) ? $raw['__numeric'] : array(), true) && is_numeric($value)) {
+                $value = self::excelNumber($value, true);
+            }
+        }
+        return array('ref' => $c && $c['col'] ? $c['col'] . $rowNo : '', 'title' => $c ? $c['title'] : '', 'value' => $value, 'text' => $text);
+    }
+
+    /**
+     * Everything to correct in a staged import, grouped by column: for each column and kind ('error' or
+     * 'warning'), how many rows, which rows and a sample message. Empty when the file is clean.
+     */
+    public static function problemSummary($job)
+    {
+        $cols = self::fieldColumns($job);
+        $groups = array();
+        foreach (DB::all('SELECT row_no, status, errors_json, warnings_json FROM import_rows WHERE job_id = ? AND (errors_json IS NOT NULL OR warnings_json IS NOT NULL) ORDER BY row_no', array($job['id'])) as $r) {
+            foreach (array('error' => $r['errors_json'], 'warning' => $r['warnings_json']) as $kind => $json) {
+                foreach (json_decode((string)$json, true) ?: array() as $key => $msg) {
+                    if ($kind === 'warning' && in_array($key, array('dup', 'repeat'), true)) {
+                        continue;
+                    }
+                    // Messages that differ only in their amounts belong to the same problem.
+                    $shape = preg_replace('/-?[\d,]+(\.\d+)?/', '#', $msg);
+                    $g = $kind . '|' . $key . '|' . md5($shape);
+                    if (!isset($groups[$g])) {
+                        $c = isset($cols[$key]) ? $cols[$key] : array('title' => '', 'col' => null);
+                        $groups[$g] = array('kind' => $kind, 'key' => $key, 'title' => $c['title'], 'col' => $c['col'], 'rows' => array(), 'sample' => $msg);
+                    }
+                    $groups[$g]['rows'][] = (int)$r['row_no'];
+                }
+            }
+        }
+        uasort($groups, function ($a, $b) {
+            if ($a['kind'] !== $b['kind']) {
+                return $a['kind'] === 'error' ? -1 : 1;
+            }
+            return count($b['rows']) - count($a['rows']);
+        });
+        return array_values($groups);
     }
 
     // ------------------------------------------------------------------ commit / rollback
@@ -1378,6 +1488,7 @@ class Imports
         $job = DB::row('SELECT * FROM import_jobs WHERE id = ? AND client_id = ?', array($jobId, Ctx::clientId()));
         $type = self::type($job['import_type']);
         $cols = $type['columns'];
+        $cellCols = self::fieldColumns($job);
         $cols[] = array('title' => 'ERRORS', 'format' => 'note', 'width' => 60, 'key' => '__errors');
         $cols[] = array('title' => 'SOURCE ROW', 'format' => 'text', 'width' => 10, 'key' => '__row');
         $out = array();
@@ -1388,7 +1499,12 @@ class Imports
             foreach ($type['columns'] as $c) {
                 $row[] = isset($raw[$c['key']]) ? (string)$raw[$c['key']] : '';
             }
-            $row[] = implode('; ', $errs);
+            $located = array();
+            foreach ($errs as $k => $m) {
+                $l = self::locate($cellCols, $k, (int)$r['row_no'], $raw, $m);
+                $located[] = ($l['ref'] ? $l['ref'] . ' ' : '') . ($l['title'] ? $l['title'] . ': ' : '') . $m;
+            }
+            $row[] = implode(' | ', $located);
             $row[] = (string)$r['row_no'];
             $out[] = $row;
         }

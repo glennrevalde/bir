@@ -516,6 +516,14 @@ class Records
                 $v['cents'] = $g['cents'] - $n['cents'];
             }
             if ($n['cents'] + $v['cents'] !== $g['cents']) {
+                // The common mistake: the same amount typed under GROSS TAXABLE and under ZERO RATED or EXEMPT SALES.
+                foreach (array('zero_rated_amount' => 'zero-rated sales', 'exempt_amount' => 'exempt sales') as $k => $what) {
+                    if (Money::fromDb(isset($data[$k]) ? $data[$k] : 0) === $g['cents'] && $n['cents'] === 0) {
+                        $errors['gross_taxable'] = 'Gross taxable ' . Money::fmt($g['cents']) . ' is the same amount as the ' . $what . '. Gross taxable is only for sales with VAT; '
+                            . 'for ' . $what . ' leave gross taxable blank or 0, and leave taxable sales and output VAT at 0.';
+                        return;
+                    }
+                }
                 $errors['gross_taxable'] = 'Gross taxable is ' . Money::fmt($g['cents']) . ' but taxable sales ' . Money::fmt($n['cents']) . ' + output VAT ' . Money::fmt($v['cents'])
                     . ' is ' . Money::fmt($n['cents'] + $v['cents']) . '. Fix one of them, or leave taxable sales and VAT blank to work them out.';
                 return;

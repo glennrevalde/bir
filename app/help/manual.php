@@ -504,7 +504,7 @@ H
 <li>Encoders can stage imports; a preparer commits them.</li>
 </ul>
 <h3>Fixing errors</h3>
-<p>Each error row shows its messages. Click <b>Corrections workbook</b> to download the rows with errors and a message column, fix them in Excel and upload that file as a new import. <b>Change the mapping</b> goes back a step. <b>Discard import</b> drops an import that was never committed.</p>
+<p><b>What to correct in the file</b> lists every problem by column, with the rows that have it: <i>Must fix</i> stops those rows from being saved, <i>Check</i> is worth a look but does not. Each row below shows its messages with the cell they point at, for example <i>L2 GROSS TAXABLE</i>, and what the cell held. Click <b>Corrections workbook</b> to download the rows with errors and a message column, fix them in Excel and upload that file as a new import. <b>Change the mapping</b> goes back a step. <b>Discard import</b> drops an import that was never committed.</p>
 <h3>Rolling back</h3>
 <p><b>Roll back this import</b> voids every record it committed, with a reason, as long as the months are not locked.</p>
 H
@@ -816,6 +816,9 @@ H
 <tr><td>The stored file does not match its recorded checksum</td><td>The file in storage was changed or replaced. Restore it from backup or re-process it.</td></tr>
 <tr><td>A validator report for another TIN is refused</td><td>Upload the report for this file. Check that you validated the right DAT.</td></tr>
 <tr><td>There are no records to write for this period</td><td>No posted records match the form, branch and period. Check the month and branch, and that records are not void.</td></tr>
+<tr><td>Upload failed: the server could not save the uploaded file</td><td>The web server cannot write to the storage folder, which happens when the files were copied to the server by another user. On Ubuntu run <code>sudo chown -R www-data: /path/to/gsmart-bir/storage</code> (use the storage path from config.php). The Import page and check.php show the folder when this is the cause.</td></tr>
+<tr><td>A message ends with a reference such as GSB-4F2A91</td><td>The same reference is written in storage/logs/php-error.log with the technical details. Give it to whoever looks after the server.</td></tr>
+<tr><td>Rows with errors after an import</td><td>The review page lists what to correct by column and row, such as <i>L2 GROSS TAXABLE</i>, with what the cell held. Fix those cells in the workbook and upload it again, or download the corrections workbook with only those rows.</td></tr>
 <tr><td>Uploads fail or stop at large sizes</td><td>Ask the administrator to raise the upload limit on Platform settings and in PHP, and MySQL's max_allowed_packet to 16M.</td></tr>
 <tr><td>The QR code for two-step sign-in does not show</td><td>Type the key shown under the QR code into your authenticator app instead.</td></tr>
 </tbody></table>

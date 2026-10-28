@@ -136,6 +136,27 @@ View::pageBar('Map columns', View::clientContext(e($job['original_filename']) . 
 <?php if ($exact) { ?><div class="notice notice-success"><?= $isReport ? 'This file is in the SAWT layout. All nine columns are mapped; check the title lines and the preview, then continue.' : 'This file matches the ' . e($type['code']) . ' template. All columns are mapped; check the preview and continue.' ?></div><?php } ?>
 <?php foreach (is_post() ? $problems : $metaProblems as $p) { ?><div class="notice notice-error"><?= e($p) ?></div><?php } ?>
 <?php foreach ($metaNotes as $p) { ?><div class="notice notice-warning"><?= e($p) ?></div><?php } ?>
+<?php
+// Before staging: which required fields have no column, and which columns of the file nothing reads.
+$usedCols = array_filter((array)$suggest, function ($v) { return $v !== null && $v !== ''; });
+$missingReq = array();
+foreach ($type['columns'] as $c) {
+    if (!empty($c['required']) && (!isset($suggest[$c['key']]) || $suggest[$c['key']] === null || $suggest[$c['key']] === '')) {
+        $missingReq[] = $c['title'];
+    }
+}
+$unused = array();
+foreach ($headers as $i => $h) {
+    if (!in_array($i, array_map('intval', $usedCols), true)) {
+        $unused[] = XlsxWriter::colLetter($i) . ' ' . $h;
+    }
+}
+if ($headers && !is_post() && ($missingReq || $unused)) { ?>
+<div class="notice notice-warning map-check">
+  <?php if ($missingReq) { ?><p><strong>Required data not found in the file:</strong> <?= e(implode(', ', $missingReq)) ?>. Choose the column that holds it below, or add the column to your workbook and upload it again.</p><?php } ?>
+  <?php if ($unused) { ?><p><strong>Columns in the file that will not be read:</strong> <?= e(implode(', ', array_slice($unused, 0, 12))) ?><?= count($unused) > 12 ? ' and ' . (count($unused) - 12) . ' more' : '' ?>. If one holds data you need, pick it for the right field below.</p><?php } ?>
+</div>
+<?php } ?>
 <?php if ($isReport) { ?>
 <div class="sheet report-meta">
   <div class="sheet-head"><div><h2>Title lines</h2><p>Read from the lines above the header and checked against <?= e(Ctx::clientName($client)) ?>.</p></div></div>

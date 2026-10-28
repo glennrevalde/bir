@@ -112,6 +112,76 @@ function client_ip()
     return isset($_SERVER['REMOTE_ADDR']) ? substr($_SERVER['REMOTE_ADDR'], 0, 45) : 'cli';
 }
 
+/**
+ * Storage folders the web server cannot use. Each item: array(path, problem). Empty when all is well.
+ * Uploads, imports, generated files and logs all need these folders to be writable by the web server.
+ */
+function storage_problems()
+{
+    $out = array();
+    foreach (array('', 'tmp', 'uploads', 'logs', 'dat', 'pdf', 'evidence', 'backups') as $d) {
+        $p = storage_path($d);
+        if (!is_dir($p)) {
+            $out[] = array($p, 'missing');
+        } elseif (!is_writable($p)) {
+            $out[] = array($p, 'not writable');
+        }
+    }
+    return $out;
+}
+
+/** The operating-system user PHP runs as (www-data on Ubuntu Apache), for fix instructions. */
+function web_user()
+{
+    if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+        $u = @posix_getpwuid(posix_geteuid());
+        if ($u && !empty($u['name'])) {
+            return $u['name'];
+        }
+    }
+    return 'www-data';
+}
+
+/** One line telling the administrator how to make the storage folder writable on this server. */
+function storage_fix_hint()
+{
+    $p = storage_path();
+    if (DIRECTORY_SEPARATOR === '\\') {
+        return 'Give the web server write permission on ' . $p . ' (right-click, Properties, Security).';
+    }
+    return 'On the server run: sudo mkdir -p ' . $p . '/tmp ' . $p . '/uploads ' . $p . '/logs && sudo chown -R ' . web_user() . ': ' . $p . ' && sudo chmod -R u+rwX ' . $p;
+}
+
+/**
+ * A plain explanation of a failure for the person who hit it, instead of a bare "something failed".
+ * Returns array(message, reference). The reference is written to the log next to the technical details.
+ */
+function explain_failure($e)
+{
+    $ref = 'GSB-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
+    $m = $e->getMessage();
+    $code = (string)$e->getCode();
+    $msg = 'The request could not be completed.';
+    if ($e instanceof PDOException) {
+        if (preg_match("/Table '[^']*?\\.?([A-Za-z0-9_]+)' doesn't exist/", $m, $x) || $code === '42S02') {
+            $msg = 'The database is missing a table' . (isset($x[1]) ? ' (' . $x[1] . ')' : '') . '. Import the latest database/gsmart_bir_clean.sql into a new database, or run the files in database/migrations/ in name order.';
+        } elseif (preg_match("/Unknown column '([^']+)'/", $m, $x) || $code === '42S22') {
+            $msg = 'The database is older than the program' . (isset($x[1]) ? ': column ' . $x[1] . ' is missing' : '') . '. Run the files in database/migrations/ in name order, or open check.php to see what is missing.';
+        } elseif (strpos($m, '[2002]') !== false || strpos($m, '[1045]') !== false || strpos($m, '[1049]') !== false) {
+            $msg = 'The program cannot connect to the database. Check the database name, user and password in config.php, and that MySQL is running.';
+        } elseif (preg_match('/\\b(1366|1265|1292|1048)\\b/', $m)) {
+            $msg = 'The database refused a value. This usually follows a file that could not be saved on the server. ' . (storage_problems() ? 'The storage folder is not writable: ' . storage_fix_hint() : 'Open check.php to see what is missing.');
+        } else {
+            $msg = 'A database error stopped the request.';
+        }
+    } elseif (stripos($m, 'permission denied') !== false || stripos($m, 'failed to open stream') !== false || stripos($m, 'not writable') !== false) {
+        $msg = 'The server could not write a file. ' . storage_fix_hint();
+    } elseif ($e instanceof Error && preg_match('/Call to undefined function ([a-z0-9_]+)/i', $m, $x)) {
+        $msg = 'A PHP extension is missing on the server (function ' . $x[1] . '). Open check.php to see which one to install.';
+    }
+    return array($msg . ' Reference ' . $ref . '.', $ref);
+}
+
 function random_token($bytes = 32)
 {
     return bin2hex(random_bytes($bytes));
@@ -285,10 +355,10 @@ function store_upload($file, $dir, $allowedExt, $maxBytes = null)
     $rel = trim($dir, '/') . '/' . date('Y/m') . '/' . random_token(12) . '.' . $ext;
     $abs = storage_path($rel);
     if (!is_dir(dirname($abs))) {
-        mkdir(dirname($abs), 0775, true);
+        @mkdir(dirname($abs), 0775, true);
     }
-    if (!move_uploaded_file($file['tmp_name'], $abs) && !rename($file['tmp_name'], $abs)) {
-        throw new RuntimeException('The file could not be saved.');
+    if (!is_dir(dirname($abs)) || !is_writable(dirname($abs)) || (!@move_uploaded_file($file['tmp_name'], $abs) && !@rename($file['tmp_name'], $abs))) {
+        throw new RuntimeException('The server could not save the uploaded file in ' . dirname($abs) . '. ' . storage_fix_hint());
     }
     return array('path' => $rel, 'name' => $name, 'size' => filesize($abs), 'sha256' => hash_file('sha256', $abs), 'ext' => $ext);
 }

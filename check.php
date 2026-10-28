@@ -43,7 +43,25 @@ if ($cfg) {
         @mkdir($st, 0775, true);
     }
     $checks[] = array('Storage folder writable (' . $st . ')', is_writable($st));
+    foreach (array('tmp', 'uploads', 'logs', 'dat', 'pdf') as $sub) {
+        if (!is_dir($st . '/' . $sub)) {
+            @mkdir($st . '/' . $sub, 0775, true);
+        }
+        $okSub = is_dir($st . '/' . $sub) && is_writable($st . '/' . $sub);
+        $who = function_exists('posix_geteuid') && function_exists('posix_getpwuid') ? posix_getpwuid(posix_geteuid()) : null;
+        $who = $who ? $who['name'] : 'www-data';
+        $checks[] = array('Storage folder ' . $sub . '/ writable' . ($okSub ? '' : ' (on Linux run: sudo chown -R ' . $who . ':' . $who . ' ' . $st . ')'), $okSub);
+    }
 }
+$toBytes = function ($v) {
+    $v = trim((string)$v);
+    $n = (float)$v;
+    $u = strtolower(substr($v, -1));
+    return (int)($u === 'g' ? $n * 1073741824 : ($u === 'm' ? $n * 1048576 : ($u === 'k' ? $n * 1024 : $n)));
+};
+$checks[] = array('PHP upload_max_filesize at least 2M (found ' . ini_get('upload_max_filesize') . ')', $toBytes(ini_get('upload_max_filesize')) >= 2 * 1048576);
+$checks[] = array('PHP post_max_size at least 4M (found ' . ini_get('post_max_size') . ')', $toBytes(ini_get('post_max_size')) >= 4 * 1048576);
+$checks[] = array('PHP file uploads enabled', (bool)ini_get('file_uploads'));
 $ok = true;
 foreach ($checks as $c) {
     $ok = $ok && $c[1];

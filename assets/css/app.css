@@ -715,3 +715,27 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; font: 600 12px/1
 .sl-ledger .sl-total { grid-column: 1 / -1; }
 @media (max-width: 760px) { .sl-ledger { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sl-ledger .sl-gross { grid-column: 1 / -1; } }
 @media (max-width: 520px) { .sl-ledger { grid-template-columns: 1fr; } }
+
+/* ---------------------------------------------------------------- import problems: located messages and the correction list */
+.rmsg { display: grid; gap: 2px; padding: 6px 0 6px 10px; border-left: 3px solid var(--line-strong); margin-bottom: 6px; white-space: normal; }
+.rmsg:last-child { margin-bottom: 0; }
+.rmsg-bad { border-left-color: var(--bad); }
+.rmsg-warn { border-left-color: var(--canary); }
+.rmsg-where { font: 600 12.5px/1.3 var(--mono); color: var(--ink-2); }
+.rmsg-bad .rmsg-where { color: var(--bad); }
+.rmsg-text { color: var(--ink); line-height: 1.4; }
+.rmsg-warn .rmsg-text { color: var(--ink-2); }
+.rmsg-found { font-size: 12.5px; color: var(--ink-3); overflow-wrap: anywhere; }
+.rmsg-found em { font-style: italic; }
+.fix-list .sheet-head { align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.fix-list .sheet-head p { max-width: 70ch; }
+.fix-table td { vertical-align: top; }
+.fix-kind { display: block; font-size: 12.5px; font-weight: 700; margin-bottom: 2px; }
+.fix-error .fix-kind { color: var(--bad); }
+.fix-warning .fix-kind { color: var(--wait); }
+.fix-error td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+.fix-warning td:first-child { box-shadow: inset 3px 0 0 var(--canary); }
+.map-check p { margin: 0 0 6px; }
+.map-check p:last-child { margin-bottom: 0; }
+@media (max-width: 760px) { .fix-error td:first-child, .fix-warning td:first-child { box-shadow: none; } }
+.upload-error { color: var(--bad) !important; font-weight: 600; padding: 10px 12px; border-radius: 9px; background: var(--bad-soft); border: 1px solid var(--bad); line-height: 1.45; }
