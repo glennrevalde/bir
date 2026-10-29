@@ -48,6 +48,8 @@ H
 <p>The first time you sign in with an account an administrator created, you are asked to set a new password before you can continue.</p>
 <h3>Forgot your password</h3>
 <p>Click <b>Forgot your password?</b> on the sign-in page and enter your email. A reset link is sent to you. If your office has not set up email sending, the message waits in the outbox on the Platform settings page, and an administrator can copy the link for you.</p>
+<h3>Changing your sign-in email</h3>
+<p>Your organization's owner or administrator changes it for you under Members and roles. The Platform Administrator changes their own on <b>Account and security</b>, Profile: type the new address, enter the current password and click <b>Save profile</b>. The password and two-step sign-in stay the same, and both the old and the new address get a message about the change.</p>
 <h3>Passwords and lockouts</h3>
 <ul>
 <li>Passwords need at least 10 characters with letters and numbers.</li>
@@ -195,6 +197,8 @@ H
 <li>Click <b>Send invitation</b>. New people receive a link to set their password; existing users get access at once.</li>
 </ol>
 <p>Click <b>Edit</b> on a member to change the role, client access or status. You cannot change your own role. The Security column shows whether the person uses two-step sign-in.</p>
+<h3>Changing a member's sign-in email</h3>
+<p>On the member's Edit panel, under <b>Sign-in email</b>, enter the new address and a reason, then click <b>Change email</b>. The address must not belong to another account. The password and two-step sign-in stay the same, both addresses are told, and the old address is kept in the audit trail. You can change the email of members at or below your own role. If the person also belongs to another organization, only the Platform Administrator can change it.</p>
 <h3>Support access</h3>
 <p>To let an outside helper look at your data for a while, use <b>Time-limited support access</b>: choose the person, the number of hours and the reason, then <b>Grant access</b>. <b>Revoke now</b> ends it early.</p>
 H

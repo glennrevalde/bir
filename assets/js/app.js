@@ -85,6 +85,20 @@
     }
   });
 
+  /* sign-in email change: ask for the current password only once the address is edited */
+  $$('[data-email-was]').forEach(function (inp) {
+    var box = inp.form ? inp.form.querySelector('[data-email-confirm]') : null;
+    if (!box) return;
+    var pw = box.querySelector('input');
+    function sync() {
+      var changed = inp.value.trim().toLowerCase() !== inp.getAttribute('data-email-was').toLowerCase();
+      box.hidden = !changed;
+      if (pw) pw.required = changed;
+    }
+    inp.addEventListener('input', sync);
+    sync();
+  });
+
   /* help drawer */
   var drawer = $('#help-drawer');
   function closeHelp() { if (drawer) drawer.hidden = true; }

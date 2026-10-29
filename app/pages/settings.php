@@ -9,9 +9,20 @@ if (is_post()) {
             if ($name === '') {
                 throw new RuntimeException('Enter your name.');
             }
-            DB::update('users', array('full_name' => mb_substr($name, 0, 150), 'updated_at' => now()), 'id = ?', array($u['id']));
-            Audit::log('user.profile', 'user', $u['id'], 'Updated profile');
-            flash('success', 'Profile saved.');
+            // The platform administrator has no one above them, so they change their own sign-in email here.
+            $newEmail = strtolower(trim((string)input('email')));
+            $emailChanged = Ctx::isSuper() && $newEmail !== '' && $newEmail !== strtolower($u['email']);
+            if ($emailChanged && !password_verify((string)input('current'), $u['password_hash'])) {
+                throw new RuntimeException('Enter your current password to change your sign-in email.');
+            }
+            DB::tx(function () use ($u, $name, $emailChanged, $newEmail) {
+                DB::update('users', array('full_name' => mb_substr($name, 0, 150), 'updated_at' => now()), 'id = ?', array($u['id']));
+                Audit::log('user.profile', 'user', $u['id'], 'Updated profile');
+                if ($emailChanged) {
+                    Auth::changeEmail($u['id'], $newEmail, 'Changed by the platform administrator on their own account');
+                }
+            });
+            flash('success', $emailChanged ? 'Profile saved. Sign in with ' . $newEmail . ' from now on.' : 'Profile saved.');
         } elseif ($action === 'password') {
             if (!password_verify((string)input('current'), $u['password_hash'])) {
                 throw new RuntimeException('The current password is incorrect.');
@@ -79,9 +90,16 @@ $tabs = array('profile' => 'Profile', 'password' => 'Password', 'mfa' => 'Two-st
       <div class="sheet-head"><h2>Profile</h2></div>
       <div class="sheet-body"><div class="form-grid">
         <div class="field"><label for="full_name">Name</label><input id="full_name" name="full_name" type="text" value="<?= e($u['full_name']) ?>" required></div>
-        <div class="field"><label>Email</label><input type="text" value="<?= e($u['email']) ?>" readonly><span class="hint">Ask an administrator to change your sign-in email.</span></div>
+        <?php if (Ctx::isSuper()) { ?>
+          <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" maxlength="190" value="<?= e($u['email']) ?>" autocomplete="email" required data-email-was="<?= e($u['email']) ?>"><span class="hint">Your sign-in email. Both addresses are told when it changes.</span></div>
+        <?php } else { ?>
+          <div class="field"><label>Email</label><input type="text" value="<?= e($u['email']) ?>" readonly><span class="hint">Ask your organization's owner or administrator to change your sign-in email under Members and roles.</span></div>
+        <?php } ?>
         <div class="field"><label>Role</label><input type="text" value="<?= e(Ctx::roleName()) ?>" readonly></div>
         <div class="field"><label>Last sign-in</label><input type="text" value="<?= e(fmt_dt($u['last_login_at'])) ?>" readonly></div>
+        <?php if (Ctx::isSuper()) { ?>
+          <div class="field" data-email-confirm hidden><label for="current_pw">Current password</label><input id="current_pw" name="current" type="password" autocomplete="current-password"><span class="hint">Needed to change your sign-in email.</span></div>
+        <?php } ?>
       </div></div>
       <div class="sheet-foot"><button class="btn btn-primary">Save profile</button></div>
     </form></div>

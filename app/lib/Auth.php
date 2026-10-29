@@ -230,6 +230,41 @@ class Auth
         return (int)DB::val('SELECT COUNT(*) FROM memberships m JOIN roles r ON r.code = m.role_code WHERE m.user_id = ? AND m.status = ? AND r.is_privileged = 1',
                 array($user['id'], 'active')) > 0;
     }
+
+    /**
+     * Change a user's sign-in email. The address must be valid and not used by another account. Both the
+     * old and the new address are told about the change, and the audit trail keeps the old one.
+     */
+    public static function changeEmail($userId, $email, $note = '')
+    {
+        $email = strtolower(trim((string)$email));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 190) {
+            throw new RuntimeException('Enter a valid email address.');
+        }
+        $u = DB::row('SELECT * FROM users WHERE id = ?', array($userId));
+        if (!$u) {
+            throw new RuntimeException('User not found.');
+        }
+        if ($email === strtolower($u['email'])) {
+            throw new RuntimeException('That is already the sign-in email.');
+        }
+        if (DB::val('SELECT id FROM users WHERE email = ? AND id <> ?', array($email, $userId))) {
+            throw new RuntimeException($email . ' is already used by another account.');
+        }
+        DB::update('users', array('email' => $email, 'email_verified_at' => $u['email_verified_at'] ?: now(), 'updated_at' => now()), 'id = ?', array($userId));
+        Audit::log('user.email', 'users', $userId, 'Changed sign-in email of ' . $u['full_name'] . ' from ' . $u['email'] . ' to ' . $email,
+            array('email' => $u['email']), array('email' => $email), $note ?: null);
+        $who = (int)$userId === (int)self::id() ? 'you' : (self::user() ? self::user()['full_name'] : 'an administrator');
+        $body = "Hello " . $u['full_name'] . ",\n\nThe sign-in email of your G-SMaRT BIR account was changed by " . $who . " on " . date('M j, Y g:i A') . ".\n\n"
+            . "Old email: " . $u['email'] . "\nNew email: " . $email . "\n\nSign in with the new email from now on. Your password and two-step sign-in did not change.\n"
+            . "If you did not expect this, contact your administrator.\n";
+        Mailer::send($u['email'], 'Your G-SMaRT BIR sign-in email was changed', $body);
+        Mailer::send($email, 'Your G-SMaRT BIR sign-in email was changed', $body);
+        if ((int)$userId === (int)self::id()) {
+            self::$user = false;
+        }
+        return $email;
+    }
 }
 
 function absolute_url($page, $params = array())

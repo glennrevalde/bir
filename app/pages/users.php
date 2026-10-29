@@ -87,6 +87,25 @@ if (is_post()) {
                 Audit::log('member.update', 'memberships', $m['id'], 'Changed member to ' . $role . ($all ? ', all clients' : ', ' . count($sel) . ' clients'), array('role' => $m['role_code'], 'all' => $m['all_clients']), array('role' => $role, 'all' => $all));
             });
             flash('success', 'Member updated.');
+        } elseif ($action === 'email') {
+            $m = DB::row('SELECT m.*, u.is_superadmin, u.email FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.id = ? AND m.organization_id = ?', array(input_int('membership_id'), $orgId));
+            if (!$m) {
+                throw new RuntimeException('Member not found.');
+            }
+            if ((int)$m['user_id'] === Auth::id()) {
+                throw new RuntimeException(Ctx::isSuper() ? 'Change your own email under Account and security.' : 'Ask another owner or administrator to change your sign-in email.');
+            }
+            if (!Ctx::isSuper()) {
+                if ((int)$m['is_superadmin'] === 1 || !isset($assignable[$m['role_code']])) {
+                    throw new RuntimeException('You cannot change the email of a member with a higher role.');
+                }
+                // An account shared with another organization is changed only by the platform administrator.
+                if (DB::val('SELECT id FROM memberships WHERE user_id = ? AND organization_id <> ? AND status = ? LIMIT 1', array($m['user_id'], $orgId, 'active'))) {
+                    throw new RuntimeException('This person also belongs to another organization, so only the platform administrator can change their sign-in email.');
+                }
+            }
+            $new = Auth::changeEmail($m['user_id'], input('email'), trim((string)input('reason')));
+            flash('success', 'Sign-in email changed to ' . $new . '. Both addresses were told.');
         } elseif ($action === 'support') {
             $m = DB::row('SELECT * FROM memberships WHERE id = ? AND organization_id = ? AND role_code = ?', array(input_int('membership_id'), $orgId, 'support'));
             if (!$m) {
@@ -132,7 +151,7 @@ $clientChecks = function ($selected) use ($clients) {
       <td class="actions"><?php if ((int)$m['user_id'] !== Auth::id()) { ?><a class="btn btn-sm btn-quiet" href="<?= e(url('users', array('edit' => $m['id']))) ?>">Edit</a><?php } else { ?><span class="small muted">You</span><?php } ?></td></tr>
   <?php } ?></tbody></table></div></div>
   <div>
-  <?php if ($edit && ($em = DB::row('SELECT m.*, u.full_name FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.id = ? AND m.organization_id = ?', array($edit, $orgId)))) {
+  <?php if ($edit && ($em = DB::row('SELECT m.*, u.full_name, u.email, u.is_superadmin FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.id = ? AND m.organization_id = ?', array($edit, $orgId)))) {
       $sel = array_map('intval', DB::col('SELECT client_id FROM membership_scopes WHERE membership_id = ?', array($em['id']))); ?>
     <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="update"><input type="hidden" name="membership_id" value="<?= (int)$em['id'] ?>">
       <div class="sheet-head"><h2>Edit <?= e($em['full_name']) ?></h2></div>
@@ -143,6 +162,21 @@ $clientChecks = function ($selected) use ($clients) {
         <div class="field"><label for="estatus">Status</label><?= View::select('status', array('active' => 'Active', 'disabled' => 'Disabled'), $em['status'], 'id="estatus"') ?></div>
       </div>
       <div class="sheet-foot"><a class="btn btn-quiet" href="<?= e(url('users')) ?>">Cancel</a><button class="btn btn-primary">Save member</button></div>
+    </form>
+    <?php $shared = (bool)DB::val('SELECT id FROM memberships WHERE user_id = ? AND organization_id <> ? AND status = ? LIMIT 1', array($em['user_id'], $orgId, 'active'));
+      $canEmail = (int)$em['user_id'] !== Auth::id() && (Ctx::isSuper() || ((int)$em['is_superadmin'] !== 1 && isset($assignable[$em['role_code']]) && !$shared)); ?>
+    <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="email"><input type="hidden" name="membership_id" value="<?= (int)$em['id'] ?>">
+      <div class="sheet-head"><div><h2>Sign-in email</h2><p>Now <?= e($em['email']) ?></p></div></div>
+      <?php if ($canEmail) { ?>
+      <div class="sheet-body stack">
+        <div class="field"><label for="new_email">New email</label><input id="new_email" name="email" type="email" maxlength="190" required autocomplete="off"></div>
+        <div class="field"><label for="ereason">Reason</label><input id="ereason" name="reason" type="text" maxlength="200" placeholder="For example, moved to a company address"></div>
+        <p class="small muted">The password and two-step sign-in stay the same. The old and the new address are both told about the change.</p>
+      </div>
+      <div class="sheet-foot"><button class="btn btn-primary">Change email</button></div>
+      <?php } else { ?>
+      <div class="sheet-body small muted"><?= $shared ? 'This person also belongs to another organization, so only the platform administrator can change their sign-in email.' : 'You cannot change the email of a member with a higher role.' ?></div>
+      <?php } ?>
     </form>
     <?php if ($em['role_code'] === 'support') { ?>
     <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="support"><input type="hidden" name="membership_id" value="<?= (int)$em['id'] ?>">

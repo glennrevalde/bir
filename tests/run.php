@@ -962,6 +962,22 @@ $a4 = $pdfText($pdfA4->output('x'));
 ok(preg_match('/^q 0\.88[0-9]* 0 0 0\.88[0-9]* /m', $a4) === 1, 'on A4 the 8.5 x 13 form is scaled down to fit', substr($a4, 0, 80));
 
 // =====================================================================
+section('Changing a sign-in email');
+$Em = make_org('Emailco', '777111222');
+login_as($Em['user'], $Em['org'], $Em['client']);
+$emU = DB::insert('users', array('email' => 'old.address@test.local', 'password_hash' => Auth::hash('Test@123456'), 'full_name' => 'Email Mover', 'status' => 'active', 'email_verified_at' => now(), 'created_at' => now()));
+$hashBefore = DB::val('SELECT password_hash FROM users WHERE id = ?', array($emU));
+$outBefore = (int)DB::val('SELECT COUNT(*) FROM mail_outbox');
+Auth::changeEmail($emU, '  New.Address@Test.local ', 'company address');
+ok(DB::val('SELECT email FROM users WHERE id = ?', array($emU)) === 'new.address@test.local' && DB::val('SELECT password_hash FROM users WHERE id = ?', array($emU)) === $hashBefore,
+    'the email changes (trimmed, lower case) and the password stays');
+ok((int)DB::val('SELECT COUNT(*) FROM mail_outbox') - $outBefore === 2, 'both the old and the new address get a message');
+ok(strpos((string)DB::val("SELECT before_json FROM audit_events WHERE action = 'user.email' AND subject_id = ? ORDER BY id DESC LIMIT 1", array($emU)), 'old.address@test.local') !== false, 'the audit trail keeps the old address');
+throws(function () use ($emU) { Auth::changeEmail($emU, 'emailco@test.local'); }, 'an address used by another account is refused', 'already used');
+throws(function () use ($emU) { Auth::changeEmail($emU, 'not-an-email'); }, 'an invalid address is refused', 'valid email');
+ok(!DB::val('SELECT id FROM users WHERE email = ?', array('old.address@test.local')), 'the old address no longer signs in to the account');
+
+// =====================================================================
 section("User's Manual");
 $missing = array();
 foreach (Help::chapters() as $c) {
