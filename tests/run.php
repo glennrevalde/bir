@@ -228,13 +228,22 @@ ok(Ctx::clientAllowed($B['client']) === null, 'a member cannot reach another org
 list($dx, $ex) = Records::validate($wh, array_merge($base, array('payment_date' => '2026-02-10')), $B['client']);
 ok(isset($ex['branch_id']) || isset($ex['counterparty_id']), 'records cannot point at another tenant\'s branch or counterparty');
 $lockId = DB::val('SELECT id FROM period_locks WHERE client_id = ?', array($A['client']));
+ok(!Workflow::approvalsRequired(), 'approval by a second person is off by default');
+$auto = Workflow::request('period_locks', $lockId, 'unlock_period', 'test');
+ok(DB::val('SELECT decision FROM approval_requests WHERE id = ?', array($auto)) === 'approved', 'with approvals off a request is recorded as approved at once');
+ok(!Records::lockedPeriod($A['client'], '2026-01', 'withholding'), 'with approvals off the unlock takes effect when requested');
+ok((int)DB::val("SELECT COUNT(*) FROM audit_events WHERE action = 'approval.auto' AND subject_id = ?", array($lockId)) === 1, 'the automatic approval is in the audit log');
+$lockId = Workflow::lock($A['client'], '2026-01', 'withholding', 'locked again for the maker-checker test');
+set_sys_config('require_approvals', '1');
 $req = Workflow::request('period_locks', $lockId, 'unlock_period', 'test');
+ok(DB::val('SELECT decision FROM approval_requests WHERE id = ?', array($req)) === 'pending' && Records::lockedPeriod($A['client'], '2026-01', 'withholding'), 'with approvals on the request waits');
 throws(function () use ($req) { Workflow::decide($req, true, 'self'); }, 'the requester cannot approve their own request', 'other than the requester');
 $rev = DB::insert('users', array('email' => 'rev@test.local', 'password_hash' => Auth::hash('Test@123456'), 'full_name' => 'Reviewer', 'status' => 'active', 'email_verified_at' => now(), 'created_at' => now()));
 DB::insert('memberships', array('user_id' => $rev, 'organization_id' => $A['org'], 'role_code' => 'reviewer', 'all_clients' => 1, 'status' => 'active', 'created_at' => now()));
 login_as($rev, $A['org'], $A['client']);
 Workflow::decide($req, true, 'ok');
 ok(!Records::lockedPeriod($A['client'], '2026-01', 'withholding'), 'a second person unlocks the period');
+set_sys_config('require_approvals', '0');
 login_as($A['user'], $A['org'], $A['client']);
 
 // =====================================================================
@@ -351,18 +360,12 @@ $evId = Evidence::record($fileC, array('validator_version' => '7.4', 'executed_o
     $upload, array('name' => 'x.dat', 'tmp_name' => $datTmp, 'error' => 0, 'size' => strlen($bytesC)));
 $evRow = DB::row('SELECT * FROM official_validation_evidence WHERE id = ?', array($evId));
 ok($evRow['outcome'] === 'success' && (int)$evRow['checksum_match'] === 1, 'validator report recorded with byte identity proven');
-ok(DB::val('SELECT status FROM dat_files WHERE id = ?', array($fileC)) === 'bir_validated', 'file is officially validated only through the uploaded report');
-throws(function () use ($evId) { Evidence::review($evId, 'accept', 'self'); }, 'the uploader cannot review their own evidence', 'different person');
-$r2 = DB::insert('users', array('email' => 'rev2@test.local', 'password_hash' => Auth::hash('Test@123456'), 'full_name' => 'Reviewer Two', 'status' => 'active', 'email_verified_at' => now(), 'created_at' => now()));
-DB::insert('memberships', array('user_id' => $r2, 'organization_id' => $Cc['org'], 'role_code' => 'reviewer', 'all_clients' => 1, 'status' => 'active', 'created_at' => now()));
-login_as($r2, $Cc['org'], $Cc['client']);
-Evidence::review($evId, 'accept', 'checked');
-login_as($Cc['user'], $Cc['org'], $Cc['client']);
-$ar = Workflow::request('dat_files', $fileC, 'approve_file', 'ready');
-login_as($r2, $Cc['org'], $Cc['client']);
-Workflow::decide($ar, true, 'approved');
-ok(DB::val('SELECT status FROM dat_files WHERE id = ?', array($fileC)) === 'approved', 'a second person approves the file');
+$evRow = DB::row('SELECT * FROM official_validation_evidence WHERE id = ?', array($evId));
+ok(DB::val('SELECT status FROM dat_files WHERE id = ?', array($fileC)) === 'approved', 'with approvals off, a file the BIR validator passes is approved at once');
+ok($evRow['review_decision'] === 'accepted' && $evRow['reviewed_at'], 'the validator report is accepted automatically');
+ok(DB::val('SELECT status FROM layout_specs WHERE id = (SELECT spec_id FROM dat_files WHERE id = ?)', array($fileC)) === 'approved', 'the layout the validator passed is approved too');
 ok((bool)Records::lockedPeriod($Cc['client'], '2026-03', 'withholding'), 'approval locks the covered month');
+ok(!DB::val('SELECT COUNT(*) FROM approval_requests WHERE subject_type = ? AND subject_id = ? AND decision = ?', array('dat_files', $fileC, 'pending')), 'nothing waits in Approvals');
 $fid = Workflow::recordFiling($fileC, array('channel' => 'eSubmission', 'filed_on' => '2026-04-10', 'reference_no' => 'ACK-1', 'notes' => ''), null);
 ok(DB::val('SELECT status FROM dat_files WHERE id = ?', array($fileC)) === 'submitted', 'filing evidence marks the file submitted');
 $wrongTin = str_replace('777888999', '123123123', $txt);
@@ -372,6 +375,33 @@ throws(function () use ($fileD, $tmp, $Dd) {
     Evidence::record($fileD, array('validator_version' => '7.4', 'executed_on' => '2026-04-05', 'outcome' => '', 'patch_date' => '', 'report_type' => '', 'notes' => ''),
         array('name' => 'r.txt', 'tmp_name' => $tmp, 'error' => 0, 'size' => 100), null);
 }, 'a validator report for another TIN is refused', 'not this client');
+
+// with approval by a second person turned on, the maker-checker steps come back
+set_sys_config('require_approvals', '1');
+file_put_contents($tmp, $txt);
+login_as($Dd['user'], $Dd['org'], $Dd['client']);
+$evD = Evidence::record($fileD, array('validator_version' => '7.4', 'executed_on' => '2026-04-05', 'outcome' => '', 'patch_date' => '', 'report_type' => '', 'notes' => ''),
+    $upload, array('name' => 'x.dat', 'tmp_name' => $datTmp, 'error' => 0, 'size' => strlen($bytesC)));
+ok(DB::val('SELECT status FROM dat_files WHERE id = ?', array($fileD)) === 'bir_validated' && !DB::val('SELECT reviewed_at FROM official_validation_evidence WHERE id = ?', array($evD)),
+    'with approvals on, the file is officially validated and the report waits for review');
+throws(function () use ($evD) { Evidence::review($evD, 'accept', 'self'); }, 'the uploader cannot review their own evidence', 'different person');
+$r2 = DB::insert('users', array('email' => 'rev2@test.local', 'password_hash' => Auth::hash('Test@123456'), 'full_name' => 'Reviewer Two', 'status' => 'active', 'email_verified_at' => now(), 'created_at' => now()));
+DB::insert('memberships', array('user_id' => $r2, 'organization_id' => $Dd['org'], 'role_code' => 'reviewer', 'all_clients' => 1, 'status' => 'active', 'created_at' => now()));
+login_as($r2, $Dd['org'], $Dd['client']);
+Evidence::review($evD, 'accept', 'checked');
+login_as($Dd['user'], $Dd['org'], $Dd['client']);
+$ar = Workflow::request('dat_files', $fileD, 'approve_file', 'ready');
+ok(DB::val('SELECT status FROM dat_files WHERE id = ?', array($fileD)) === 'bir_validated', 'the approval request waits');
+login_as($r2, $Dd['org'], $Dd['client']);
+Workflow::decide($ar, true, 'approved');
+ok(DB::val('SELECT status FROM dat_files WHERE id = ?', array($fileD)) === 'approved', 'a second person approves the file');
+// a request left waiting is carried out once approvals are turned off again
+login_as($Dd['user'], $Dd['org'], $Dd['client']);
+$lockD = DB::val('SELECT id FROM period_locks WHERE client_id = ? AND period_month = ? AND unlocked_at IS NULL', array($Dd['client'], '2026-03'));
+$waiting = Workflow::request('period_locks', $lockD, 'unlock_period', 'correction');
+set_sys_config('require_approvals', '0');
+ok(Workflow::settle() >= 1 && DB::val('SELECT decision FROM approval_requests WHERE id = ?', array($waiting)) === 'approved'
+    && !Records::lockedPeriod($Dd['client'], '2026-03', 'withholding'), 'turning approvals off carries out requests that were waiting');
 
 // =====================================================================
 section('Certificates and PDF');
@@ -479,6 +509,24 @@ ok($oraw['record']['period_month'] === '2026-07' && $oraw['record']['input_vat']
 $ctxP = Reports::context(array('form' => 'SLP', 'schedule' => 'S1', 'branch_id' => $Pp['branch'], 'year' => 2026, 'part' => 9, 'sawt_form' => null, 'amended' => 0));
 $fp = DB::row('SELECT * FROM dat_files WHERE id = ?', array(Reports::generate($ctxP, true)));
 ok($fp['total_tax'] === '259.07' && (int)$fp['record_count'] === 3, 'the Summary List of Purchases totals the imported input VAT per vendor', $fp['total_tax'] . ' ' . $fp['record_count']);
+$slpBytes = file_get_contents(storage_path($fp['storage_path']));
+$slpIssues = DB::all('SELECT r.level, e.severity, e.message FROM validation_errors e JOIN validation_runs r ON r.id = e.validation_run_id WHERE r.dat_file_id = ?', array($fp['id']));
+$slpErr = array_filter($slpIssues, function ($i) { return $i['severity'] === 'error'; });
+$slpWarn = implode(' ', array_map(function ($i) { return $i['message']; }, $slpIssues));
+ok($fp['status'] === 'pending_bir' && !$slpErr && strpos($slpWarn, 'has no TIN; the line is written without one') !== false,
+    'a vendor with no TIN is a warning, not an error: the BIR validator accepts a blank TIN', json_encode($slpIssues));
+ok(strpos($slpBytes, "D,P,\"\",\"\",\"DELA CRUZ\",\"JUAN\",\"SANTOS\"") !== false && !array_filter(DatReader::parse($slpBytes, Specs::load($fp['spec_id']))['issues'], function ($i) { return $i['severity'] === 'error'; }),
+    'the line is written with an empty TIN and reads back without a structure error');
+// totalPurchases now includes the input VAT: 5,600.00 services + 672.00 VAT = 6,272.00
+ok(strpos(zip_part($tpl, 'xl/worksheets/sheet1.xml'), '<f>ROUND(SUM(H2:L2)+O2,2)</f>') !== false, 'the template totalPurchases formula adds the input VAT');
+ok(Records::purchaseTotal(array('services_amount' => '5600.00', 'input_vat' => '672.00')) === 627200, 'a purchase record totals 5,600.00 + 672.00 VAT as 6,272.00');
+$trow = function ($total) { return array('300555777', 'TOTAL TEST SERVICES INC', '', '', '', '', '', 0, 0, 5600, 0, 0, '', 12, '', $total); };
+list($tj, $tst) = $pimport(XlsxWriter::build(array(array('name' => 'R_Purchases', 'columns' => $typedCols, 'rows' => array($trow('6272'), $trow('5600'), $trow('7000')), 'header' => 'bold'))), array('period_month' => '2026-06'));
+$tr3 = DB::all('SELECT status, normalized_json, errors_json, warnings_json FROM import_rows WHERE job_id = ? ORDER BY row_no', array($tj));
+$tn = json_decode($tr3[0]['normalized_json'], true);
+ok($tr3[0]['status'] === 'valid' && $tn['record']['input_vat'] === '672.00' && strpos((string)$tr3[0]['warnings_json'], 'total_purchases') === false, 'an imported totalPurchases of 6,272.00 (VAT included) is accepted', json_encode($tr3[0]));
+ok($tr3[1]['status'] === 'valid' && strpos((string)$tr3[1]['warnings_json'], 'leaves out the input VAT') !== false, 'a total from the earlier formula (no VAT) imports with a warning', json_encode($tr3[1]));
+ok($tr3[2]['status'] === 'error' && strpos((string)$tr3[2]['errors_json'], '6,272.00') !== false, 'any other total is refused and the right total is shown', json_encode($tr3[2]));
 
 // =====================================================================
 section('Taxes withheld on us in the SAWT layout');
@@ -763,16 +811,23 @@ foreach ($atcRead['rows'] as $r) {
     }
 }
 $wc860 = DB::row('SELECT * FROM tax_codes WHERE atc_code = ?', array('WC860'));
-$wc160new = DB::row('SELECT * FROM tax_codes WHERE atc_code = ? AND status = ?', array('WC160', 'pending_review'));
-ok($wc860['status'] === 'pending_review' && $wc860['effective_from'] === TaxCodes::FROM_START && $wc860['rate'] === '0.5000' && $wc160new['effective_from'] === today(),
-    'a new code applies from the start, a change from today; both wait for approval');
-throws(function () use ($wc860) { TaxCodes::approve($wc860['id']); }, 'the person who added a code cannot approve it', 'Someone other');
-login_as($rev, $Ww['org'], $Ww['client']);
-TaxCodes::approve($wc860['id']);
-TaxCodes::approve($wc160new['id']);
+$wc160new = DB::row('SELECT * FROM tax_codes WHERE atc_code = ? AND effective_from = ?', array('WC160', today()));
+ok($wc860['status'] === 'approved' && $wc860['effective_from'] === TaxCodes::FROM_START && $wc860['rate'] === '0.5000' && $wc160new && $wc160new['status'] === 'approved',
+    'with approvals off, a new code applies from the start and a change from today, both in use as soon as they are saved');
+ok(!DB::val('SELECT COUNT(*) FROM tax_codes WHERE status = ?', array('pending_review')) || !DB::val('SELECT COUNT(*) FROM tax_codes WHERE status = ? AND atc_code IN (?, ?)', array('pending_review', 'WC860', 'WC160')),
+    'nothing from the upload waits for approval');
 $cur = array();
 foreach (TaxCodes::current('WC') as $r) { $cur[$r['atc_code']] = $r; }
-ok($cur['WC860']['status'] === 'approved' && strpos($cur['WC160']['description'], 'revised wording') !== false && count($cur['WC160']['older']) >= 1, 'a second person approves; the list shows one current row per code');
+ok($cur['WC860']['status'] === 'approved' && strpos($cur['WC160']['description'], 'revised wording') !== false && count($cur['WC160']['older']) >= 1, 'the list shows one current row per code, older versions kept');
+// with approval by a second person on, a code waits and its maker cannot approve it
+set_sys_config('require_approvals', '1');
+$wi861 = TaxCodes::propose(array('atc_code' => 'WI861', 'tax_kind' => 'EWT', 'payee_type' => 'individual', 'rate' => '1.0000', 'description' => 'Test code for maker-checker'), 'test');
+ok(DB::val('SELECT status FROM tax_codes WHERE id = ?', array($wi861)) === 'pending_review', 'with approvals on, a new code waits for approval');
+throws(function () use ($wi861) { TaxCodes::approve($wi861); }, 'the person who added a code cannot approve it', 'Someone other');
+login_as($rev, $Ww['org'], $Ww['client']);
+TaxCodes::approve($wi861);
+ok(DB::val('SELECT status FROM tax_codes WHERE id = ?', array($wi861)) === 'approved', 'a second person approves it');
+set_sys_config('require_approvals', '0');
 ok(Records::taxCode('WC160', 'EWT', '2025-01-15')['description'] !== $cur['WC160']['description'], 'earlier periods keep the version they had');
 login_as($Ww['user'], $Ww['org'], $Ww['client']);
 list($wj2, $wst2) = $wimport(array($sampleRow, array_replace($sampleRow, array(10 => 'WC860', 16 => '2', 15 => 20700))));
@@ -785,6 +840,28 @@ ok($wr2[1]['status'] === 'error' && isset($we2['tax_withheld']) && strpos($we2['
 list($d, $e, $w) = Records::validate($wm, array('branch_id' => $Ww['branch'], 'counterparty_id' => DB::val('SELECT id FROM counterparties WHERE client_id = ? LIMIT 1', array($Ww['client'])) ?: 0,
     'tax_kind' => 'EWT', 'atc_code' => 'WC158', 'payment_date' => '2026-07-10', 'income_amount' => '1000', 'tax_rate' => '2', 'schedule_tag' => '2'), $Ww['client'], array('skip_party' => true, 'party_entity_type' => 'non_individual'));
 ok(!$e && $d['schedule_tag'] === 'B' && $d['tax_withheld'] === '20.00' && isset($w['tax_rate']), 'schedule 2 is saved as the second schedule; a rate other than the ATC is kept with a warning', json_encode(array($e, $w)));
+
+// =====================================================================
+section('A payee with no TIN in the QAP file');
+$Nt = make_org('Notin', '555111222', 'firm_owner', 'NO TIN PAYEE TEST CORP');
+login_as($Nt['user'], $Nt['org'], $Nt['client']);
+$ntCp = DB::insert('counterparties', array('organization_id' => $Nt['org'], 'client_id' => $Nt['client'], 'tin' => null, 'branch_code' => '0000', 'entity_type' => 'non_individual',
+    'registered_name' => 'CONSINGSAY CORPORATION', 'is_payee' => 1, 'status' => 'active', 'created_at' => now()));
+$ntCp2 = DB::insert('counterparties', array('organization_id' => $Nt['org'], 'client_id' => $Nt['client'], 'tin' => '300200100', 'branch_code' => '0000', 'entity_type' => 'non_individual',
+    'registered_name' => 'MABUHAY PRINTING INC', 'is_payee' => 1, 'status' => 'active', 'created_at' => now()));
+foreach (array($ntCp, $ntCp2) as $i => $cpid) {
+    list($d, $e) = Records::validate($wh, array('branch_id' => $Nt['branch'], 'counterparty_id' => $cpid, 'tax_kind' => 'EWT', 'atc_code' => 'WC158', 'payment_date' => '2026-05-1' . $i,
+        'income_amount' => '10,000.00', 'tax_rate' => '', 'tax_withheld' => '', 'rate_exception_note' => '', 'schedule_tag' => 'A', 'reference_no' => ''), $Nt['client']);
+    ok(!$e, 'a withholding record for ' . ($i ? 'a payee with a TIN' : 'a payee with no TIN') . ' is valid', json_encode($e));
+    Records::save($wh, $d);
+}
+$ntFile = DB::row('SELECT * FROM dat_files WHERE id = ?', array(Reports::generate(Reports::context(array('form' => '1601EQ', 'schedule' => 'S1', 'branch_id' => $Nt['branch'], 'year' => 2026, 'part' => 5, 'sawt_form' => null, 'amended' => 0)), true)));
+$ntIssues = DB::all('SELECT r.level, e.severity, e.message FROM validation_errors e JOIN validation_runs r ON r.id = e.validation_run_id WHERE r.dat_file_id = ?', array($ntFile['id']));
+$ntErr = array_values(array_filter($ntIssues, function ($i) { return $i['severity'] === 'error'; }));
+ok($ntFile['status'] === 'pending_bir' && !$ntErr, 'the QAP is written and passes Levels 1 and 2 with a payee that has no TIN', json_encode($ntIssues));
+ok(strpos(json_encode($ntIssues), 'CONSINGSAY CORPORATION) has no TIN') !== false && strpos(json_encode($ntIssues), 'Payee TIN is') === false, 'Level 1 notes the missing TIN as a warning; Level 2 does not call it an error');
+$ntBytes = file_get_contents(storage_path($ntFile['storage_path']));
+ok((bool)preg_match('/^D1,1601EQ,[^\r\n]*,,(""|),?"?CONSINGSAY CORPORATION/m', $ntBytes) || strpos($ntBytes, '"CONSINGSAY CORPORATION"') !== false, 'the payee line is written', substr($ntBytes, 0, 400));
 
 // =====================================================================
 section("User's Manual");
@@ -836,7 +913,7 @@ foreach (DB::col('SELECT id FROM layout_specs') as $sid) {
     }
 }
 ok($bad === 0, 'every layout has a detail record and valid source expressions');
-ok((int)DB::val("SELECT COUNT(*) FROM layout_specs WHERE status = 'approved'") === 0, 'no layout ships approved: approval needs this installation\'s own validator evidence');
+ok((int)DB::val("SELECT COUNT(*) FROM layout_specs WHERE status = 'approved' AND approval_evidence_id IS NULL") === 0, 'no layout ships approved: approval needs this installation\'s own validator evidence');
 
 echo "\n" . $T['pass'] . ' passed, ' . $T['fail'] . " failed\n";
 $root->exec('DROP DATABASE IF EXISTS `' . $testDb . '`');

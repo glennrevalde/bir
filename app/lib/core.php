@@ -299,23 +299,25 @@ function plural($n, $one, $many = null)
 
 function sys_config($key, $default = null)
 {
-    static $cache = null;
-    if ($cache === null) {
-        $cache = array();
+    if (!isset($GLOBALS['GSB_SYS_CONFIG'])) {
+        $GLOBALS['GSB_SYS_CONFIG'] = array();
         try {
             foreach (DB::all('SELECT k, v FROM system_config') as $r) {
-                $cache[$r['k']] = $r['v'];
+                $GLOBALS['GSB_SYS_CONFIG'][$r['k']] = $r['v'];
             }
         } catch (Exception $e) {
-            $cache = array();
+            $GLOBALS['GSB_SYS_CONFIG'] = array();
         }
     }
-    return array_key_exists($key, $cache) ? $cache[$key] : $default;
+    return array_key_exists($key, $GLOBALS['GSB_SYS_CONFIG']) ? $GLOBALS['GSB_SYS_CONFIG'][$key] : $default;
 }
 
 function set_sys_config($key, $value)
 {
     DB::q('INSERT INTO system_config (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)', array($key, $value));
+    if (isset($GLOBALS['GSB_SYS_CONFIG'])) {
+        $GLOBALS['GSB_SYS_CONFIG'][$key] = (string)$value;
+    }
 }
 
 /** Store an uploaded file under storage/<dir> with a random name. Returns array or throws. */

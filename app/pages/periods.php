@@ -23,7 +23,7 @@ if (is_post()) {
                 throw new RuntimeException('Explain why the period must be reopened.');
             }
             Workflow::request('period_locks', $lock['id'], 'unlock_period', $reason, array('month' => $lock['period_month'], 'scope' => $lock['scope']));
-            flash('success', 'Unlock requested. A second person must approve it.');
+            flash('success', Workflow::approvalsRequired() ? 'Unlock requested. A second person must approve it.' : month_label($lock['period_month']) . ' is unlocked.');
         }
     } catch (RuntimeException $e) {
         flash('error', $e->getMessage());
@@ -46,7 +46,7 @@ View::pageBar('Period locks', View::clientContext('locked months reject edits, i
           <td data-label="Reason"><?= e($r['reason']) ?></td><td data-label="Locked"><?= e($r['locker']) ?><span class="sub"><?= e(fmt_dt($r['locked_at'])) ?></span></td>
           <td data-label="State"><?= $r['unlocked_at'] ? '<span class="st st-muted">Unlocked by ' . e($r['unlocker']) . '</span>' : ($r['pending'] ? View::status('pending') : View::status('locked')) ?></td>
           <td class="actions"><?php if (!$r['unlocked_at'] && !$r['pending'] && Ctx::can('approvals.request')) { ?>
-            <form method="post" data-prompt="Why must this period be reopened?"><?= csrf_field() ?><input type="hidden" name="action" value="unlock"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm">Request unlock</button></form>
+            <form method="post" data-prompt="Why must this period be reopened?"><?= csrf_field() ?><input type="hidden" name="action" value="unlock"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm"><?= Workflow::approvalsRequired() ? 'Request unlock' : 'Unlock' ?></button></form>
           <?php } ?></td></tr>
       <?php } ?>
       <?php if (!$rows) { ?><tr><td colspan="6"><div class="empty"><h2>No locked periods</h2><p>Approving a file locks the months it covers. You can also lock a month by hand.</p></div></td></tr><?php } ?>

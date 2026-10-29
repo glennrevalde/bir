@@ -77,7 +77,7 @@ if (is_post()) {
             }
             DB::update('layout_specs', array('status' => $spec['status'] === 'draft' ? 'pending_verification' : $spec['status'], 'updated_at' => now()), 'id = ?', array($id));
             Workflow::request('layout_specs', $id, 'approve_spec', $note);
-            flash('success', 'Approval requested.');
+            flash('success', Workflow::approvalsRequired() ? 'Approval requested.' : 'Layout approved.');
         } elseif ($action === 'retire') {
             Ctx::requirePerm('reference.approve');
             DB::update('layout_specs', array('status' => 'retired', 'effective_to' => Records::parseDate(input('effective_to')) ?: today(), 'updated_at' => now()), 'id = ?', array($id));
@@ -151,7 +151,7 @@ View::pageBar($spec['form_code'] . ' ' . $spec['schedule_code'] . ($spec['varian
   </dl></div>
   <?php if ($can) { ?><div class="sheet-foot">
     <form method="post" class="btn-row"><?= csrf_field() ?><input type="hidden" name="action" value="clone"><button class="btn">Make a draft copy</button></form>
-    <?php if ($spec['status'] !== 'approved' && $spec['status'] !== 'retired') { ?><form method="post" data-prompt="Cite the official validator evidence or annex for this layout"><?= csrf_field() ?><input type="hidden" name="action" value="request"><button class="btn btn-primary">Request approval</button></form><?php } ?>
+    <?php if ($spec['status'] !== 'approved' && $spec['status'] !== 'retired') { ?><form method="post" data-prompt="Cite the official validator evidence or annex for this layout"><?= csrf_field() ?><input type="hidden" name="action" value="request"><button class="btn btn-primary"><?= Workflow::approvalsRequired() ? 'Request approval' : 'Approve layout' ?></button></form><?php } ?>
   </div><?php } ?></div>
   <?php if ($isDraft && $can) { ?>
   <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="meta">

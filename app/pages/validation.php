@@ -8,7 +8,14 @@ $groups = array(
     'bir_failed' => array('Failed official validation', 'The BIR validator reported errors. Read the line numbers, correct and regenerate.'),
     'review' => array('Evidence to review', 'A second person must accept or reject the uploaded validator report.'),
     'ready' => array('Ready for approval', 'Officially validated with accepted evidence.'),
+    'approved' => array('Approved, ready to submit', 'The BIR validator passed these files, so they are approved. Submit each one and record the submission on its page.'),
 );
+if (Workflow::approvalsRequired()) {
+    unset($groups['approved']);
+} else {
+    // No second person: a file the validator passes is approved at once, so there is nothing to review.
+    unset($groups['review'], $groups['ready']);
+}
 $data = array();
 foreach (array('structure_failed', 'pending_bir', 'bir_failed') as $st) {
     $data[$st] = DB::all('SELECT * FROM dat_files WHERE client_id = ? AND status = ? ORDER BY period_to DESC, id DESC LIMIT 100', array($cid, $st));
@@ -17,7 +24,8 @@ $data['review'] = DB::all('SELECT d.*, e.id AS ev_id, e.uploaded_by FROM dat_fil
     AND d.status IN (?, ?) ORDER BY e.id DESC', array($cid, 'bir_validated', 'bir_failed'));
 $data['ready'] = DB::all('SELECT d.* FROM dat_files d WHERE d.client_id = ? AND d.status = ? AND EXISTS (SELECT 1 FROM official_validation_evidence e WHERE e.dat_file_id = d.id
     AND e.outcome = ? AND e.review_decision = ?) ORDER BY d.period_to DESC', array($cid, 'bir_validated', 'success', 'accepted'));
-$counts = DB::row('SELECT SUM(status = \'approved\') AS approved, SUM(status = \'submitted\') AS submitted, SUM(status = \'bir_validated\') AS validated,
+$data['approved'] = DB::all('SELECT * FROM dat_files WHERE client_id = ? AND status = ? ORDER BY period_to DESC, id DESC LIMIT 100', array($cid, 'approved'));
+$counts = DB::row('SELECT SUM(status = \'approved\') AS approved, SUM(status = \'submitted\') AS submitted, SUM(status IN (\'bir_validated\', \'approved\', \'submitted\')) AS validated,
     SUM(file_label = \'unvalidated_draft\' AND status NOT IN (\'superseded\', \'approved\', \'submitted\', \'bir_validated\')) AS drafts FROM dat_files WHERE client_id = ?', array($cid));
 View::header('Validation center');
 View::pageBar('Validation center', View::clientContext('three levels, tracked separately'));
@@ -36,7 +44,7 @@ View::pageBar('Validation center', View::clientContext('three levels, tracked se
     <?php if (!$data[$k]) { ?><div class="sheet-body muted small">Nothing here.</div><?php } else { ?>
       <ul class="queue"><?php foreach (array_slice($data[$k], 0, 12) as $f) { ?>
         <li><div class="q-main"><a class="mono" href="<?= e(url('file_view', array('id' => $f['id']))) ?>"><?= e($f['filename']) ?></a>
-          <div class="q-sub"><?= e($f['form_code'] . ' ' . $f['schedule_code'] . ', ' . $f['period_label']) ?> <?= View::status($f['file_label']) ?></div></div></li>
+          <div class="q-sub"><?= e($f['form_code'] . ' ' . $f['schedule_code'] . ', ' . $f['period_label']) ?> <?= View::status($k === 'approved' ? 'approved' : $f['file_label']) ?></div></div></li>
       <?php } ?></ul>
     <?php } ?>
   </div>

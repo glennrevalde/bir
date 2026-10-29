@@ -21,7 +21,7 @@ if (is_post()) {
                 throw new RuntimeException('Give a reason.');
             }
             Workflow::request('certificates', $c['id'], 'void_certificate', $reason, array('reason' => $reason));
-            flash('success', 'Void requested. Another person must approve it.');
+            flash('success', Workflow::approvalsRequired() ? 'Void requested. Another person must approve it.' : 'Certificate voided.');
         } elseif (input('action') === 'reissue') {
             Ctx::requirePerm('certificates.void');
             if ($c['status'] !== 'issued') {
@@ -65,7 +65,7 @@ View::pageBar($c['cert_no'], View::clientContext('BIR Form ' . e($c['form_code']
     </dl></div>
     <?php if ($c['status'] === 'issued') { ?><div class="sheet-foot">
       <?php if (Ctx::can('certificates.void')) { ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="reissue"><button class="btn" data-confirm="Reissue from current records as the next revision? This revision will be marked replaced.">Reissue</button></form><?php } ?>
-      <?php if (Ctx::can('approvals.request')) { ?><form method="post" data-prompt="Reason for voiding this certificate"><?= csrf_field() ?><input type="hidden" name="action" value="void"><button class="btn btn-danger">Request void</button></form><?php } ?>
+      <?php if (Ctx::can('approvals.request')) { ?><form method="post" data-prompt="Reason for voiding this certificate"><?= csrf_field() ?><input type="hidden" name="action" value="void"><button class="btn btn-danger"><?= Workflow::approvalsRequired() ? 'Request void' : 'Void certificate' ?></button></form><?php } ?>
     </div><?php } ?></div>
     <div class="sheet"><div class="sheet-head"><h2>Revisions</h2></div><ul class="queue"><?php foreach ($revs as $r) { ?><li><div class="q-main"><a href="<?= e(url('cert_view', array('id' => $r['id']))) ?>">Revision <?= (int)$r['revision'] ?></a><div class="q-sub"><?= View::status($r['status']) ?> <?= e(fmt_dt($r['created_at'])) ?></div></div></li><?php } ?></ul></div>
   </div>

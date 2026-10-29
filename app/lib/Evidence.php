@@ -2,7 +2,7 @@
 /**
  * Level 3: official BIR validator evidence. The system never decides on its own that a file
  * passed the BIR validator; it records the validator's own report, cross-checks it against
- * the stored file, and requires a second person to review it.
+ * the stored file, and (when approvals are turned on) requires a second person to review it.
  */
 class Evidence
 {
@@ -103,7 +103,12 @@ class Evidence
             DB::update('report_runs', array('status' => $outcome === 'success' ? 'bir_validated' : 'bir_failed', 'updated_at' => now()), 'id = ?', array((int)$f['run_id']));
             Audit::log('validation.official', 'dat_files', $f['id'], 'Recorded BIR validator result: ' . $outcome . ' (' . $version . ')', null,
                 array('evidence' => $eid, 'checksum_match' => $checksumMatch));
-            Workflow::notifyPerm('validation.review', 'Validator evidence to review', $f['filename'] . ': ' . $outcome, url('file_view', array('id' => $f['id'])));
+            if (Workflow::approvalsRequired()) {
+                Workflow::notifyPerm('validation.review', 'Validator evidence to review', $f['filename'] . ': ' . $outcome, url('file_view', array('id' => $f['id'])));
+            } else {
+                // No second person: the report is accepted as recorded, and a file the validator passed is approved.
+                Workflow::autoAcceptEvidence($eid);
+            }
             return $eid;
         });
     }

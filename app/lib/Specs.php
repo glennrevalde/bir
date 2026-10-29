@@ -139,4 +139,13 @@ class Specs
             return $nid;
         });
     }
+
+    /**
+     * A counterparty's or employee's TIN and its branch code may be blank in a DAT file: the BIR validator
+     * accepts a line without a TIN, so the system writes and reads it without calling it an error.
+     */
+    public static function tinMayBeBlank($f)
+    {
+        return isset($f['source_expr']) && in_array($f['source_expr'], array('row.tin', 'row.branch', 'row.tin_branch'), true);
+    }
 }

@@ -53,7 +53,7 @@ class Records
                     '_taxable', 'input_vat', '_total'),
                 'computed' => array(
                     '_taxable' => array('label' => 'Taxable net of VAT', 'sum' => array('services_amount', 'capital_goods_amount', 'other_goods_amount')),
-                    '_total' => array('label' => 'Total purchases', 'sum' => array('exempt_amount', 'zero_rated_amount', 'services_amount', 'capital_goods_amount', 'other_goods_amount')),
+                    '_total' => array('label' => 'Total purchases', 'sum' => array('exempt_amount', 'zero_rated_amount', 'services_amount', 'capital_goods_amount', 'other_goods_amount', 'input_vat')),
                 ),
                 'totals' => array('exempt_amount', 'zero_rated_amount', 'services_amount', 'capital_goods_amount', 'other_goods_amount', 'input_vat', 'non_creditable_vat'),
             ),
@@ -430,10 +430,14 @@ class Records
             + Money::fromDb(isset($d['other_goods_amount']) ? $d['other_goods_amount'] : 0);
     }
 
-    /** Total purchases, in centavos: exempt + zero-rated + taxable (VAT not included), as in the R_Purchases workbook. */
+    /**
+     * Total purchases, in centavos: exempt + zero-rated + services + capital goods + other goods + input VAT,
+     * so each taxable purchase counts with its VAT, as in the R_Purchases workbook.
+     */
     public static function purchaseTotal($d)
     {
-        return Money::fromDb(isset($d['exempt_amount']) ? $d['exempt_amount'] : 0) + Money::fromDb(isset($d['zero_rated_amount']) ? $d['zero_rated_amount'] : 0) + self::purchaseTaxable($d);
+        return Money::fromDb(isset($d['exempt_amount']) ? $d['exempt_amount'] : 0) + Money::fromDb(isset($d['zero_rated_amount']) ? $d['zero_rated_amount'] : 0) + self::purchaseTaxable($d)
+            + Money::fromDb(isset($d['input_vat']) && $d['input_vat'] !== null ? $d['input_vat'] : 0);
     }
 
     /**

@@ -7,8 +7,8 @@ Research checkpoint: 16 October 2026. Current validator recorded in System setti
 - **No invented formats.** Every byte of a DAT comes from a row in the layout registry (`layout_specs`, `spec_records`, `spec_fields`). Each layout and each field carries a source reference and a confidence level.
 - **Three separate levels.** Level 1 data quality, Level 2 DAT structure (independent re-parse), Level 3 official BIR validator evidence. They are stored and shown separately. Levels 1 and 2 can never mark a file as BIR-validated.
 - **Submission ready means something specific.** A file is labelled `submission_ready` only when Levels 1 and 2 pass, its layout is approved, and every ATC it uses is approved. Anything else is an `unvalidated_draft`, and draft downloads need their own permission and are logged as such.
-- **Evidence is human.** Level 3 is recorded by uploading the validator's own report. A different user must review it. A report naming another TIN, form or period is refused; if a DAT is uploaded with the report, its SHA-256 must match the generated file.
-- **Approval is maker-checker.** Layouts, ATCs, file release, period unlocks and certificate voids each need a second person with the approve permission.
+- **Evidence is human.** Level 3 is recorded by uploading the validator's own report (reviewed by a different user when maker-checker is on). A report naming another TIN, form or period is refused; if a DAT is uploaded with the report, its SHA-256 must match the generated file.
+- **Approval follows the validator.** A file is approved as soon as its official BIR validator report shows no errors, and the layout that produced it is approved with that evidence. Layouts, ATCs, period unlocks and certificate voids take effect when saved and are logged as approved. Platform settings can turn maker-checker back on, so each of these needs a second person with the approve permission.
 - **One serializer.** Excel import and direct entry feed the same dataset builder and the same writer. The test suite checks that both produce identical bytes.
 
 ## Layout status as shipped
@@ -39,7 +39,7 @@ Each layout page (Admin, File layouts) shows these notes per field, lets you clo
 1. Generate a file with the layout from real or test records.
 2. Run it through the current BIR validation module.
 3. Upload the validator report on the file page. If it fails, fix the layout (clone, edit) or the data, regenerate, and repeat.
-4. Once a file made with the layout is accepted, request approval of the layout. A reviewer approves it.
+4. When the validator passes a file made with the layout, the layout is approved with that evidence. (With maker-checker on, request approval of the layout and a reviewer approves it.)
 5. From then on, files made with it can reach `submission_ready`.
 
 ## ATC registry

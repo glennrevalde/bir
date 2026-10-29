@@ -268,7 +268,7 @@ class DatWriter
             default:
                 $val = (string)$raw;
         }
-        if ((int)$f['required'] === 1 && $val === '') {
+        if ((int)$f['required'] === 1 && $val === '' && !Specs::tinMayBeBlank($f)) {
             $this->issue('error', 'REQUIRED', $recNo, $key, $label . ' is required in record ' . $recCode);
         }
         if ($f['max_len'] && $f['data_type'] !== 'digits' && mb_strlen($val) > (int)$f['max_len']) {

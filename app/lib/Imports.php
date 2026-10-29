@@ -51,7 +51,7 @@ class Imports
             // Exactly the 16 columns of the R_Purchases workbook, in its order and with its headers.
             // Columns marked 'extra' are optional, never in the template, and only used when a file has them.
             'purchases' => array('label' => 'Purchases (R_Purchases format)', 'code' => 'GSB-PURCHASES', 'module' => 'purchases', 'role' => 'supplier',
-                'sheet' => 'R_Purchases', 'version' => '2.0', 'needs_month' => true, 'repeatable' => true, 'columns' => array(
+                'sheet' => 'R_Purchases', 'version' => '2.1', 'needs_month' => true, 'repeatable' => true, 'columns' => array(
                 array('key' => 'p_tin', 'title' => 'Vendor_TIN', 'format' => 'text', 'width' => 18.73, 'help' => 'Vendor TIN, 9 digits. Keep the column as Text so leading zeros stay. A 13-digit TIN includes the branch code.', 'example' => '000488793'),
                 array('key' => 'p_registered_name', 'title' => 'companyName', 'format' => 'text', 'width' => 69.13, 'help' => 'Registered name of a non-individual vendor. Leave blank for individuals.', 'example' => 'PLDT, INC.'),
                 array('key' => 'p_last_name', 'title' => 'lastName', 'format' => 'text', 'width' => 10, 'help' => 'Individual vendors only.', 'example' => ''),
@@ -70,7 +70,7 @@ class Imports
                 array('key' => 'input_vat', 'title' => 'inputVat', 'format' => 'amount', 'xlsx_format' => '0.00', 'width' => 9.27, 'weak' => true,
                     'formula' => 'ROUND(M{r}*N{r}/100,2)', 'help' => 'Formula: taxableNetofVat x vatRate / 100. A typed amount is kept and compared.', 'example' => ''),
                 array('key' => 'total_purchases', 'title' => 'totalPurchases', 'format' => 'amount', 'xlsx_format' => '0.00', 'width' => 15.13, 'computed' => true,
-                    'formula' => 'ROUND(SUM(H{r}:L{r}),2)', 'help' => 'Formula: exempt + zeroRated + services + capitalGoods + otherThancapitalGoods. Checked, not typed.', 'example' => ''),
+                    'formula' => 'ROUND(SUM(H{r}:L{r})+O{r},2)', 'help' => 'Formula: exempt + zeroRated + services + capitalGoods + otherThancapitalGoods + inputVat, so each taxable purchase counts with its VAT. Checked, not typed.', 'example' => ''),
                 array('key' => 'p_branch', 'title' => 'Vendor branch code', 'format' => 'text', 'extra' => true, 'help' => 'Optional. 4 digits; 0000 when blank.'),
                 $branch + array('extra' => true),
                 array('key' => 'invoice_no', 'title' => 'Invoice no', 'format' => 'text', 'extra' => true, 'help' => 'Optional.'),
@@ -1073,7 +1073,8 @@ class Imports
         if (empty($raw['invoice_date']) && !empty($opts['period_month'])) {
             $in['period_month'] = $opts['period_month'];
         }
-        // Excel: taxableNetofVat = ROUND(SUM(J:L),2), totalPurchases = ROUND(SUM(H:L),2) on unrounded cells.
+        // Excel: taxableNetofVat = ROUND(SUM(J:L),2) and the amounts before VAT ROUND(SUM(H:L),2), on unrounded
+        // cells; totalPurchases adds the input VAT to them (checked further down, once the VAT is known).
         $taxable = self::excelRound2(self::excelNumber($exact['services_amount'] + $exact['capital_goods_amount'] + $exact['other_goods_amount'], true));
         $total = self::excelRound2(self::excelNumber($exact['exempt_amount'] + $exact['zero_rated_amount'] + $exact['services_amount'] + $exact['capital_goods_amount'] + $exact['other_goods_amount'], true));
         // Store centavos that reproduce the sheet's own rounded totals: when rounding each amount on its
@@ -1082,11 +1083,10 @@ class Imports
             $moved = self::allocateRounding($in, $exact, array('services_amount', 'capital_goods_amount', 'other_goods_amount'), $taxable);
             $moved += self::allocateRounding($in, $exact, array('exempt_amount', 'zero_rated_amount'), $total - $taxable);
             if ($moved) {
-                $warnings['taxable_net'] = 'Amounts with more than two decimals were rounded so they add up to the sheet\'s taxableNetofVat ' . Money::fmt($taxable) . ' and totalPurchases ' . Money::fmt($total) . '.';
+                $warnings['taxable_net'] = 'Amounts with more than two decimals were rounded so they add up to the sheet\'s taxableNetofVat ' . Money::fmt($taxable) . '.';
             }
         }
-        foreach (array('taxable_net' => array($taxable, 'taxableNetofVat', 'services + capitalGoods + otherThancapitalGoods'),
-                     'total_purchases' => array($total, 'totalPurchases', 'exempt + zeroRated + services + capitalGoods + otherThancapitalGoods')) as $k => $c) {
+        foreach (array('taxable_net' => array($taxable, 'taxableNetofVat', 'services + capitalGoods + otherThancapitalGoods')) as $k => $c) {
             if (!isset($raw[$k]) || trim((string)$raw[$k]) === '') {
                 continue;
             }
@@ -1118,6 +1118,21 @@ class Imports
                 $in['input_vat'] = Money::toPlain($vat);
             } else {
                 $in['input_vat'] = self::excelNumber($raw['input_vat'], in_array('input_vat', $num, true));
+            }
+        }
+        // totalPurchases = exempt + zeroRated + (services + capitalGoods + otherThancapitalGoods) + inputVat.
+        if ($total !== null && isset($raw['total_purchases']) && trim((string)$raw['total_purchases']) !== '') {
+            $vatC = Money::parse(isset($in['input_vat']) ? (string)$in['input_vat'] : '');
+            $vatC = $vatC['ok'] && !$vatC['blank'] ? $vatC['cents'] : 0;
+            $given = self::excelRound2(self::excelNumber($raw['total_purchases'], in_array('total_purchases', $num, true)));
+            if ($given === null) {
+                $errors['total_purchases'] = 'totalPurchases is not a number';
+            } elseif ($given === $total && $vatC !== 0) {
+                // A workbook made with the earlier formula, which left the VAT out of the total.
+                $warnings['total_purchases'] = 'totalPurchases ' . Money::fmt($given) . ' leaves out the input VAT (the earlier formula). The total is now ' . Money::fmt($total + $vatC) . ', VAT included.';
+            } elseif ($given !== $total + $vatC) {
+                $errors['total_purchases'] = 'totalPurchases is ' . Money::fmt($given) . ' but exempt + zeroRated + services + capitalGoods + otherThancapitalGoods + inputVat is '
+                    . Money::fmt($total + $vatC) . '. Fix the row so they agree.';
             }
         }
     }

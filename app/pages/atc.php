@@ -1,9 +1,10 @@
 <?php
 /**
  * Tax codes (ATC). One row per code: add or change a code, or upload many from Excel (checked and shown
- * before anything is saved). Every addition or change waits for a second person's approval.
+ * before anything is saved). When approvals are turned on, every addition or change waits for a second person.
  */
 Ctx::requirePerm('reference.view');
+$needs = Workflow::approvalsRequired();
 
 if ($dl = input('dl')) {
     $withCodes = $dl === 'codes';
@@ -34,7 +35,7 @@ if (is_post()) {
                 flash('info', $d['atc_code'] . ' already has this rate, payee type and description. Nothing changed.');
             } else {
                 TaxCodes::propose($d, 'entered on the Tax codes page');
-                flash('success', $d['atc_code'] . ($what === 'new' ? ' added' : ' changed') . '. A second person with approval rights must approve it before files use it as approved.');
+                flash('success', $d['atc_code'] . ($what === 'new' ? ' added' : ' changed') . ($needs ? '. A second person with approval rights must approve it before files use it as approved.' : ' and ready to use.'));
             }
         } elseif ($action === 'upload') {
             Ctx::requirePerm('reference.manage');
@@ -57,7 +58,7 @@ if (is_post()) {
             unset($_SESSION['atc_upload']);
             Audit::log('taxcode.upload_apply', 'tax_codes', null, 'From ' . $upload['name'] . ': ' . $n['new'] . ' new, ' . $n['change'] . ' changed');
             flash($n['new'] + $n['change'] ? 'success' : 'info', $n['new'] + $n['change']
-                ? 'Submitted ' . plural($n['new'], 'new code') . ' and ' . plural($n['change'], 'change') . ' for approval.'
+                ? ($needs ? 'Submitted ' : 'Saved ') . plural($n['new'], 'new code') . ' and ' . plural($n['change'], 'change') . ($needs ? ' for approval.' : '. They are ready to use.')
                 : 'Nothing to submit: every code in the file is already in the system as it is.');
         } elseif ($action === 'cancel_upload') {
             unset($_SESSION['atc_upload']);
@@ -126,7 +127,7 @@ View::pageBar('Tax codes (ATC)', 'The codes, rates and descriptions used by ever
     $ok = $count['new'] + $count['change']; ?>
 <div class="sheet atc-review">
   <div class="sheet-head"><div><h2>Check the upload: <?= e($upload['name']) ?></h2>
-    <p>Nothing is saved yet. <?= plural($ok, 'code') ?> will be submitted for approval<?= $count['error'] ? '; ' . plural($count['error'], 'row') . ' with errors will be left out' : '' ?>.</p></div></div>
+    <p>Nothing is saved yet. <?= plural($ok, 'code') ?> will be <?= $needs ? 'submitted for approval' : 'saved' ?><?= $count['error'] ? '; ' . plural($count['error'], 'row') . ' with errors will be left out' : '' ?>.</p></div></div>
   <?php foreach ($review['problems'] as $pb) { ?><div class="notice notice-error" style="margin:12px 16px 0"><?= e($pb) ?></div><?php } ?>
   <div class="figures">
     <div><strong><?= (int)$count['new'] ?></strong><span>New codes</span></div>
@@ -156,7 +157,7 @@ View::pageBar('Tax codes (ATC)', 'The codes, rates and descriptions used by ever
   <div class="sheet-foot" style="justify-content:space-between">
     <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="cancel_upload"><button class="btn btn-quiet">Cancel</button></form>
     <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="apply">
-      <button class="btn btn-primary" <?= $ok ? '' : 'disabled' ?>>Submit <?= plural($ok, 'code') ?> for approval</button></form>
+      <button class="btn btn-primary" <?= $ok ? '' : 'disabled' ?>><?= $needs ? 'Submit ' . plural($ok, 'code') . ' for approval' : 'Save ' . plural($ok, 'code') ?></button></form>
   </div>
 </div>
 <?php } ?>
@@ -200,7 +201,7 @@ View::pageBar('Tax codes (ATC)', 'The codes, rates and descriptions used by ever
         <div class="field"><label for="rate">Rate (%)</label><input id="rate" name="rate" type="text" inputmode="decimal" required placeholder="1"></div>
         <div class="field wide"><label for="description">Description</label><input id="description" name="description" type="text" maxlength="255" required></div>
       </div></div>
-      <div class="sheet-foot"><button class="btn btn-primary">Submit for approval</button></div>
+      <div class="sheet-foot"><button class="btn btn-primary"><?= $needs ? 'Submit for approval' : 'Save code' ?></button></div>
     </form>
   </div>
   <?php } ?>

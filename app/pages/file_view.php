@@ -13,7 +13,9 @@ if (is_post()) {
         if ($action === 'evidence') {
             Ctx::requirePerm('validation.record');
             Evidence::record($id, $_POST, isset($_FILES['report']) ? $_FILES['report'] : null, isset($_FILES['validated_dat']) ? $_FILES['validated_dat'] : null);
-            flash('success', 'Validator result recorded. A second person must review the evidence.');
+            $fNow = DB::val('SELECT status FROM dat_files WHERE id = ?', array($id));
+            flash('success', Workflow::approvalsRequired() ? 'Validator result recorded. A second person must review the evidence.'
+                : ($fNow === 'approved' ? 'The BIR validator passed this file. It is approved and ready to submit.' : 'Validator result recorded. The validator reported errors; correct them and regenerate.'));
         } elseif ($action === 'review') {
             Ctx::requirePerm('validation.review');
             Evidence::review(input_int('evidence_id'), input('decision') === 'accept' ? 'accept' : 'reject', trim((string)input('note')));
@@ -21,7 +23,7 @@ if (is_post()) {
         } elseif ($action === 'request_approval') {
             Ctx::requirePerm('approvals.request');
             Workflow::request('dat_files', $id, 'approve_file', trim((string)input('reason')) ?: 'Ready for filing', array('filename' => $f['filename']));
-            flash('success', 'Approval requested.');
+            flash('success', Workflow::approvalsRequired() ? 'Approval requested.' : 'File approved.');
         } elseif ($action === 'regenerate') {
             Ctx::requirePerm('reports.generate');
             $nid = Reports::regenerate($id);
@@ -38,7 +40,7 @@ if (is_post()) {
                 throw new RuntimeException('Layout approval needs accepted official validator evidence for this file.');
             }
             Workflow::request('layout_specs', $f['spec_id'], 'approve_spec', 'Validator ' . $ev['validator_version'] . ' accepted ' . $f['filename'], array('evidence_id' => $ev['id'], 'file_id' => $id));
-            flash('success', 'Layout approval requested with this evidence.');
+            flash('success', Workflow::approvalsRequired() ? 'Layout approval requested with this evidence.' : 'Layout approved with this evidence.');
         } elseif ($action === 'import_rows') {
             Ctx::requirePerm('records.edit');
             $n = gsb_import_dat_rows($f, $client);
@@ -205,7 +207,10 @@ View::pageBar($f['filename'], View::clientContext(e($f['form_code'] . ' ' . $f['
     <div class="sheet-body stack">
       <?php if ($f['status'] === 'bir_validated' && $latestEv && $latestEv['review_decision'] === 'accepted' && Ctx::can('approvals.request')) { ?>
         <?php if ($pendingAppr) { ?><p><?= View::status('pending') ?> Approval requested on <?= e(fmt_dt($pendingAppr['requested_at'])) ?>.</p>
-        <?php } else { ?><form method="post" class="inline-form"><?= csrf_field() ?><input type="hidden" name="action" value="request_approval"><div class="field grow"><label for="reason">Note for the approver</label><input id="reason" name="reason" type="text" maxlength="200"></div><button class="btn btn-primary">Request approval</button></form><?php } ?>
+        <?php } else { ?><form method="post" class="inline-form"><?= csrf_field() ?><input type="hidden" name="action" value="request_approval"><div class="field grow"><label for="reason"><?= Workflow::approvalsRequired() ? 'Note for the approver' : 'Note' ?></label><input id="reason" name="reason" type="text" maxlength="200"></div><button class="btn btn-primary"><?= Workflow::approvalsRequired() ? 'Request approval' : 'Approve file' ?></button></form><?php } ?>
+      <?php } ?>
+      <?php if ($f['status'] === 'approved' && !Ctx::can('filings.record')) { ?>
+        <p>Approved and ready to submit. Submit it through the BIR channel; a member with filing rights (owner, administrator or reviewer) then records the submission here.</p>
       <?php } ?>
       <?php if ($f['status'] === 'approved' && Ctx::can('filings.record')) { ?>
         <form method="post" enctype="multipart/form-data"><?= csrf_field() ?><input type="hidden" name="action" value="filing">
@@ -226,7 +231,7 @@ View::pageBar($f['filename'], View::clientContext(e($f['form_code'] . ' ' . $f['
         <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="import_rows"><button class="btn" data-confirm="Copy the detail rows of this file into withholding records?">Import rows into records</button></form>
       <?php } ?>
       <?php if ($spec && $spec['status'] !== 'approved' && $latestEv && $latestEv['outcome'] === 'success' && $latestEv['review_decision'] === 'accepted' && Ctx::can('reference.manage')) { ?>
-        <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="promote_spec"><button class="btn">Request approval of layout #<?= (int)$spec['id'] ?> with this evidence</button></form>
+        <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="promote_spec"><button class="btn"><?= Workflow::approvalsRequired() ? 'Request approval of' : 'Approve' ?> layout #<?= (int)$spec['id'] ?> with this evidence</button></form>
       <?php } ?>
     </div>
   </div>

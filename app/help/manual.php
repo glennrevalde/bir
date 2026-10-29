@@ -23,14 +23,14 @@ $ch[] = array('title' => 'Getting started', 'sections' => array(
 <li>Keeps sales, purchases, importations, taxes you withheld, taxes withheld from you, and employee compensation for each client and branch.</li>
 <li>Writes DAT files for SLS, SLP, SLI, 1601-EQ, 1601-FQ, 1600-VT, 1600-PT, 1604-C, 1604-E, 1604-F, SAWT and the SRS.</li>
 <li>Checks every file twice before you see it: once for data quality and once by reading the file back.</li>
-<li>Tracks the official BIR validator result, a second person's review, approval, and the filing reference.</li>
+<li>Tracks the official BIR validator result, approval, and the filing reference. A file the BIR validator passes is approved at once.</li>
 <li>Issues 2307, 2306 and 2316 certificates from the same records, so certificates and alphalists always agree.</li>
 <li>Keeps an audit trail that shows who did what, and detects any tampering.</li>
 </ul>
 <h3>What it does not do</h3>
 <ul>
 <li>It does not submit anything to the BIR. You validate files with the BIR's own validation module and send them through eSubmission, eFPS or eBIRForms as usual.</li>
-<li>It never marks a file as accepted by the BIR on its own. Only the validator's report, uploaded by a person and reviewed by another, can do that.</li>
+<li>It never marks a file as accepted by the BIR on its own. Only the validator's report, uploaded by a person, can do that.</li>
 <li>It does not compute your tax returns. It prepares the attachments and certificates that go with them.</li>
 </ul>
 <div class="mnote"><strong>Before using any file for a real filing,</strong> read <a href="{sec:three_levels}">How validation works</a>. Most file layouts are marked as drafts or pending verification until your own validator run confirms them.</div>
@@ -95,7 +95,7 @@ H
 <li><b>Filing calendar</b>: one row per file family (Sales list, Purchases list, QAP 1601-EQ, MAP, SAWT and so on) and one column per month. A filled mark means a file exists; its color says where it stands: validated or approved, waiting for BIR validation, or failed a check. Point at a mark to read its status. Use <b>Previous year</b> and <b>Next year</b> to move.</li>
 <li><b>Quarter totals</b>: sales, output VAT, input VAT, taxes you withheld and taxes withheld on you for the current quarter. A month that is unexpectedly low usually means missing records.</li>
 <li><b>Taxes withheld per month</b>: a bar for each month, to spot gaps before you generate a QAP.</li>
-<li><b>Work queue</b>: approvals waiting for your decision, files waiting for BIR validation, evidence waiting for review and imports with errors. Click an item to open it.</li>
+<li><b>Work queue</b>: files waiting for BIR validation and imports with errors (and, with approval by a second person on, approvals and evidence waiting for you). Click an item to open it.</li>
 <li><b>Recent activity</b>: the latest entries in the audit trail for this client.</li>
 </ul>
 <p>Due dates appear only after an administrator adds deadline rules with their BIR source under <a href="{sec:reference}">RDO codes and deadlines</a>. The system never guesses a due date.</p>
@@ -118,23 +118,23 @@ H
 <tr><td>Client read-only / auditor</td><td>External auditor, client staff</td><td>Read records, files and the audit trail; download files</td></tr>
 <tr><td>Support (time-limited)</td><td>Outside support</td><td>Read-only access that expires</td></tr>
 </tbody></table>
-<h3>Maker-checker</h3>
-<p>Some actions always need two people: the one who asks and a different one who approves. These are releasing a file for filing, unlocking a closed month, approving a tax code or file layout, voiding a certificate, accepting validator evidence and approving a signature image. Nobody can approve their own request, and nobody can change their own role.</p>
+<h3>Approvals</h3>
+<p>Approval by a second person is turned off. Releasing a file for filing, unlocking a closed month, saving a tax code or file layout, voiding a certificate, accepting validator evidence and using a signature image all take effect when the person allowed to do them does them, and each is recorded in the audit trail as approved. A file is approved as soon as its BIR validator report shows no errors.</p>
+<p>The Platform Administrator can turn on <b>Require a second person's approval</b> under Platform settings. Then each of these actions waits in Approvals for a different person (maker-checker), and nobody can approve their own request. Nobody can change their own role either way.</p>
 H
 ),
 
-'quickstart' => $S('Your first filing, step by step', 'generate', 'From an empty client to an approved QAP in ten steps.', <<<'H'
+'quickstart' => $S('Your first filing, step by step', 'generate', 'From an empty client to an approved QAP in nine steps.', <<<'H'
 <p>This walk-through prepares a 1601-EQ QAP file. Other forms follow the same path.</p>
 <ol class="steps">
 <li><b>Add the client.</b> Admin, Clients and branches, <b>Add client</b>. Enter the TIN, name, RDO code and address. The head office (branch 0000) is created for you. See <a href="{sec:client_form}">Client details</a>.</li>
-<li><b>Check the tax codes.</b> Admin, Tax codes (ATC). Confirm the rates of the codes you use against the ATC table installed with your BIR validator, and have a reviewer approve them. See <a href="{sec:atc}">Tax codes</a>.</li>
+<li><b>Check the tax codes.</b> Admin, Tax codes (ATC). Confirm the rates of the codes you use against the ATC table installed with your BIR validator. See <a href="{sec:atc}">Tax codes</a>.</li>
 <li><b>Add payees.</b> Records, Customers, suppliers, payees. Or let the import add them for you.</li>
 <li><b>Record payments.</b> Records, Taxes we withheld, one entry per payment, or import a workbook. See <a href="{sec:withholding}">Taxes we withheld</a> and <a href="{sec:imports}">Import a spreadsheet</a>.</li>
 <li><b>Preview.</b> Filing, Generate a file. Choose QAP for BIR Form 1601-EQ, Schedule 1, the branch, year and month, then <b>Preview rows and checks</b>. Fix any errors it lists.</li>
 <li><b>Generate.</b> Click <b>Generate file</b>. Repeat for each month of the quarter: the QAP is one file per month.</li>
 <li><b>Validate with the BIR module.</b> On the file page click <b>Download DAT</b> and run it through the BIR validation module on a Windows PC. See <a href="{sec:guide_validator}">Running the official BIR validator</a>.</li>
-<li><b>Record the result.</b> Back on the file page, upload the .TXT report under Official validation and click <b>Record validator result</b>.</li>
-<li><b>Review and approve.</b> A reviewer accepts the evidence. You click <b>Request approval</b>; the reviewer approves it under Validation, Approvals. The months are locked.</li>
+<li><b>Record the result.</b> Back on the file page, upload the .TXT report under Official validation and click <b>Record validator result</b>. When the report shows no errors, the file is approved at once and its months are locked.</li>
 <li><b>File and record.</b> Submit the file through the BIR channel, then come back and click <b>Record submission</b> with the reference number and acknowledgment. Issue the 2307 certificates from Certificates.</li>
 </ol>
 H
@@ -179,7 +179,7 @@ H
 <h3>Branches</h3>
 <p>Open the <b>Branches</b> tab to add a branch with its 4-digit code (5 digits are also accepted), name, RDO and address. Each branch can be chosen on records, files and certificates.</p>
 <h3>Signatories</h3>
-<p>Open the <b>Signatories</b> tab to add the people whose names print on certificates: full name, title and TIN. You can upload a signature image (PNG or JPG). A signature image can only be used after a different person with approval rights approves it. Mark one signatory as the default.</p>
+<p>Open the <b>Signatories</b> tab to add the people whose names print on certificates: full name, title and TIN. You can upload a signature image (PNG or JPG). A signature image is approved as it is uploaded. (With <i>Require a second person's approval</i> on, a different person with approval rights must approve it first.) Mark one signatory as the default.</p>
 <h3>Archiving a client</h3>
 <p><b>Archive client</b> keeps every record, file, certificate and audit event readable, but blocks new records, imports, files and certificates. Use it when an engagement ends. Click <b>Reactivate client</b> to undo it.</p>
 <div class="mwarn">Data quality blocks a file when the client or branch has no 3-digit RDO code, because the BIR layouts require one.</div>
@@ -205,18 +205,18 @@ H
 <p>Every withholding entry uses an ATC from this list. Each code has a kind (EWT, FWT, government VAT or percentage tax), a payee type (non-individual, individual or any), a rate and a description. The list is shared by every client, and the ATC dropdown of the Taxes we withheld template is made from it.</p>
 <ul>
 <li>Check each code you use against the ATC table installed with your BIR validator (and its latest patch).</li>
-<li>Every new code and every change waits for a second person to approve it. A file that uses a code waiting for approval is always labelled an unvalidated draft.</li>
-<li><b>Approve all pending</b> on the page bar approves, in one step, every waiting code added by someone else.</li>
+<li>A new code or a change is in use as soon as you save it, and is recorded as approved in the audit trail.</li>
+<li>With <i>Require a second person's approval</i> on, each new code and change waits for a different person instead, and a file that uses a waiting code is labelled an unvalidated draft. <b>Approve all pending</b> on the page bar then approves every waiting code added by someone else.</li>
 </ul>
 <h3>Adding or changing one code</h3>
-<p>Under <b>Add or change a code</b>, enter the ATC, kind, payee type, rate and description, then <b>Submit for approval</b>. Typing an ATC that is already listed changes it: the change applies from that day, and earlier periods keep the rate they had, so files already filed never change.</p>
+<p>Under <b>Add or change a code</b>, enter the ATC, kind, payee type, rate and description, then <b>Save code</b>. Typing an ATC that is already listed changes it: the change applies from that day, and earlier periods keep the rate they had, so files already filed never change.</p>
 <h3>Uploading codes from Excel</h3>
 <ol class="steps">
 <li>Download the <b>blank template</b>, or <b>Download codes</b> to get every current code in the same columns: ATC, KIND, PAYEE TYPE, RATE and DESCRIPTION.</li>
 <li>Add or edit rows. RATE is a percent (1 for 1%, 0.5 for 0.5%). KIND blank means EWT; PAYEE TYPE blank means Any.</li>
 <li>Under <b>Upload from Excel</b>, choose the file and click <b>Upload and check</b>.</li>
 <li>Nothing is saved yet. The check shows what each row will do (new code, change from today, already up to date) and the rows with errors, each pointing at its cell (for example <i>D5</i> for a rate that is not a number).</li>
-<li>Click <b>Submit for approval</b>. Rows with errors are left out; fix them in the file and upload it again.</li>
+<li>Click <b>Save</b> (for example <b>Save 3 codes</b>). Rows with errors are left out; fix them in the file and upload it again.</li>
 </ol>
 H
 ),
@@ -244,7 +244,7 @@ H
 <li>In the draft, click a field to edit it, or add fields. <b>Save field</b>.</li>
 <li>Set the effective dates and filename pattern under the layout settings and click <b>Save settings</b>.</li>
 <li>Generate a file with the draft, validate it with the BIR module and record the result.</li>
-<li>Click <b>Request approval</b> and cite the validator evidence. A reviewer approves it.</li>
+<li>When the validator passes a file made with the draft, the layout is approved with that evidence automatically. You can also click <b>Approve layout</b> and cite the validator evidence or annex.</li>
 </ol>
 <h3>Source expressions</h3>
 <table class="mtable"><tbody>
@@ -272,6 +272,7 @@ H
 <ul>
 <li><b>Allow self-service registration</b>: lets new firms or companies create their own organization from the sign-in page.</li>
 <li><b>Require two-step sign-in for privileged roles</b>: owners, administrators and reviewers must set up two-step sign-in before they can continue.</li>
+<li><b>Require a second person's approval</b>: off by default. Off, a file the BIR validator passes is approved at once, and new tax codes, unlocks, voids and signature images take effect when saved. On, each of these waits in Approvals for a different person. Turning it off approves anything still waiting the next time someone opens that organization.</li>
 <li><b>Email</b>: <i>Outbox only</i> keeps messages in the outbox on this page; <i>Send with PHP mail()</i> also sends them, once the server can send mail.</li>
 <li><b>Sign out after idle minutes</b> and the <b>Upload limit (MB)</b>.</li>
 <li><b>Default SRS ATCs</b>: which ATCs count as regular-supplier purchases for the SRS.</li>
@@ -328,7 +329,7 @@ H
 <li><b>Vendor.</b> Type the vendor TIN first. A vendor already in the directory fills in and locks its name and address; a new TIN shows <i>New vendor</i>, and the vendor is added to the directory when you save. For a company fill in the company name; for a person, the last, first and middle name.</li>
 <li><b>Period.</b> Choose the branch and the <b>purchase month</b>. The invoice number and date are optional; a date must fall inside the month.</li>
 <li><b>Amounts.</b> Enter <b>exempt</b>, <b>zero-rated</b>, <b>services</b>, <b>capital goods</b> and <b>other than capital goods</b>, all net of VAT.</li>
-<li>The form shows <b>taxable net of VAT</b> (services + capital goods + other), <b>input VAT</b> (taxable x VAT rate, rounded to the centavo) and <b>total purchases</b> (exempt + zero-rated + taxable), the same formulas as the workbook.</li>
+<li>The form shows <b>taxable net of VAT</b> (services + capital goods + other), <b>input VAT</b> (taxable x VAT rate, rounded to the centavo) and <b>total purchases</b>: services, capital goods and other than capital goods each with their input VAT, plus exempt and zero-rated purchases. These are the same formulas as the workbook. For example, 5,600.00 of other goods at 12% is input VAT 672.00 and total purchases 6,272.00.</li>
 <li>The VAT rate is 12 unless you change it; use 0 for purchases without VAT. Type over the input VAT only to match the invoice; a different amount is kept and flagged.</li>
 </ol>
 <ul>
@@ -418,7 +419,7 @@ H
 <ul>
 <li>Approving a file locks the months it covers automatically.</li>
 <li>A reviewer can lock a month by hand under <b>Lock a month</b>, with a reason.</li>
-<li>To unlock, click <b>Request unlock</b> and give a reason. A second person must approve it under Approvals.</li>
+<li>To unlock, click <b>Unlock</b> and give a reason. The month opens at once and the reason is kept in the audit trail. (With <i>Require a second person's approval</i> on, the button reads <b>Request unlock</b> and a second person approves it under Approvals.)</li>
 </ul>
 H
 ),
@@ -445,7 +446,7 @@ $ch[] = array('title' => 'Importing spreadsheets', 'sections' => array(
 <p>Each template is an .xlsx workbook with a data sheet, a <b>Fields</b> sheet that explains every column, and an <b>About</b> sheet with the template code and version.</p>
 <ul>
 <li><b>Sales</b> is the VAT sales workbook: one sheet with its 17 columns and widths, from CUSTOMER TIN to OUTPUT VAT. Fill in GROSS TAXABLE or TAXABLE SALES; leave the other, and OUTPUT VAT, blank to have them worked out at the VAT RATE (12 when blank).</li>
-<li><b>Purchases</b> is the R_Purchases workbook: one sheet named R_Purchases with its 16 columns, and the formulas for taxableNetofVat, inputVat and totalPurchases on every row, with vatRate 12.</li>
+<li><b>Purchases</b> is the R_Purchases workbook: one sheet named R_Purchases with its 16 columns, and the formulas for taxableNetofVat, inputVat and totalPurchases on every row, with vatRate 12. totalPurchases includes the input VAT. A workbook made with the earlier formula, which left the VAT out of the total, still imports, with a note.</li>
 <li><b>Taxes withheld on us</b> is the SAWT printout. Its title lines carry the active client's form (1702Q or 1701Q), last month, TIN and name; under the header (1) to (8) are 30 open lines whose tax works itself out from the income and rate, then the Grand Total. Insert rows between the two lines of dashes for more payors.</li>
 <li>The other templates have one header row and one record per row.</li>
 </ul>
@@ -556,7 +557,7 @@ H
 <li><b>Contents</b>: <b>Raw bytes</b> shows the file exactly as written; <b>Fields</b> shows it split into labelled fields.</li>
 <li><b>Download DAT</b> downloads the exact file. A draft download is labelled and logged as a draft.</li>
 </ul>
-<p>The right side guides the next step: recording the validator result, reviewing evidence, requesting approval, or recording the submission.</p>
+<p>The right side guides the next step: recording the validator result, then recording the submission once the file is approved.</p>
 <h3>Other actions</h3>
 <ul>
 <li><b>Re-process with current layout</b> writes a new file from the same frozen rows using the newest layout. The old file is superseded and its validation no longer applies.</li>
@@ -573,8 +574,8 @@ H
 <tr><td>Structure failed</td><td>The file did not read back correctly. Fix the data or layout and generate again.</td></tr>
 <tr><td>Pending BIR validation</td><td>Waiting for you to run the BIR validator and record the result.</td></tr>
 <tr><td>Failed BIR validation</td><td>The validator found errors. Correct and generate a new file.</td></tr>
-<tr><td>Officially validated</td><td>The validator report is recorded. Waiting for review and approval.</td></tr>
-<tr><td>Approved</td><td>Released for filing; its months are locked.</td></tr>
+<tr><td>Officially validated</td><td>The validator report is recorded. With approval by a second person on, the file waits here for review and approval.</td></tr>
+<tr><td>Approved</td><td>The BIR validator passed it, so it is released for filing; its months are locked.</td></tr>
 <tr><td>Submitted</td><td>Filing evidence is recorded. The file is frozen.</td></tr>
 <tr><td>Superseded</td><td>Replaced by a newer file for the same period.</td></tr>
 </tbody></table>
@@ -636,7 +637,7 @@ $ch[] = array('title' => 'Validation and approval', 'sections' => array(
 <tr><td>2. DAT structure</td><td>This system, after writing</td><td>Reads the file back independently: record counts, field widths, control totals against details, filename, line endings and encoding</td></tr>
 <tr><td>3. Official BIR validation</td><td>You, with the BIR's validation module</td><td>Whatever the BIR checks. Proven only by the module's own report</td></tr>
 </tbody></table>
-<p>Passing levels 1 and 2 means the file is internally consistent. It does not mean the BIR will accept it. A file reaches <b>Officially validated</b> only when a person uploads the validator's report and a different person accepts it.</p>
+<p>Passing levels 1 and 2 means the file is internally consistent. It does not mean the BIR will accept it. A file is officially validated, and approved, only when a person uploads the validator's report and the report shows no errors.</p>
 <h3>Submission-ready or unvalidated draft</h3>
 <p>Before level 3, a file is <b>submission-ready</b> only if levels 1 and 2 pass with no errors, its layout is approved, and every ATC it uses is approved. Otherwise it is an <b>unvalidated draft</b>. Drafts can be downloaded by people with the draft permission, and every draft download is logged as such.</p>
 H
@@ -665,14 +666,19 @@ H
 <li><b>Structure problems</b>: files that did not read back correctly.</li>
 <li><b>Waiting for official validation</b>: download, validate and upload the report.</li>
 <li><b>Failed official validation</b>: correct and regenerate.</li>
+<li><b>Approved, ready to submit</b>: the BIR validator passed these files, so they are approved. Submit each one and record the submission on its page.</li>
+</ul>
+<p>With <i>Require a second person's approval</i> on, the last group is replaced by two others:</p>
+<ul>
 <li><b>Evidence to review</b>: a reviewer accepts or rejects the uploaded report.</li>
 <li><b>Ready for approval</b>: request release.</li>
 </ul>
 H
 ),
 
-'evidence_review' => $S('Reviewing validator evidence', 'validation', 'The second person checks the report before anything is approved.', <<<'H'
-<p>When someone records a validator result, reviewers are notified. On the file page, the reviewer:</p>
+'evidence_review' => $S('Reviewing validator evidence', 'validation', 'Only with approval by a second person turned on.', <<<'H'
+<p>Normally there is nothing to review: a validator report is accepted as it is recorded, and a file it passes is approved. This section applies only when <i>Require a second person's approval</i> is on under Platform settings.</p>
+<p>Then, when someone records a validator result, reviewers are notified. On the file page, the reviewer:</p>
 <ol class="steps">
 <li>Opens the report (download link under the evidence) and checks that it names this TIN, form and period and says no errors were found.</li>
 <li>Checks whether byte identity was proven, and the validator version and patch date.</li>
@@ -682,9 +688,9 @@ H
 H
 ),
 
-'approvals' => $S('Approvals', 'approvals', 'Requests waiting for a second person.', <<<'H'
+'approvals' => $S('Approvals', 'approvals', 'Requests and their decisions.', <<<'H'
 <figure><img src="{img:approvals}" alt="Approvals"><figcaption>Pending requests with their reason and requester.</figcaption></figure>
-<p>Every request shows what is asked, the subject (click it to open), the client, who asked and why. Type a note and click <b>Approve</b> or <b>Reject</b>.</p>
+<p>With approval by a second person turned off (the default), nothing waits here: every request is approved when it is made and listed with the note <i>Approved automatically</i>. With <i>Require a second person's approval</i> on, every request shows what is asked, the subject (click it to open), the client, who asked and why. Type a note and click <b>Approve</b> or <b>Reject</b>.</p>
 <table class="mtable"><tbody>
 <tr><td>Approve file for filing</td><td>Needs accepted official evidence. Locks the months the file covers.</td></tr>
 <tr><td>Unlock a period</td><td>Reopens a locked month.</td></tr>
@@ -737,7 +743,7 @@ H
 'cert_view' => $S('Void and reissue', 'certificates', 'Correcting a certificate already issued.', <<<'H'
 <ul>
 <li><b>Reissue</b> builds a new revision from the current records with the same number. Use it after correcting the underlying withholding records. The old revision is kept and marked reissued.</li>
-<li><b>Request void</b> asks a second person to void the certificate, with a reason. Voided certificates print with a VOID mark and their records can be certified again.</li>
+<li><b>Void certificate</b> voids it, with a reason. Voided certificates print with a VOID mark and their records can be certified again. (With <i>Require a second person's approval</i> on, the button reads <b>Request void</b> and a second person approves it.)</li>
 </ul>
 H
 ),
@@ -805,7 +811,9 @@ $ch[] = array('title' => 'Troubleshooting and reference', 'sections' => array(
 
 'guide_faq' => $S('Frequently asked questions', null, 'Short answers to common questions.', <<<'H'
 <p><b>Does the system file with the BIR?</b><br>No. It prepares files and keeps evidence. You submit through the BIR's channels and record the acknowledgment.</p>
-<p><b>Why is my file an unvalidated draft?</b><br>Its layout is not yet approved, an ATC it uses is pending review, or the checks found errors. The file page says which.</p>
+<p><b>Why is my file an unvalidated draft?</b><br>Its layout is not yet approved, or the checks found errors. The file page says which. Once the BIR validator passes the file, the file and its layout are approved.</p>
+<p><b>Who approves my file?</b><br>Nobody needs to: a file is approved as soon as you record a BIR validator report with no errors.</p>
+<p><b>A payee or vendor has no TIN. Can I still make the file?</b><br>Yes. The BIR validator accepts a line without a TIN, so the line is written with an empty TIN and Level 1 shows a warning, not an error.</p>
 <p><b>Do Excel imports and typed records give the same file?</b><br>Yes. Imports save into the same records, and every file is written from saved records by the same writer.</p>
 <p><b>Why are some layouts drafts?</b><br>The official field tables for some forms were not available as text. Correct them from the BIR annex under File layouts and confirm with the validator.</p>
 <p><b>Can I delete a record?</b><br>No. Void it with a reason. It stays visible for audit but leaves files and certificates.</p>

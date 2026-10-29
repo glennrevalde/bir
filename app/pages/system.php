@@ -4,6 +4,11 @@ if (is_post()) {
     if (input('action') === 'settings') {
         set_sys_config('registration_open', input('registration_open') ? '1' : '0');
         set_sys_config('enforce_mfa_privileged', input('enforce_mfa_privileged') ? '1' : '0');
+        $wasOn = Workflow::approvalsRequired();
+        set_sys_config('require_approvals', input('require_approvals') ? '1' : '0');
+        if ($wasOn && !Workflow::approvalsRequired()) {
+            Audit::log('system.approvals_off', null, null, 'Approval by a second person turned off; waiting items are approved as each organization is opened');
+        }
         set_sys_config('mail_mode', input('mail_mode') === 'mail' ? 'mail' : 'outbox');
         set_sys_config('session_idle_minutes', (string)max(5, min(480, input_int('session_idle_minutes', 30))));
         set_sys_config('max_upload_mb', (string)max(1, min(200, input_int('max_upload_mb', 20))));
@@ -43,7 +48,9 @@ View::pageBar('Platform settings', 'Superadmin only');
     <div class="sheet-head"><h2>Settings</h2></div>
     <div class="sheet-body"><div class="form-grid">
       <div class="field wide"><label class="check"><input type="checkbox" name="registration_open" value="1" <?= $cfg('registration_open') === '1' ? 'checked' : '' ?>> Allow self-service registration</label>
-        <label class="check"><input type="checkbox" name="enforce_mfa_privileged" value="1" <?= $cfg('enforce_mfa_privileged') === '1' ? 'checked' : '' ?>> Require two-step sign-in for privileged roles</label></div>
+        <label class="check"><input type="checkbox" name="enforce_mfa_privileged" value="1" <?= $cfg('enforce_mfa_privileged') === '1' ? 'checked' : '' ?>> Require two-step sign-in for privileged roles</label>
+        <label class="check"><input type="checkbox" name="require_approvals" value="1" <?= $cfg('require_approvals', '0') === '1' ? 'checked' : '' ?>> Require a second person's approval</label>
+        <span class="hint">Off: a file the BIR validator passes is approved at once, and new codes, unlocks and voids take effect when saved. On: each of these waits in Approvals for another person.</span></div>
       <div class="field"><label for="mail_mode">Email</label><?= View::select('mail_mode', array('outbox' => 'Outbox only (no SMTP)', 'mail' => 'Send with PHP mail() and keep in outbox'), $cfg('mail_mode'), 'id="mail_mode"') ?></div>
       <div class="field"><label for="session_idle_minutes">Sign out after idle minutes</label><input id="session_idle_minutes" name="session_idle_minutes" type="number" value="<?= e($cfg('session_idle_minutes', 30)) ?>"></div>
       <div class="field"><label for="max_upload_mb">Upload limit (MB)</label><input id="max_upload_mb" name="max_upload_mb" type="number" value="<?= e($cfg('max_upload_mb', 20)) ?>"><span class="hint">PHP upload_max_filesize also applies to single uploads.</span></div>

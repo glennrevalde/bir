@@ -78,7 +78,8 @@ class Checks
             $n = $i + 1;
             if (isset($r['tin'])) {
                 if ($r['tin'] === '' || $r['tin'] === null) {
-                    $add($isWh || $form === '1604C' ? 'error' : 'warning', 'ROW_TIN', $n, 'tin', 'Row ' . $n . ' (' . party_name($r) . ') has no TIN.');
+                    // The BIR validator accepts a line without a TIN, so a missing TIN is noted, not an error.
+                    $add('warning', 'ROW_TIN', $n, 'tin', 'Row ' . $n . ' (' . party_name($r) . ') has no TIN; the line is written without one.');
                 } elseif (!preg_match('/^\d{9}$/', $r['tin'])) {
                     $add('error', 'ROW_TIN', $n, 'tin', 'Row ' . $n . ' TIN "' . $r['tin'] . '" is not 9 digits.');
                 }

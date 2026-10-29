@@ -196,12 +196,16 @@
       if (rateEl) { rateEl.classList.toggle('is-bad', units === null); }
       var vat = units === null ? 0 : applyRate(taxable, units);
       out('taxable').textContent = fmtCents(taxable);
-      out('total').textContent = fmtCents(total);
       if (vatInput && !vatInput.disabled) {
         if (!vatTouched || vatInput.value === '' || toCents(vatInput.value) === lastAuto) {
           vatInput.value = fmtCents(vat); vatTouched = false;
         }
         lastAuto = vat;
+      }
+      // Total purchases: services, capital goods and other goods each with their input VAT, plus exempt and zero-rated.
+      var vatNow = vatInput ? toCents(vatInput.value) : vat;
+      out('total').textContent = fmtCents(total + (vatNow === null ? vat : vatNow));
+      if (vatInput && !vatInput.disabled) {
         var given = toCents(vatInput.value);
         if (vatHint) {
           vatHint.textContent = given !== null && Math.abs(given - vat) > 1

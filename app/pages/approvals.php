@@ -37,8 +37,9 @@ $link = function ($r) {
     return e($r['subject_type'] . ' #' . $r['subject_id']);
 };
 View::header('Approvals');
-View::pageBar('Approvals', 'Maker-checker: requests need someone other than the requester');
+View::pageBar('Approvals', Workflow::approvalsRequired() ? 'Maker-checker: requests need someone other than the requester' : 'A record of every request; each is approved as soon as it is made');
 ?>
+<?php if (!Workflow::approvalsRequired()) { ?><div class="notice notice-info">Approval by a second person is turned off. Unlocking a period, voiding a certificate and saving a tax code or layout happen at once and are listed here for the record. A file is approved as soon as its BIR validator report shows no errors.<?= Ctx::can('system.manage') ? ' To require a second person again, turn it on under <a href="' . e(url('system')) . '">Platform settings</a>.' : '' ?></div><?php } ?>
 <div class="sheet">
   <?php if (!$rows) { echo View::empty_state('No approval requests', 'Requests to approve files, unlock periods, change tax codes or layouts, and void certificates appear here.'); } else { ?>
   <div class="table-wrap"><table class="table table-stack"><thead><tr><th>Request</th><th>Subject</th><th>Client</th><th>Requested</th><th>Reason</th><th>Decision</th><th></th></tr></thead><tbody>

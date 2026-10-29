@@ -82,7 +82,7 @@ foreach (Ctx::branches() as $b) {
       <div class="<?= $cls('input_vat') ?>"><label for="f-input_vat">Input VAT</label>
         <input id="f-input_vat" name="input_vat" type="text" inputmode="decimal" class="num" placeholder="Computed" value="<?= e($amt('input_vat')) ?>" data-pf="input_vat"<?= $dis ?>>
         <span class="hint" data-pf-vat-hint>Taxable x rate. Type over it only to match the invoice.</span><?= $err('input_vat') ?></div>
-      <div class="field pf-out pf-total"><span class="pf-out-label">Total purchases</span><output class="num" data-pf-out="total">0.00</output><span class="hint">Exempt + zero-rated + taxable</span></div>
+      <div class="field pf-out pf-total"><span class="pf-out-label">Total purchases</span><output class="num" data-pf-out="total">0.00</output><span class="hint">Exempt + zero-rated + services, capital goods and other goods, each with their input VAT</span></div>
     </div>
     <details class="pf-more"<?= $v('non_creditable_vat') && Money::fromDb($v('non_creditable_vat')) !== 0 || $v('description') ? ' open' : '' ?>>
       <summary>Non-creditable VAT and notes</summary>

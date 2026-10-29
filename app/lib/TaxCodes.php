@@ -5,7 +5,7 @@
  *
  * Versions are still kept underneath so filed periods never change: a new code applies from the start
  * (2000-01-01); a change to an existing code applies from the day it is made, and earlier periods keep
- * the rate they had. Every addition or change waits for a second person's approval.
+ * the rate they had. When approvals are turned on, every addition or change waits for a second person.
  */
 class TaxCodes
 {
@@ -150,9 +150,12 @@ class TaxCodes
             throw new RuntimeException($d['atc_code'] . ' was already changed today. Approve or wait for that change first.');
         }
         $id = DB::insert('tax_codes', array('atc_code' => $d['atc_code'], 'tax_kind' => $d['tax_kind'], 'payee_type' => $d['payee_type'], 'description' => mb_substr($d['description'], 0, 255),
-            'rate' => $d['rate'], 'effective_from' => $from, 'effective_to' => null, 'version_tag' => null, 'source_ref' => null, 'status' => 'pending_review',
-            'submitted_by' => Auth::id(), 'created_at' => now()));
-        if (Ctx::orgId()) {
+            'rate' => $d['rate'], 'effective_from' => $from, 'effective_to' => null, 'version_tag' => null, 'source_ref' => null,
+            'status' => Workflow::approvalsRequired() ? 'pending_review' : 'approved', 'approved_by' => Workflow::approvalsRequired() ? null : Auth::id(),
+            'approved_at' => Workflow::approvalsRequired() ? null : now(), 'submitted_by' => Auth::id(), 'created_at' => now()));
+        if (!Workflow::approvalsRequired()) {
+            Audit::log('taxcode.save', 'tax_codes', $id, ($what === 'new' ? 'Added ATC ' : 'Changed ATC ') . $d['atc_code'] . ' ' . $d['rate'] . '%' . ($why ? ' (' . $why . ')' : ''));
+        } elseif (Ctx::orgId()) {
             Workflow::request('tax_codes', $id, 'approve_tax_code', ($what === 'new' ? 'New ATC ' : 'Changed ATC ') . $d['atc_code'] . ($why ? ' (' . $why . ')' : ''));
         } else {
             Audit::log('taxcode.propose', 'tax_codes', $id, ($what === 'new' ? 'New ATC ' : 'Changed ATC ') . $d['atc_code'] . ($why ? ' (' . $why . ')' : ''));

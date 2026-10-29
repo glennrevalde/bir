@@ -108,8 +108,9 @@ if (is_post()) {
             if (isset($_FILES['signature']) && $_FILES['signature']['error'] !== UPLOAD_ERR_NO_FILE) {
                 $up = store_upload($_FILES['signature'], 'signatures', array('png', 'jpg', 'jpeg'), 2 * 1024 * 1024);
                 $d['signature_path'] = $up['path'];
-                $d['signature_approved_by'] = null;
-                $d['signature_approved_at'] = null;
+                // With approval by a second person off, the image is approved as it is uploaded.
+                $d['signature_approved_by'] = Workflow::approvalsRequired() ? null : Auth::id();
+                $d['signature_approved_at'] = Workflow::approvalsRequired() ? null : now();
             }
             if ($d['is_default']) {
                 DB::q('UPDATE signatories SET is_default = 0 WHERE client_id = ?', array($id));
@@ -119,8 +120,8 @@ if (is_post()) {
             } else {
                 $sid = DB::insert('signatories', array_merge($d, array('organization_id' => Ctx::orgId(), 'client_id' => $id, 'created_at' => now())));
             }
-            Audit::log('signatory.save', 'signatories', $sid, 'Saved signatory ' . $d['full_name'] . (isset($d['signature_path']) ? ' with a new signature image (needs approval)' : ''), null, null, null, $id);
-            flash('success', 'Signatory saved.' . (isset($d['signature_path']) ? ' Another person must approve the signature image before it can be used.' : ''));
+            Audit::log('signatory.save', 'signatories', $sid, 'Saved signatory ' . $d['full_name'] . (isset($d['signature_path']) ? ' with a new signature image' . (Workflow::approvalsRequired() ? ' (needs approval)' : ', approved automatically') : ''), null, null, null, $id);
+            flash('success', 'Signatory saved.' . (isset($d['signature_path']) && Workflow::approvalsRequired() ? ' Another person must approve the signature image before it can be used.' : ''));
         } elseif ($action === 'archive' && $client) {
             $to = $client['status'] === 'archived' ? 'active' : 'archived';
             DB::update('client_entities', array('status' => $to, 'updated_at' => now()), 'id = ?', array($id));

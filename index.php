@@ -51,6 +51,11 @@ if (!in_array($page, $public, true)) {
     }
 }
 
+// With approval by a second person turned off, anything still waiting from before is deemed approved.
+if (Auth::id() && Ctx::org() && !Workflow::approvalsRequired()) {
+    Workflow::settle();
+}
+
 $file = APP_PATH . '/pages/' . $page . '.php';
 if (!is_file($file)) {
     http_response_code(404);

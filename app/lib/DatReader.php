@@ -217,7 +217,7 @@ class DatReader
     private static function checkValue($f, $v, $lineNo, $issue)
     {
         $label = $f['label'];
-        if ((int)$f['required'] === 1 && $v === '') {
+        if ((int)$f['required'] === 1 && $v === '' && !Specs::tinMayBeBlank($f)) {
             $issue('error', 'REQUIRED', $lineNo, $f['field_key'], $label . ' is empty.');
             return;
         }

@@ -199,12 +199,14 @@ function gsb_seed_demo()
     $ctx = Reports::context(array('form' => 'SAWT', 'schedule' => 'S1', 'branch_id' => $b2, 'year' => 2026, 'part' => 1, 'sawt_form' => '1701Q', 'amended' => 0));
     Reports::generate($ctx, true, 'Demo file');
 
-    // one pending approval request and a notification so the queue is not empty
-    gsb_demo_login($users['preparer'], $orgId, $c1);
-    $tc = DB::insert('tax_codes', array('atc_code' => 'WC120', 'tax_kind' => 'EWT', 'payee_type' => 'corporate', 'description' => 'Income payments to certain contractors (proposed new version)',
-        'rate' => '2.0000', 'effective_from' => '2026-07-01', 'version_tag' => 'demo-proposal', 'source_ref' => 'Demo proposal; attach the BIR issuance before approval',
-        'status' => 'pending_review', 'submitted_by' => $users['preparer'], 'created_at' => now()));
-    Workflow::request('tax_codes', $tc, 'approve_tax_code', 'Demo: proposed effective-date change for WC120');
+    // with approval by a second person turned on, one pending request and a notification so the queue is not empty
+    if (Workflow::approvalsRequired()) {
+        gsb_demo_login($users['preparer'], $orgId, $c1);
+        $tc = DB::insert('tax_codes', array('atc_code' => 'WC120', 'tax_kind' => 'EWT', 'payee_type' => 'corporate', 'description' => 'Income payments to certain contractors (proposed new version)',
+            'rate' => '2.0000', 'effective_from' => '2026-07-01', 'version_tag' => 'demo-proposal', 'source_ref' => 'Demo proposal; attach the BIR issuance before approval',
+            'status' => 'pending_review', 'submitted_by' => $users['preparer'], 'created_at' => now()));
+        Workflow::request('tax_codes', $tc, 'approve_tax_code', 'Demo: proposed effective-date change for WC120');
+    }
 
     // deadline rules for the demo calendar (illustrative; confirm against current BIR issuances)
     DB::insert('deadline_rules', array('form_code' => '1601EQ', 'rule_text' => 'Demo rule: last day of the month after the quarter', 'months_after_period' => 1, 'due_day' => 31,
@@ -611,12 +613,15 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
         'notes' => 'Report published with the public sample (github.com/ReyJrFerrer/BIR-dat). The run date is not printed on the report, so the recording date is used.'),
         array('name' => '6847855100000123120251604C.TXT', 'tmp_name' => $tmpTxt, 'error' => 0, 'size' => filesize($tmpTxt)),
         array('name' => '6847855100000123120251604C.DAT', 'tmp_name' => $tmpDat, 'error' => 0, 'size' => filesize($tmpDat)));
-    gsb_demo_login($users['reviewer'], $orgId, $c5);
-    Evidence::review($evId, 'accept', 'Report TIN, form and year match; DAT bytes match the generated file.');
-    gsb_demo_login($users['preparer'], $orgId, $c5);
-    Workflow::request('dat_files', $sampleFile, 'approve_file', 'Validator evidence accepted; ready for release.');
-    $specId = DB::val("SELECT id FROM layout_specs WHERE form_code = '1604C' AND schedule_code = 'S1' ORDER BY id LIMIT 1");
-    Workflow::request('layout_specs', $specId, 'approve_spec', 'File made with this layout passed the BIR validator (evidence #' . $evId . ').', array('evidence_id' => $evId));
+    if (Workflow::approvalsRequired()) {
+        // maker-checker: a second person reviews the report, then the file and its layout wait for approval
+        gsb_demo_login($users['reviewer'], $orgId, $c5);
+        Evidence::review($evId, 'accept', 'Report TIN, form and year match; DAT bytes match the generated file.');
+        gsb_demo_login($users['preparer'], $orgId, $c5);
+        Workflow::request('dat_files', $sampleFile, 'approve_file', 'Validator evidence accepted; ready for release.');
+        $specId = DB::val("SELECT id FROM layout_specs WHERE form_code = '1604C' AND schedule_code = 'S1' ORDER BY id LIMIT 1");
+        Workflow::request('layout_specs', $specId, 'approve_spec', 'File made with this layout passed the BIR validator (evidence #' . $evId . ').', array('evidence_id' => $evId));
+    }
 
     // ------------------------------------------------------------------ users with narrower access, sign-in history, invites, an API token
     $ca = $user('clientadmin@demo.local', 'Noel Batungbakal');

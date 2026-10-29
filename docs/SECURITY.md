@@ -7,7 +7,7 @@ The system holds taxpayer identification numbers, income and tax figures for thi
 **Access**
 - Every organization is a separate tenant. Every query is scoped by organization and client, and the test suite checks that one firm cannot read another's records.
 - Nine roles (firm owner, firm administrator, client administrator, preparer, encoder, reviewer, signatory, auditor, support) built from 33 permissions. Members can be limited to selected clients and branches.
-- Maker-checker: the person who requests a file release, period unlock, layout or ATC approval, or certificate void cannot approve it. Validator evidence must be reviewed by someone other than the person who uploaded it.
+- Approvals: off by default. A file is approved when its BIR validator report shows no errors, and unlocks, voids, tax codes, layouts and signature images take effect when a permitted user saves them; each is logged as `approval.auto` in the audit trail. With Platform settings, "Require a second person's approval", turned on, maker-checker applies: the person who requests a file release, period unlock, layout or ATC approval, or certificate void cannot approve it, and validator evidence must be reviewed by someone other than the person who uploaded it.
 
 **Sign-in**
 - Passwords hashed with PHP `password_hash` (bcrypt by default), minimum 10 characters with letters and numbers.
