@@ -32,6 +32,8 @@ Status `draft` means unsourced or analog. `pending_verification` means sourced b
 | SAWT | 1702-Q variant | pending verification | low | One secondary generator describing an unquoted, untrimmed 1702-Q shape |
 | SRS | Semestral | draft | analog | RR 14-2008 / RMC 5-2009; a secondary source reports RMC 122-2019 ended SRS submission. Confirm before use |
 
+The 1604-C is generated as one file holding both schedules, because the BIR system does not separate them: the H1604C header once, the D1 lines and their C1 control, then the D2 lines and their C2 control. Each schedule numbers its lines from 1 and its control line totals only its own lines. A year without minimum wage earners gives exactly the validated Schedule 1 bytes. A validator pass on a combined file approves both layouts.
+
 Each layout page (Admin, File layouts) shows these notes per field, lets you clone a layout into a new draft version with its own effective dates, edit it, and send it for approval.
 
 ### Getting a layout to approved
@@ -48,7 +50,7 @@ Eighteen expanded withholding ATCs are seeded from the 1601-EQ January 2019 ATC 
 
 ## Certificates
 
-2307, 2306 and 2316 are drawn as system replicas of the January 2018 (ENCS) layouts and stamped with that template revision in the certificate record. Check each form's current revision on the BIR website before issuing, and change the template if BIR has revised it. Voids need approval; reissues create a new revision and keep the old one.
+2307 and 2306 are drawn as system replicas of their January 2018 (ENCS) layouts, and 2316 of its September 2021 (ENCS) layout (items 6B to 6E, 8 Telephone Number, 44A/44B and 51A/51B, the employee's CTC or valid ID, and items 53 and 54 for substituted filing). Each certificate record is stamped with its template revision. Check each form's current revision on the BIR website before relying on the layouts. Reissues create a new revision and keep the old one.
 
 ## Research and verification pending
 

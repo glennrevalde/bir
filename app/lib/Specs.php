@@ -141,6 +141,157 @@ class Specs
     }
 
     /**
+     * Forms whose schedules the BIR system keeps in one file. Their files are generated with the combined
+     * schedule code, holding each schedule's detail lines followed by that schedule's control line.
+     */
+    const COMBINED_CODE = 'S1+S2';
+
+    public static function combinedParts($form)
+    {
+        $m = array('1604C' => array('S1', 'S2'));
+        return isset($m[$form]) ? $m[$form] : null;
+    }
+
+    public static function isCombined($form, $schedule)
+    {
+        return $schedule === self::COMBINED_CODE && self::combinedParts($form) !== null;
+    }
+
+    /**
+     * One layout made of several schedule layouts: the first layout's header, then each layout's detail and
+     * control records, tagged with the part they belong to. With one part this is that layout unchanged.
+     * The status is the weakest of the parts, so the file is submission-ready only when every part is approved.
+     */
+    public static function composite($specs)
+    {
+        $specs = array_values(array_filter($specs));
+        if (!$specs) {
+            return null;
+        }
+        if (count($specs) === 1) {
+            return $specs[0];
+        }
+        $c = $specs[0];
+        $c['composite'] = true;
+        $c['parts'] = array();
+        $c['records'] = array();
+        foreach ($specs[0]['records'] as $r) {
+            if ($r['role'] === 'header') {
+                $c['records'][] = $r;
+            }
+        }
+        foreach ($specs as $p => $s) {
+            $c['parts'][] = array('id' => (int)$s['id'], 'schedule_code' => $s['schedule_code'], 'status' => $s['status'], 'version_label' => $s['version_label'],
+                'confidence' => $s['confidence']);
+            if (self::statusRank($s['status']) < self::statusRank($c['status'])) {
+                $c['status'] = $s['status'];
+            }
+            foreach ($s['records'] as $r) {
+                if ($r['role'] !== 'header') {
+                    $r['part'] = $p;
+                    $c['records'][] = $r;
+                }
+            }
+        }
+        return $c;
+    }
+
+    /** The layouts of a combined file, one per schedule part (empty for an ordinary layout). */
+    public static function partsOf($spec)
+    {
+        if (!$spec) {
+            return array();
+        }
+        return !empty($spec['composite']) ? $spec['parts'] : array(array('id' => (int)$spec['id'], 'schedule_code' => $spec['schedule_code'], 'status' => $spec['status'],
+            'version_label' => $spec['version_label'], 'confidence' => $spec['confidence']));
+    }
+
+    /** Index of the part a dataset row belongs to (by its schedule code), or 0 for an ordinary layout. */
+    public static function partOf($spec, $row)
+    {
+        if (empty($spec['composite'])) {
+            return 0;
+        }
+        $code = isset($row['schedule_code']) ? $row['schedule_code'] : null;
+        foreach ($spec['parts'] as $i => $p) {
+            if ($p['schedule_code'] === $code) {
+                return $i;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The layout for a form and schedule. For a combined schedule, the layouts of the schedules that have
+     * rows (all of them when $rows is null) joined into one.
+     */
+    public static function resolveFor($form, $schedule, $variant, $from, $to, $rows = null)
+    {
+        if (!self::isCombined($form, $schedule)) {
+            return self::resolve($form, $schedule, $variant, $from, $to);
+        }
+        $used = array();
+        if ($rows !== null) {
+            foreach ($rows as $r) {
+                if (isset($r['schedule_code'])) {
+                    $used[$r['schedule_code']] = true;
+                }
+            }
+        }
+        $specs = array();
+        foreach (self::combinedParts($form) as $code) {
+            if ($rows !== null && $rows && !isset($used[$code])) {
+                continue;
+            }
+            $s = self::resolve($form, $code, $variant, $from, $to);
+            if (!$s) {
+                return null;
+            }
+            $specs[] = $s;
+        }
+        return self::composite($specs);
+    }
+
+    /** The layout a stored file was written or read with; combined files list their parts in parse_summary. */
+    public static function forFile($f)
+    {
+        if (empty($f['spec_id'])) {
+            return null;
+        }
+        if (self::isCombined($f['form_code'], $f['schedule_code'])) {
+            $ps = json_decode((string)(isset($f['parse_summary']) ? $f['parse_summary'] : ''), true);
+            $ids = !empty($ps['parts']) ? $ps['parts'] : array((int)$f['spec_id']);
+            return self::composite(array_map(array('Specs', 'load'), $ids));
+        }
+        return self::load($f['spec_id']);
+    }
+
+    /** A layout chosen on the upload page: a layout id, or "c:12,13" for layouts joined for a combined file. */
+    public static function byKey($key)
+    {
+        $key = (string)$key;
+        if (strpos($key, 'c:') === 0) {
+            $ids = array_filter(array_map('intval', explode(',', substr($key, 2))));
+            $specs = array();
+            foreach ($ids as $id) {
+                $s = self::load($id);
+                if (!$s) {
+                    return null;
+                }
+                $specs[] = $s;
+            }
+            return self::composite($specs);
+        }
+        return self::load((int)$key);
+    }
+
+    /** "1604C S1+S2" reads as "1604C Schedules 1 and 2". */
+    public static function scheduleLabel($schedule)
+    {
+        return $schedule === self::COMBINED_CODE ? 'Schedules 1 and 2' : (string)$schedule;
+    }
+
+    /**
      * A counterparty's or employee's TIN and its branch code may be blank in a DAT file: the BIR validator
      * accepts a line without a TIN, so the system writes and reads it without calling it an error.
      */

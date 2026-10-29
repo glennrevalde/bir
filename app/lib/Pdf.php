@@ -52,10 +52,27 @@ class Pdf
 
     public function setFont($style = '', $size = null)
     {
-        $this->font = $style === 'B' ? 'F2' : 'F1';
+        $map = array('B' => 'F2', 'I' => 'F3', 'BI' => 'F4');
+        $this->font = isset($map[$style]) ? $map[$style] : 'F1';
         if ($size !== null) {
             $this->size = $size;
         }
+        return $this;
+    }
+
+    /**
+     * Draw what follows at $scale, with the drawing's top-left corner placed at ($x, $y) on the page.
+     * Coordinates inside stay those of the unscaled drawing. Close with endScale().
+     */
+    public function beginScale($scale, $x = 0, $y = 0)
+    {
+        $this->out('q ' . self::n($scale) . ' 0 0 ' . self::n($scale) . ' ' . self::n($x) . ' ' . self::n($this->h * (1 - $scale) - $y) . ' cm');
+        return $this;
+    }
+
+    public function endScale()
+    {
+        $this->out('Q');
         return $this;
     }
 
@@ -81,7 +98,8 @@ class Pdf
 
     public function strWidth($s, $style = null, $size = null)
     {
-        $tbl = ($style === null ? $this->font === 'F2' : $style === 'B') ? self::$wB : self::$wR;
+        // Oblique faces share the widths of their upright faces.
+        $tbl = ($style === null ? in_array($this->font, array('F2', 'F4'), true) : ($style === 'B' || $style === 'BI')) ? self::$wB : self::$wR;
         $size = $size === null ? $this->size : $size;
         $s = self::enc($s);
         $w = 0;
@@ -267,6 +285,8 @@ class Pdf
         $pagesId = $add(null);
         $f1 = $add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
         $f2 = $add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+        $f3 = $add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>');
+        $f4 = $add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-BoldOblique /Encoding /WinAnsiEncoding >>');
         $xobj = '';
         foreach ($this->images as $img) {
             $smaskRef = '';
@@ -278,7 +298,7 @@ class Pdf
             $id = $add("<< /Type /XObject /Subtype /Image /Width {$img['w']} /Height {$img['h']} /ColorSpace {$img['cs']} /BitsPerComponent {$img['bpc']} /Filter /{$img['filter']} {$img['parms']} {$img['decode']}{$smaskRef} /Length " . strlen($img['data']) . " >>\nstream\n" . $img['data'] . "\nendstream");
             $xobj .= '/' . $img['name'] . ' ' . $id . ' 0 R ';
         }
-        $res = '<< /Font << /F1 ' . $f1 . ' 0 R /F2 ' . $f2 . ' 0 R >>' . ($xobj ? ' /XObject << ' . $xobj . '>>' : '') . ' >>';
+        $res = '<< /Font << /F1 ' . $f1 . ' 0 R /F2 ' . $f2 . ' 0 R /F3 ' . $f3 . ' 0 R /F4 ' . $f4 . ' 0 R >>' . ($xobj ? ' /XObject << ' . $xobj . '>>' : '') . ' >>';
         $kids = array();
         foreach ($this->pages as $content) {
             $z = gzcompress($content);

@@ -35,9 +35,9 @@ if (is_post()) {
             $bytes = file_get_contents(storage_path($up['path']));
             $cands = DatReader::detect($up['name'], $bytes);
             $_SESSION['dat_upload'] = array('path' => $up['path'], 'name' => $up['name'], 'sha' => $up['sha256'], 'size' => $up['size'],
-                'candidates' => array_map(function ($c) { return array('spec_id' => (int)$c['spec']['id'], 'tokens' => $c['tokens'], 'errors' => $c['errors']); }, $cands));
+                'candidates' => array_map(function ($c) { return array('spec_key' => $c['key'], 'tokens' => $c['tokens'], 'errors' => $c['errors']); }, $cands));
         } elseif (input('action') === 'confirm' && $stage) {
-            $spec = Specs::load(input_int('spec_id'));
+            $spec = Specs::byKey(input('spec_id'));
             if (!$spec) {
                 throw new RuntimeException('Choose a layout.');
             }
@@ -96,14 +96,15 @@ if (is_post()) {
             }
             rename(storage_path($stage['path']), storage_path($rel));
             $fid = DB::insert('dat_files', array('organization_id' => Ctx::orgId(), 'client_id' => $client['id'], 'branch_id' => $branch ? $branch['id'] : null, 'run_id' => null,
-                'form_code' => $spec['form_code'], 'schedule_code' => $spec['schedule_code'], 'variant_key' => !empty($tok['sawt']) ? $tok['sawt'] : null,
+                'form_code' => $spec['form_code'], 'schedule_code' => !empty($spec['composite']) ? Specs::COMBINED_CODE : $spec['schedule_code'], 'variant_key' => !empty($tok['sawt']) ? $tok['sawt'] : null,
                 'period_label' => $label, 'period_from' => $from, 'period_to' => $to, 'filename' => $stage['name'], 'storage_path' => $rel, 'byte_size' => $stage['size'],
                 'sha256' => $stage['sha'], 'spec_id' => $spec['id'], 'origin' => 'uploaded', 'amended' => input('amended') ? 1 : 0,
                 'status' => $e ? 'structure_failed' : 'pending_bir', 'file_label' => 'unvalidated_draft', 'record_count' => count($parsed['rows']),
-                'total_base' => Money::toPlain($base), 'total_tax' => Money::toPlain($tax), 'parse_summary' => json_encode(array('lines' => $parsed['line_count'], 'eol' => $parsed['line_ending'])),
+                'total_base' => Money::toPlain($base), 'total_tax' => Money::toPlain($tax), 'parse_summary' => json_encode(array_merge(array('lines' => $parsed['line_count'], 'eol' => $parsed['line_ending']),
+                    !empty($spec['composite']) ? array('parts' => array_map(function ($p) { return $p['id']; }, $spec['parts'])) : array())),
                 'created_by' => Auth::id(), 'created_at' => now(), 'updated_at' => now()));
             Checks::record($fid, null, 2, $issues, 'Structure of uploaded file: ' . $e . ' errors');
-            Audit::log('dat.upload', 'dat_files', $fid, 'Uploaded ' . $stage['name'] . ' as ' . $spec['form_code'] . ' ' . $spec['schedule_code']);
+            Audit::log('dat.upload', 'dat_files', $fid, 'Uploaded ' . $stage['name'] . ' as ' . $spec['form_code'] . ' ' . (!empty($spec['composite']) ? Specs::COMBINED_CODE : $spec['schedule_code']));
             unset($_SESSION['dat_upload']);
             flash($e ? 'warning' : 'success', 'Uploaded ' . $stage['name'] . ($e ? ' with ' . $e . ' structure errors.' : '. Structure checks passed.'));
             redirect(url('file_view', array('id' => $fid)));
@@ -135,8 +136,10 @@ View::pageBar('Upload an existing DAT', View::clientContext('files made earlier 
     <div class="sheet-body stack">
       <?php if ($stage['candidates']) { ?>
         <p>Matching layouts, best first:</p>
-        <?php foreach ($stage['candidates'] as $i => $c) { $s = Specs::load($c['spec_id']); ?>
-          <label class="check"><input type="radio" name="spec_id" value="<?= (int)$s['id'] ?>" <?= $i === 0 ? 'checked' : '' ?>> <?= e($s['form_code'] . ' ' . $s['schedule_code'] . ($s['variant_key'] ? ' ' . $s['variant_key'] : '') . ': ' . $s['version_label']) ?>
+        <?php foreach ($stage['candidates'] as $i => $c) { $s = Specs::byKey(isset($c['spec_key']) ? $c['spec_key'] : $c['spec_id']); if (!$s) { continue; }
+            $title = !empty($s['composite']) ? $s['form_code'] . ' Schedules 1 and 2 in one file: ' . implode(' and ', array_map(function ($p) { return $p['schedule_code'] . ' ' . $p['version_label']; }, $s['parts']))
+                : $s['form_code'] . ' ' . $s['schedule_code'] . ($s['variant_key'] ? ' ' . $s['variant_key'] : '') . ': ' . $s['version_label']; ?>
+          <label class="check"><input type="radio" name="spec_id" value="<?= e(isset($c['spec_key']) ? $c['spec_key'] : $c['spec_id']) ?>" <?= $i === 0 ? 'checked' : '' ?>> <?= e($title) ?>
             <span class="small muted"><?= $c['errors'] ? $c['errors'] . ' structure errors' : 'parses cleanly' ?></span></label>
         <?php } ?>
       <?php } else { ?>

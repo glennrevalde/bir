@@ -29,16 +29,26 @@ class DatWriter
         $this->issues[] = array('severity' => $sev, 'code' => $code, 'record_no' => $rec, 'field_key' => $field, 'message' => $msg);
     }
 
+    private static function sumsOf($rows)
+    {
+        $sums = array();
+        foreach ($rows as $r) {
+            foreach ($r as $k => $v) {
+                if (is_int($v)) {
+                    $sums[$k] = (isset($sums[$k]) ? $sums[$k] : 0) + $v;
+                }
+            }
+        }
+        return $sums;
+    }
+
     private function run()
     {
         $spec = $this->spec;
         $rows = $this->ctx['rows'];
-        foreach ($rows as $r) {
-            foreach ($r as $k => $v) {
-                if (is_int($v)) {
-                    $this->sums[$k] = (isset($this->sums[$k]) ? $this->sums[$k] : 0) + $v;
-                }
-            }
+        $this->sums = self::sumsOf($rows);
+        if (!empty($spec['composite'])) {
+            return $this->runComposite();
         }
         $headers = array();
         $detail = null;
@@ -91,6 +101,79 @@ class DatWriter
             'lines' => $lines,
             'record_count' => count($rows),
             'sums' => $this->sums,
+        );
+    }
+
+    /**
+     * A combined file (1604-C Schedules 1 and 2): the header once, then for each schedule that has rows its
+     * detail lines, numbered from 1, followed by its own control line with that schedule's totals.
+     */
+    private function runComposite()
+    {
+        $spec = $this->spec;
+        $rows = $this->ctx['rows'];
+        $lines = array();
+        $recNo = 0;
+        foreach ($spec['records'] as $r) {
+            if ($r['role'] === 'header') {
+                $recNo++;
+                $lines[] = $this->record($r, null, 0, $recNo);
+            }
+        }
+        $byPart = array();
+        foreach ($rows as $i => $row) {
+            $p = Specs::partOf($spec, $row);
+            if ($p === null) {
+                $this->issue('error', 'SCHEDULE', $i + 1, 'schedule_code', 'Row ' . ($i + 1) . ' is for schedule "' . (isset($row['schedule_code']) ? $row['schedule_code'] : '') . '", which this file does not hold.');
+                continue;
+            }
+            $byPart[$p][] = $row;
+        }
+        $all = $this->sums;
+        foreach ($spec['parts'] as $p => $part) {
+            if (empty($byPart[$p])) {
+                continue;
+            }
+            $detail = null;
+            $controls = array();
+            foreach ($spec['records'] as $r) {
+                if (!isset($r['part']) || $r['part'] !== $p) {
+                    continue;
+                }
+                if ($r['role'] === 'detail' && $detail === null) {
+                    $detail = $r;
+                } elseif ($r['role'] === 'control') {
+                    $controls[] = $r;
+                }
+            }
+            if (!$detail) {
+                throw new RuntimeException('Layout #' . $part['id'] . ' has no detail record.');
+            }
+            $this->sums = self::sumsOf($byPart[$p]);
+            $seq = 0;
+            foreach ($byPart[$p] as $row) {
+                $seq++;
+                $recNo++;
+                $lines[] = $this->record($detail, $row, $seq, $recNo);
+            }
+            foreach ($controls as $c) {
+                $recNo++;
+                $lines[] = $this->record($c, null, 0, $recNo);
+            }
+        }
+        $this->sums = $all;
+        if (!$rows) {
+            $this->issue('error', 'NO_ROWS', null, null, 'There are no detail rows for this period. An empty file is not generated.');
+        }
+        $eol = $spec['line_ending'] === 'LF' ? "\n" : "\r\n";
+        $text = implode($eol, $lines) . ((int)$spec['trailing_newline'] === 1 ? $eol : '');
+        return array(
+            'bytes' => $this->encode($text),
+            'filename' => Specs::filename($spec, $this->ctx['agent'], $this->ctx['period'], isset($this->ctx['vars']) ? $this->ctx['vars'] : array()),
+            'issues' => $this->issues,
+            'lines' => $lines,
+            'record_count' => count($rows),
+            'sums' => $all,
         );
     }
 

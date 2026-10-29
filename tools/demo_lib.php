@@ -156,6 +156,21 @@ function gsb_seed_demo()
         }
         Payroll::compSave($d);
     }
+    // a minimum wage earner, so the 1604-C carries Schedule 2 in the same file (illustrative amounts)
+    $mwe = DB::insert('employees', array('organization_id' => $orgId, 'client_id' => $c1, 'branch_id' => $b0, 'employee_no' => 'E-104', 'tin' => '901234580', 'tin_branch' => '0000',
+        'last_name' => 'DELA PENA', 'first_name' => 'JOSE', 'middle_name' => 'RAMOS', 'region_code' => 'VII', 'nationality' => 'FILIPINO', 'employment_status' => 'R', 'is_mwe' => 1,
+        'hired_on' => '2024-02-01', 'status' => 'active', 'source' => 'manual', 'created_by' => $users['preparer'], 'created_at' => now(), 'updated_at' => now()));
+    $in = array('tax_year' => 2025, 'schedule_code' => 'S2', 'employee_id' => $mwe, 'branch_id' => $b0, 'region_code' => 'VII', 'employment_from' => '2025-01-01',
+        'employment_to' => '2025-12-31', 'factor_days' => '313', 'smw_per_day' => '501.00', 'smw_per_month' => '13067.75', 'smw_per_year' => '156813.00',
+        'pres_gross' => '169880.75', 'pres_nt_smw' => '145066.75', 'pres_nt_13th' => '13067.75', 'pres_nt_deminimis' => '0', 'pres_nt_contrib' => '11746.25', 'pres_nt_other' => '0',
+        'pres_nt_total' => '169880.75', 'pres_tx_basic' => '0', 'pres_tx_13th' => '0', 'pres_tx_other' => '0', 'pres_tx_total' => '0', 'taxable_comp_total' => '0', 'net_taxable_comp' => '0',
+        'tax_due' => '0', 'pres_withheld_jan_nov' => '0', 'pres_withheld_dec' => '0', 'over_withheld_refunded' => '0', 'tax_withheld_adjusted' => '0',
+        'nationality' => 'FILIPINO', 'employment_status' => 'R', 'separation_reason' => 'NA', 'substituted_filing' => 'Y');
+    list($d, $err) = Payroll::compValidate($in, $c1);
+    if ($err) {
+        throw new RuntimeException('Demo MWE compensation failed: ' . implode('; ', $err));
+    }
+    Payroll::compSave($d);
 
     // ---------------------------------------------------------------- files and certificates for client 1
     foreach (quarter_months(2026, 1) as $mm) {
@@ -166,7 +181,7 @@ function gsb_seed_demo()
     Reports::generate($ctx, true, 'Demo file');
     $ctx = Reports::context(array('form' => 'SLP', 'schedule' => 'S1', 'branch_id' => $b0, 'year' => 2026, 'part' => 1, 'sawt_form' => null, 'amended' => 0));
     Reports::generate($ctx, true, 'Demo file');
-    $ctx = Reports::context(array('form' => '1604C', 'schedule' => 'S1', 'branch_id' => $b0, 'year' => 2025, 'part' => 1, 'sawt_form' => null, 'amended' => 0));
+    $ctx = Reports::context(array('form' => '1604C', 'schedule' => Specs::COMBINED_CODE, 'branch_id' => $b0, 'year' => 2025, 'part' => 1, 'sawt_form' => null, 'amended' => 0));
     Reports::generate($ctx, true, 'Demo file');
 
     $client = Ctx::client();
@@ -177,7 +192,7 @@ function gsb_seed_demo()
         Certificates::issue($payload, array('signatory_id' => $sig, 'paper' => 'A4', 'branch_id' => $b0));
     }
     $comp = DB::val('SELECT id FROM compensation_records WHERE client_id = ? ORDER BY id LIMIT 1', array($c1));
-    Certificates::issue(Certificates::build2316($client, $branch, $comp), array('signatory_id' => $sig, 'paper' => 'A4', 'branch_id' => $b0));
+    Certificates::issue(Certificates::build2316($client, $branch, $comp), array('signatory_id' => $sig, 'paper' => 'FOLIO', 'branch_id' => $b0));
 
     // ---------------------------------------------------------------- client 2: creditable taxes withheld on the professional (SAWT)
     gsb_demo_login($users['preparer'], $orgId, $c2);
@@ -345,7 +360,7 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
     }
     gsb_demo_gen('SLI', 'S1', $b0, 2026, 2);
     // regenerate 1604-C now that all employees are in (supersedes the earlier file)
-    gsb_demo_gen('1604C', 'S1', $b0, 2025, 1);
+    gsb_demo_gen('1604C', Specs::COMBINED_CODE, $b0, 2025, 1);
     $client = Ctx::client();
     $branch = DB::row('SELECT * FROM branches WHERE id = ?', array($b0));
     $sig = DB::val('SELECT id FROM signatories WHERE client_id = ?', array($c1));
@@ -356,7 +371,7 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
         Certificates::issue(Certificates::buildWithholding('2307', $client, $branch, $sup[$k], '2026-04-01', '2026-06-30'), array('signatory_id' => $sig, 'paper' => 'A4', 'branch_id' => $b0));
     }
     foreach (DB::col('SELECT id FROM compensation_records WHERE client_id = ? ORDER BY id LIMIT 1, 20', array($c1)) as $compId) {
-        Certificates::issue(Certificates::build2316($client, $branch, $compId), array('signatory_id' => $sig, 'paper' => 'A4', 'branch_id' => $b0));
+        Certificates::issue(Certificates::build2316($client, $branch, $compId), array('signatory_id' => $sig, 'paper' => 'FOLIO', 'branch_id' => $b0));
     }
     // a corrected sale (keeps a revision) and a voided duplicate purchase
     $sales = Records::module('sales');
@@ -598,7 +613,7 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
         throw new RuntimeException('Demo sample compensation failed: ' . implode('; ', $err));
     }
     Payroll::compSave($d);
-    $sampleFile = gsb_demo_gen('1604C', 'S1', $b5, 2025, 1);
+    $sampleFile = gsb_demo_gen('1604C', Specs::COMBINED_CODE, $b5, 2025, 1);
     $fx = dirname(__DIR__) . '/tests/fixtures/';
     $sample = DB::row('SELECT * FROM dat_files WHERE id = ?', array($sampleFile));
     if ($sample['sha256'] !== hash_file('sha256', $fx . '6847855100000123120251604C.DAT')) {
@@ -697,7 +712,7 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
         }
     }
     gsb_demo_wh($c6, $b6, $vend['audit'], 'WC010', '2026-04-20', '350000.00', 'Annual audit fee', 'PD-202604-AUD');
-    gsb_demo_gen('1604C', 'S1', $b6, 2025, 1);
+    gsb_demo_gen('1604C', Specs::COMBINED_CODE, $b6, 2025, 1);
     gsb_demo_gen('1604E', 'S4', $b6, 2025, 1);
     foreach (array(7, 8, 9) as $m) {
         gsb_demo_gen('1601EQ', 'S1', $b6, 2026, $m);
@@ -709,6 +724,6 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
     $client6 = Ctx::client();
     $sig6 = DB::val('SELECT id FROM signatories WHERE client_id = ?', array($c6));
     foreach (DB::col('SELECT id FROM compensation_records WHERE client_id = ? ORDER BY id', array($c6)) as $compId) {
-        Certificates::issue(Certificates::build2316($client6, DB::row('SELECT * FROM branches WHERE id = ?', array($b6)), $compId), array('signatory_id' => $sig6, 'paper' => 'A4', 'branch_id' => $b6));
+        Certificates::issue(Certificates::build2316($client6, DB::row('SELECT * FROM branches WHERE id = ?', array($b6)), $compId), array('signatory_id' => $sig6, 'paper' => 'FOLIO', 'branch_id' => $b6));
     }
 }

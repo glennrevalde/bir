@@ -39,7 +39,11 @@ if (is_post()) {
             if (!$ev || $ev['outcome'] !== 'success' || $ev['review_decision'] !== 'accepted') {
                 throw new RuntimeException('Layout approval needs accepted official validator evidence for this file.');
             }
-            Workflow::request('layout_specs', $f['spec_id'], 'approve_spec', 'Validator ' . $ev['validator_version'] . ' accepted ' . $f['filename'], array('evidence_id' => $ev['id'], 'file_id' => $id));
+            foreach (Specs::partsOf(Specs::forFile($f)) as $part) {
+                if ($part['status'] !== 'approved') {
+                    Workflow::request('layout_specs', $part['id'], 'approve_spec', 'Validator ' . $ev['validator_version'] . ' accepted ' . $f['filename'], array('evidence_id' => $ev['id'], 'file_id' => $id));
+                }
+            }
             flash('success', Workflow::approvalsRequired() ? 'Layout approval requested with this evidence.' : 'Layout approved with this evidence.');
         } elseif ($action === 'import_rows') {
             Ctx::requirePerm('records.edit');
@@ -66,7 +70,7 @@ function gsb_import_dat_rows($f, $client)
         throw new RuntimeException('Only QAP, MAP and SAWT files can be imported into withholding records.');
     }
     list($dir, $kind) = $map[$f['form_code']];
-    $spec = Specs::load($f['spec_id']);
+    $spec = Specs::forFile($f);
     $parsed = DatReader::parse((string)Reports::storedBytes($f), $spec);
     $branchId = $f['branch_id'] ?: (int)Ctx::headOffice()['id'];
     $tag = $f['schedule_code'] === 'S3' ? 'C' : ($f['schedule_code'] === 'S2' ? 'B' : 'A');
@@ -94,7 +98,8 @@ function gsb_import_dat_rows($f, $client)
     });
 }
 
-$spec = $f['spec_id'] ? Specs::load($f['spec_id']) : null;
+$spec = Specs::forFile($f);
+$specParts = Specs::partsOf($spec);
 $bytes = (string)Reports::storedBytes($f);
 $parsed = $spec ? DatReader::parse($bytes, $spec) : null;
 $levels = array();
@@ -124,10 +129,10 @@ if ($canDl && $bytes !== '') {
     $actions .= '<a class="btn btn-primary" href="' . e(url('file_download', array('id' => $id))) . '"' . ($isDraft ? ' onclick="return confirm(\'This file is an unvalidated draft. Download it for inspection or for running the official validator?\')"' : '') . '>' . View::icon('download') . 'Download DAT</a>';
 }
 View::header($f['filename'], array('page' => 'file_view'));
-View::pageBar($f['filename'], View::clientContext(e($f['form_code'] . ' ' . $f['schedule_code'] . ($f['variant_key'] ? ' (' . $f['variant_key'] . ')' : '') . ', ' . $f['period_label'] . ($f['branch_code'] ? ', branch ' . $f['branch_code'] : ''))), $actions);
+View::pageBar($f['filename'], View::clientContext(e($f['form_code'] . ' ' . Specs::scheduleLabel($f['schedule_code']) . ($f['variant_key'] ? ' (' . $f['variant_key'] . ')' : '') . ', ' . $f['period_label'] . ($f['branch_code'] ? ', branch ' . $f['branch_code'] : ''))), $actions);
 ?>
 <?php if ($f['status'] === 'superseded') { ?><div class="notice notice-warning">This file was superseded<?= $f['superseded_by'] ? ' by <a href="' . e(url('file_view', array('id' => $f['superseded_by']))) . '">file #' . (int)$f['superseded_by'] . '</a>' : '' ?>. Any validation recorded here does not apply to the newer file.</div><?php } ?>
-<?php if ($isDraft && $f['status'] !== 'superseded') { ?><div class="notice notice-warning"><div><strong>Unvalidated draft.</strong> <?= $spec && $spec['status'] !== 'approved' ? 'Its layout is ' . e(str_replace('_', ' ', $spec['status'])) . '. ' : '' ?>Run it through the official BIR validator and record the result below. Only the validator's report can mark it officially validated.</div></div><?php } ?>
+<?php if ($isDraft && $f['status'] !== 'superseded') { ?><div class="notice notice-warning"><div><strong>Unvalidated draft.</strong> <?= $spec && $spec['status'] !== 'approved' ? (count($specParts) > 1 ? 'One of its layouts is ' : 'Its layout is ') . e(str_replace('_', ' ', $spec['status'])) . '. ' : '' ?>Run it through the official BIR validator and record the result below. Only the validator's report can mark it officially validated.</div></div><?php } ?>
 
 <div class="sheet"><ol class="track" aria-label="File status">
   <?php foreach ($steps as $i => $s) { $n = $i + 1; $cls = $n === $failAt ? 'fail' : ($n < $at ? 'done' : ($n === $at ? 'now' : '')); ?><li class="<?= $cls ?>"><?= e($s) ?></li><?php } ?>
@@ -231,7 +236,7 @@ View::pageBar($f['filename'], View::clientContext(e($f['form_code'] . ' ' . $f['
         <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="import_rows"><button class="btn" data-confirm="Copy the detail rows of this file into withholding records?">Import rows into records</button></form>
       <?php } ?>
       <?php if ($spec && $spec['status'] !== 'approved' && $latestEv && $latestEv['outcome'] === 'success' && $latestEv['review_decision'] === 'accepted' && Ctx::can('reference.manage')) { ?>
-        <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="promote_spec"><button class="btn"><?= Workflow::approvalsRequired() ? 'Request approval of' : 'Approve' ?> layout #<?= (int)$spec['id'] ?> with this evidence</button></form>
+        <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="promote_spec"><button class="btn"><?= Workflow::approvalsRequired() ? 'Request approval of' : 'Approve' ?> <?= count($specParts) > 1 ? 'its layouts' : 'layout #' . (int)$spec['id'] ?> with this evidence</button></form>
       <?php } ?>
     </div>
   </div>
@@ -242,7 +247,7 @@ View::pageBar($f['filename'], View::clientContext(e($f['form_code'] . ' ' . $f['
       <dt>SHA-256</dt><dd class="mono small"><?= e($f['sha256']) ?></dd>
       <dt>Size</dt><dd><?= e(human_bytes((int)$f['byte_size'])) ?>, <?= (int)$f['record_count'] ?> detail records</dd>
       <dt>Totals</dt><dd>Base <?= Money::fmtDb($f['total_base']) ?>, tax <?= Money::fmtDb($f['total_tax']) ?></dd>
-      <?php if ($spec) { ?><dt>Layout</dt><dd><a href="<?= e(url('spec_view', array('id' => $spec['id']))) ?>">#<?= (int)$spec['id'] ?> <?= e($spec['version_label']) ?></a> <?= View::status($spec['status']) ?></dd><?php } ?>
+      <?php foreach ($specParts as $part) { ?><dt><?= count($specParts) > 1 ? 'Layout, ' . e($part['schedule_code']) : 'Layout' ?></dt><dd><a href="<?= e(url('spec_view', array('id' => $part['id']))) ?>">#<?= (int)$part['id'] ?> <?= e($part['version_label']) ?></a> <?= View::status($part['status']) ?></dd><?php } ?>
       <dt>Origin</dt><dd><?= $f['origin'] === 'uploaded' ? 'Uploaded' : 'Generated from ' . ($run ? e($run['source_mode']) . ' (run #' . (int)$run['id'] . ')' : 'records') ?></dd>
       <dt>Created</dt><dd><?= e($f['creator']) ?>, <?= e(fmt_dt($f['created_at'])) ?></dd>
       <?php if ($f['approved_at']) { ?><dt>Approved</dt><dd><?= e($f['approver']) ?>, <?= e(fmt_dt($f['approved_at'])) ?></dd><?php } ?>

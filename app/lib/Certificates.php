@@ -3,7 +3,8 @@
  * BIR Forms 2307, 2306 and 2316: payloads from saved records, numbered register,
  * void and reissue, and print-ready PDF rendering (single, combined or ZIP of individual files).
  *
- * The PDF layouts are system replicas organised like the January 2018 (ENCS) revisions.
+ * The PDF layouts are system replicas of the current BIR revisions: 2307 and 2306 January 2018 (ENCS),
+ * 2316 September 2021 (ENCS).
  * Compare them with the current official form before relying on them; the template revision
  * string is stored with every certificate.
  */
@@ -11,7 +12,7 @@ class Certificates
 {
     const REV_2307 = '2307 January 2018 (ENCS) system replica';
     const REV_2306 = '2306 January 2018 (ENCS) system replica';
-    const REV_2316 = '2316 January 2018 (ENCS) system replica';
+    const REV_2316 = '2316 September 2021 (ENCS) replica';
 
     public static function payor($client, $branch)
     {
@@ -113,6 +114,7 @@ class Certificates
         return array(
             'form' => '2316', 'period_from' => $c['employment_from'], 'period_to' => $c['employment_to'], 'year' => (int)$c['tax_year'],
             'employee' => array('tin' => $c['e_tin'], 'branch' => $c['tin_branch'], 'name' => trim($c['last_name'] . ', ' . $c['first_name'] . ' ' . $c['middle_name']),
+                'last_name' => $c['last_name'], 'first_name' => $c['first_name'], 'middle_name' => $c['middle_name'],
                 'address' => $c['address'], 'zip' => $c['zip_code'], 'birth' => $c['birth_date'], 'contact' => $c['contact_no'], 'mwe' => $c['schedule_code'] === 'S2'),
             'employer' => self::payor($client, $branch), 'has_previous' => (int)$c['has_previous_employer'], 'amounts' => $a,
             'substituted' => $c['substituted_filing'] === 'Y', 'employee_id' => (int)$c['employee_id'], 'comp_id' => (int)$c['id'],
@@ -464,166 +466,437 @@ class Certificates
         $pdf->fillRgb(0, 0, 0);
     }
 
+    // ------------------------------------------------------------------ BIR Form 2316, September 2021 (ENCS)
+    /*
+     * Drawn on a 612 x 936 point sheet (the 8.5 x 13 inch form) and scaled to fit the chosen paper.
+     * Item numbers, labels and their order follow the September 2021 (ENCS) revision.
+     */
+    const F21_W = 612;
+    const F21_H = 936;
+
+    private static function g21($pdf, $x, $y, $w, $h)
+    {
+        $pdf->fillRgb(217, 217, 217)->rect($x, $y, $w, $h, 'FD')->fillRgb(0, 0, 0);
+    }
+
+    /** White entry box with an optional value. $cells > 1 adds the small digit ticks of the printed form. */
+    private static function box21($pdf, $x, $y, $w, $h, $val = '', $align = 'L', $size = 8.5, $cells = 0, $style = '')
+    {
+        $pdf->fillRgb(255, 255, 255)->rect($x, $y, $w, $h, 'FD')->fillRgb(0, 0, 0);
+        if ($cells > 1) {
+            $pdf->setLineWidth(0.4);
+            for ($i = 1; $i < $cells; $i++) {
+                $tx = $x + $w * $i / $cells;
+                $pdf->line($tx, $y + $h - 2.5, $tx, $y + $h);
+            }
+            $pdf->setLineWidth(0.6);
+        }
+        if ((string)$val !== '') {
+            $pdf->setFont($style, $size)->cell($x, $y, $w, $h, (string)$val, $align, 2.5);
+        }
+    }
+
+    /** Item number in bold, then its label; returns the x after the label. */
+    private static function lbl21($pdf, $x, $y, $num, $label, $size = 6.6, $italic = '')
+    {
+        if ($num !== '') {
+            $pdf->setFont('B', $size)->text($x, $y, $num);
+            $x += max(12, $pdf->strWidth($num, 'B', $size) + 3);
+        }
+        $pdf->setFont('', $size)->text($x, $y, $label);
+        $end = $x + $pdf->strWidth($label, '', $size);
+        if ($italic !== '') {
+            $pdf->setFont('BI', $size)->text($end + 2, $y, $italic);
+            $end += 2 + $pdf->strWidth($italic, 'BI', $size);
+        }
+        return $end;
+    }
+
+    private static function tin21($pdf, $x, $y, $tin, $branch)
+    {
+        $tin = (string)$tin;
+        $g = strlen($tin) === 9 ? array(substr($tin, 0, 3), substr($tin, 3, 3), substr($tin, 6, 3), (string)$branch) : array('', '', '', $tin !== '' ? (string)$branch : '');
+        foreach (array(3, 3, 3, 4) as $i => $n) {
+            $w = $n === 4 ? 46 : 36;
+            self::box21($pdf, $x, $y, $w, 13, $g[$i], 'C', 8.5, $n);
+            $x += $w + ($i < 3 ? 9 : 0);
+        }
+    }
+
+    /** MM / DD / YYYY boxes as on the form; $date is Y-m-d or empty. */
+    private static function date21($pdf, $x, $y, $date, $h = 13)
+    {
+        $v = $date ? array(substr($date, 5, 2), substr($date, 8, 2), substr($date, 0, 4)) : array('', '', '');
+        self::box21($pdf, $x, $y, 22, $h, $v[0], 'C', 8, 2);
+        self::box21($pdf, $x + 22, $y, 22, $h, $v[1], 'C', 8, 2);
+        self::box21($pdf, $x + 44, $y, 40, $h, $v[2], 'C', 8, 4);
+        return $x + 84;
+    }
+
+    private static function money21($c)
+    {
+        return Money::fmt((int)$c);
+    }
+
+    /** "ABABAO, ERLINDA AMOLONG" printed as "ERLINDA AMOLONG ABABAO" for the signature lines. */
+    private static function printName21($e)
+    {
+        if (!empty($e['first_name']) || !empty($e['last_name'])) {
+            return strtoupper(trim(preg_replace('/\s+/', ' ', $e['first_name'] . ' ' . (isset($e['middle_name']) ? $e['middle_name'] : '') . ' ' . $e['last_name'])));
+        }
+        $parts = explode(',', (string)$e['name'], 2);
+        return strtoupper(trim(count($parts) === 2 ? trim($parts[1]) . ' ' . trim($parts[0]) : $parts[0]));
+    }
+
     private static function draw2316($pdf, $p, $tplRev)
     {
         $pdf->addPage();
-        $L = 24;
-        $W = $pdf->width() - 48;
+        $m = 8;
+        $scale = min(($pdf->width() - 2 * $m) / self::F21_W, ($pdf->height() - 2 * $m) / self::F21_H, 1);
+        $pdf->beginScale($scale, ($pdf->width() - self::F21_W * $scale) / 2, $m);
         $a = $p['amounts'];
-        $y = self::head($pdf, '2316', 'Certificate of Compensation Payment/Tax Withheld|For Compensation Payment With or Without Tax Withheld', $L, $W, 18);
-        $half = $W / 2;
-        self::field($pdf, $L, $y, 120, 22, '1', 'For the Year (YYYY)', (string)$p['year'], 'C');
-        $pdf->rect($L + 120, $y, $W - 120, 22);
-        $pdf->setFont('B', 6.5)->text($L + 122, $y + 2, '2');
-        $pdf->setFont('', 6.5)->text($L + 132, $y + 2, 'For the Period');
-        $pdf->text($L + 132, $y + 12, 'From (MM/DD)');
-        $pdf->setFont('B', 9)->text($L + 190, $y + 11, fmt_date($p['period_from'], 'm/d'));
-        $pdf->setFont('', 6.5)->text($L + 240, $y + 12, 'To (MM/DD)');
-        $pdf->setFont('B', 9)->text($L + 288, $y + 11, fmt_date($p['period_to'], 'm/d'));
-        $y += 22;
-        // Left column: parts I-III, right column: part IV
-        $colL = $L;
-        $colW = $half - 3;
-        $colR = $L + $half + 3;
-        $yl = self::bar($pdf, $colL, $colW, $y, 'Part I - Employee Information');
         $e = $p['employee'];
-        self::tinField($pdf, $colL, $yl, $colW, '3', 'TIN', $e['tin'], $e['branch']);
-        $yl += 22;
-        self::field($pdf, $colL, $yl, $colW - 50, 22, '4', "Employee's Name (Last Name, First Name, Middle Name)", $e['name']);
-        self::field($pdf, $colL + $colW - 50, $yl, 50, 22, '5', 'RDO Code', '', 'C');
-        $yl += 22;
-        self::field($pdf, $colL, $yl, $colW - 50, 22, '6', 'Registered Address', $e['address']);
-        self::field($pdf, $colL + $colW - 50, $yl, 50, 22, '6A', 'ZIP Code', $e['zip'], 'C');
-        $yl += 22;
-        self::field($pdf, $colL, $yl, $colW / 2, 22, '7', 'Date of Birth (MM/DD/YYYY)', fmt_date($e['birth'], 'm/d/Y'), 'C');
-        self::field($pdf, $colL + $colW / 2, $yl, $colW / 2, 22, '8', 'Contact Number', $e['contact'], 'C');
-        $yl += 22;
-        self::field($pdf, $colL, $yl, $colW / 2, 22, '9', 'Statutory Minimum Wage rate per day', self::money($a['smw_per_day']), 'R');
-        self::field($pdf, $colL + $colW / 2, $yl, $colW / 2, 22, '10', 'Statutory Minimum Wage rate per month', self::money($a['smw_per_month']), 'R');
-        $yl += 22;
-        $pdf->rect($colL, $yl, $colW, 20);
-        $pdf->setFont('B', 6.5)->text($colL + 2, $yl + 2, '11');
-        $pdf->rect($colL + 14, $yl + 5, 9, 9);
-        if ($e['mwe']) {
-            $pdf->setFont('B', 8)->text($colL + 15.5, $yl + 5.5, 'X');
-        }
-        $pdf->setFont('', 6.2)->para($colL + 28, $yl + 3, $colW - 32, 'Minimum Wage Earner (MWE) whose compensation is exempt from withholding tax and not subject to income tax', 7.5);
-        $yl += 20;
-        $yl = self::bar($pdf, $colL, $colW, $yl, 'Part II - Employer Information (Present)');
         $er = $p['employer'];
-        self::tinField($pdf, $colL, $yl, $colW, '12', 'TIN', $er['tin'], $er['branch']);
-        $yl += 22;
-        self::field($pdf, $colL, $yl, $colW, 22, '13', "Employer's Name", $er['name']);
-        $yl += 22;
-        self::field($pdf, $colL, $yl, $colW - 50, 22, '14', 'Registered Address', $er['address']);
-        self::field($pdf, $colL + $colW - 50, $yl, 50, 22, '14A', 'ZIP Code', $er['zip'], 'C');
-        $yl += 22;
-        $pdf->rect($colL, $yl, $colW, 16);
-        $pdf->setFont('B', 6.5)->text($colL + 2, $yl + 2, '15');
-        $pdf->setFont('', 6.5)->text($colL + 14, $yl + 4, 'Type of Employer');
-        $pdf->rect($colL + 80, $yl + 4, 8, 8);
-        $pdf->setFont('B', 8)->text($colL + 81.5, $yl + 4, 'X');
-        $pdf->setFont('', 6.5)->text($colL + 92, $yl + 4, 'Main Employer');
-        $pdf->rect($colL + 160, $yl + 4, 8, 8);
-        $pdf->text($colL + 172, $yl + 4, 'Secondary Employer');
-        $yl += 16;
-        $yl = self::bar($pdf, $colL, $colW, $yl, 'Part III - Employer Information (Previous)');
-        self::tinField($pdf, $colL, $yl, $colW, '16', 'TIN', '', '');
-        $yl += 22;
-        self::field($pdf, $colL, $yl, $colW, 22, '17', "Employer's Name", $p['has_previous'] ? 'See previous employer certificate' : '');
-        $yl += 22;
-        self::field($pdf, $colL, $yl, $colW - 50, 22, '18', 'Registered Address', '');
-        self::field($pdf, $colL + $colW - 50, $yl, 50, 22, '18A', 'ZIP Code', '', 'C');
-        $yl += 22;
-        $yl = self::bar($pdf, $colL, $colW, $yl, 'Part IV-A - Summary');
+        $L = 14;
+        $W = 584;
+        $R = $L + $W;
+        $LW = 290;
+        $RX = $L + $LW;
+        $RW = $W - $LW;
+
+        // ---------------------------------------------------------------- heading
+        self::g21($pdf, $L, 8, 50, 22);
+        $pdf->setFont('', 6.5)->text($L + 4, 12, 'For BIR');
+        $pdf->text($L + 4, 20, 'Use Only');
+        $pdf->setFont('', 6.5)->text($L + 58, 12, 'BCS/');
+        $pdf->text($L + 58, 20, 'Item:');
+        $pdf->setFont('', 7.5)->cell($L, 8, $W, 9, 'Republic of the Philippines', 'C');
+        $pdf->cell($L, 16, $W, 9, 'Department of Finance', 'C');
+        $pdf->setFont('B', 8)->cell($L, 24, $W, 9, 'Bureau of Internal Revenue', 'C');
+        $hy = 34;
+        $pdf->setLineWidth(1.2)->rect($L, $hy, $W, 44)->setLineWidth(0.6);
+        $pdf->line($L + 112, $hy, $L + 112, $hy + 44);
+        $pdf->line($R - 132, $hy, $R - 132, $hy + 44);
+        $pdf->setFont('', 6.5)->cell($L, $hy + 2, 112, 8, 'BIR Form No.', 'C');
+        $pdf->setFont('B', 20)->cell($L, $hy + 10, 112, 20, '2316', 'C');
+        $pdf->setFont('', 6.3)->cell($L, $hy + 32, 112, 9, 'September 2021 (ENCS)', 'C');
+        $pdf->setFont('B', 13)->cell($L + 112, $hy + 3, $W - 244, 14, 'Certificate of Compensation', 'C');
+        $pdf->cell($L + 112, $hy + 16, $W - 244, 14, 'Payment/Tax Withheld', 'C');
+        $pdf->setFont('', 7.3)->cell($L + 112, $hy + 32, $W - 244, 9, 'For Compensation Payment With or Without Tax Withheld', 'C');
+        $pdf->setLineWidth(0.5);
+        for ($i = 0; $i < 46; $i++) {
+            $bx = $R - 124 + $i * 2.5;
+            $pdf->line($bx, $hy + 6, $bx, $hy + 30 - ($i % 4 === 1 ? 4 : 0));
+        }
+        $pdf->setLineWidth(0.6);
+        $pdf->setFont('', 6.5)->cell($R - 132, $hy + 32, 132, 9, '2316 09/21ENCS', 'C');
+        $y = $hy + 44;
+        $pdf->rect($L, $y, $W, 10);
+        $pdf->setFont('', 6.3)->text($L + 3, $y + 2, 'Fill in all applicable spaces. Mark all appropriate boxes with an "X"');
+        $y += 10;
+
+        // ---------------------------------------------------------------- items 1 and 2
+        self::g21($pdf, $L, $y, $LW, 24);
+        self::g21($pdf, $RX, $y, $RW, 24);
+        self::lbl21($pdf, $L + 3, $y + 3, '1', 'For the Year');
+        $pdf->setFont('', 6.3)->text($L + 22, $y + 13, '(YYYY)');
+        self::box21($pdf, $L + 110, $y + 5, 64, 14, (string)$p['year'], 'C', 8.5, 4);
+        self::lbl21($pdf, $RX + 3, $y + 3, '2', 'For the Period');
+        $pdf->setFont('', 6.3)->text($RX + 22, $y + 13, 'From');
+        $pdf->text($RX + 44, $y + 13, '(MM/DD)');
+        self::box21($pdf, $RX + 116, $y + 6, 22, 13, fmt_date($p['period_from'], 'm'), 'C', 8, 2);
+        self::box21($pdf, $RX + 138, $y + 6, 22, 13, fmt_date($p['period_from'], 'd'), 'C', 8, 2);
+        $pdf->setFont('', 6.3)->text($RX + 172, $y + 13, 'To');
+        $pdf->text($RX + 184, $y + 13, '(MM/DD)');
+        self::box21($pdf, $RX + 240, $y + 6, 22, 13, fmt_date($p['period_to'], 'm'), 'C', 8, 2);
+        self::box21($pdf, $RX + 262, $y + 6, 22, 13, fmt_date($p['period_to'], 'd'), 'C', 8, 2);
+        $y += 24;
+        $bar = function ($x, $yy, $w, $text) use ($pdf) {
+            $pdf->fillRgb(255, 255, 255)->rect($x, $yy, $w, 10, 'FD')->fillRgb(0, 0, 0);
+            $pdf->setFont('B', 7)->cell($x, $yy, $w, 10, $text, 'C');
+        };
+        $bar($L, $y, $LW, 'Part I - Employee Information');
+        $bar($RX, $y, $RW, 'Part IV-B Details of Compensation Income and Tax Withheld from Present Employer');
+        $y += 10;
+        $top = $y;
+
+        // ---------------------------------------------------------------- left column: parts I to III
+        $boxR = $L + $LW - 4;
+        $zipW = 56;
+        $yl = $top;
+        self::g21($pdf, $L, $yl, $LW, 19);
+        self::lbl21($pdf, $L + 3, $yl + 3, '3', 'TIN');
+        self::tin21($pdf, $boxR - 181, $yl + 3, $e['tin'], $e['branch']);
+        $yl += 19;
+        $addr = function ($num, $label, $zipNum, $val, $zip) use ($pdf, $L, $LW, $boxR, $zipW, &$yl) {
+            self::g21($pdf, $L, $yl, $LW, 25);
+            self::lbl21($pdf, $L + 3, $yl + 2, $num, $label);
+            self::lbl21($pdf, $boxR - $zipW, $yl + 2, $zipNum, $zipNum === '5' ? 'RDO Code' : 'Zip Code');
+            self::box21($pdf, $L + 6, $yl + 10, $LW - $zipW - 16, 13, $val, 'L', 8.5);
+            self::box21($pdf, $boxR - $zipW, $yl + 10, $zipW, 13, $zip, 'C', 8.5, $zipNum === '5' ? 3 : 4);
+            $yl += 25;
+        };
+        $addr('4', "Employee's Name (Last Name, First Name, Middle Name)", '5', strtoupper($e['name']), isset($e['rdo']) ? $e['rdo'] : '');
+        $addr('6', 'Registered Address', '6A', strtoupper((string)$e['address']), (string)$e['zip']);
+        $addr('6B', 'Local Home Address', '6C', isset($e['local_address']) ? strtoupper($e['local_address']) : '', isset($e['local_zip']) ? $e['local_zip'] : '');
+        $addr('6D', 'Foreign Address', '6E', isset($e['foreign_address']) ? strtoupper($e['foreign_address']) : '', isset($e['foreign_zip']) ? $e['foreign_zip'] : '');
+        self::g21($pdf, $L, $yl, $LW, 25);
+        $pdf->line($L + 150, $yl, $L + 150, $yl + 25);
+        self::lbl21($pdf, $L + 3, $yl + 2, '7', 'Date of Birth (MM/DD/YYYY)');
+        self::date21($pdf, $L + 6, $yl + 10, $e['birth']);
+        self::lbl21($pdf, $L + 153, $yl + 2, '8', 'Telephone Number');
+        self::box21($pdf, $L + 156, $yl + 10, $LW - 160, 13, (string)$e['contact'], 'L', 8.5);
+        $yl += 25;
+        foreach (array(array('9', 'Statutory Minimum Wage rate per day', $a['smw_per_day']), array('10', 'Statutory Minimum Wage rate per month', $a['smw_per_month'])) as $r) {
+            self::g21($pdf, $L, $yl, $LW, 19);
+            self::lbl21($pdf, $L + 3, $yl + 3, $r[0], $r[1]);
+            self::box21($pdf, $boxR - 112, $yl + 3, 112, 13, $r[2] ? self::money21($r[2]) : '', 'R', 8.5);
+            $yl += 19;
+        }
+        self::g21($pdf, $L, $yl, $LW, 24);
+        $pdf->setFont('B', 6.6)->text($L + 3, $yl + 4, '11');
+        self::box21($pdf, $L + 17, $yl + 4, 18, 11, $e['mwe'] ? 'X' : '', 'C', 8, 0, 'B');
+        $pdf->setFont('', 6.4)->para($L + 40, $yl + 3, $LW - 46, 'Minimum Wage Earner (MWE) whose compensation is exempt from withholding tax and not subject to income tax', 8);
+        $yl += 24;
+        $bar($L, $yl, $LW, 'Part II - Employer Information (Present)');
+        $yl += 10;
+        self::g21($pdf, $L, $yl, $LW, 19);
+        self::lbl21($pdf, $L + 3, $yl + 3, '12', 'TIN');
+        self::tin21($pdf, $boxR - 181, $yl + 3, $er['tin'], $er['branch']);
+        $yl += 19;
+        self::g21($pdf, $L, $yl, $LW, 25);
+        self::lbl21($pdf, $L + 3, $yl + 2, '13', "Employer's Name");
+        self::box21($pdf, $L + 6, $yl + 10, $LW - 10, 13, strtoupper($er['name']), 'L', 8.5);
+        $yl += 25;
+        $addrEr = function ($num, $zipNum, $val, $zip) use ($pdf, $L, $LW, $boxR, $zipW, &$yl) {
+            self::g21($pdf, $L, $yl, $LW, 25);
+            self::lbl21($pdf, $L + 3, $yl + 2, $num, 'Registered Address');
+            self::lbl21($pdf, $boxR - $zipW, $yl + 2, $zipNum, 'Zip Code');
+            self::box21($pdf, $L + 6, $yl + 10, $LW - $zipW - 16, 13, $val, 'L', 8.5);
+            self::box21($pdf, $boxR - $zipW, $yl + 10, $zipW, 13, $zip, 'C', 8.5, 4);
+            $yl += 25;
+        };
+        $addrEr('14', '14A', strtoupper((string)$er['address']), (string)$er['zip']);
+        self::g21($pdf, $L, $yl, $LW, 18);
+        self::lbl21($pdf, $L + 3, $yl + 4, '15', 'Type of Employer');
+        $secondary = !empty($p['secondary_employer']);
+        self::box21($pdf, $L + 110, $yl + 3, 13, 12, $secondary ? '' : 'X', 'C', 8, 0, 'B');
+        $pdf->setFont('', 6.6)->text($L + 127, $yl + 4, 'Main Employer');
+        self::box21($pdf, $L + 186, $yl + 3, 13, 12, $secondary ? 'X' : '', 'C', 8, 0, 'B');
+        $pdf->setFont('', 6.6)->text($L + 203, $yl + 4, 'Secondary Employer');
+        $yl += 18;
+        $bar($L, $yl, $LW, 'Part III - Employer Information (Previous)');
+        $yl += 10;
+        $pv = isset($p['previous']) ? $p['previous'] : array('tin' => '', 'branch' => '', 'name' => '', 'address' => '', 'zip' => '');
+        self::g21($pdf, $L, $yl, $LW, 19);
+        self::lbl21($pdf, $L + 3, $yl + 3, '16', 'TIN');
+        self::tin21($pdf, $boxR - 181, $yl + 3, $pv['tin'], $pv['branch']);
+        $yl += 19;
+        self::g21($pdf, $L, $yl, $LW, 25);
+        self::lbl21($pdf, $L + 3, $yl + 2, '17', "Employer's Name");
+        self::box21($pdf, $L + 6, $yl + 10, $LW - 10, 13, strtoupper($pv['name']), 'L', 8.5);
+        $yl += 25;
+        $addrEr('18', '18A', strtoupper($pv['address']), $pv['zip']);
+        $bar($L, $yl, $LW, 'Part IVA - Summary');
+        $yl += 10;
+
+        // Part IV-A summary rows: item, first label line, second label line, italic part, amount, row height
+        $tw = $a['tax_withheld_adjusted'] + $a['prev_tax_withheld'];
         $sum = array(
-            array('19', 'Gross Compensation Income from Present Employer', $a['pres_gross']),
-            array('20', 'Less: Total Non-Taxable/Exempt Compensation Income from Present Employer', $a['pres_nt_total']),
-            array('21', 'Taxable Compensation Income from Present Employer', $a['pres_tx_total']),
-            array('22', 'Add: Taxable Compensation Income from Previous Employer, if applicable', $a['prev_tx_total']),
-            array('23', 'Gross Taxable Compensation Income', $a['taxable_comp_total']),
-            array('24', 'Tax Due', $a['tax_due']),
-            array('25A', 'Amount of Taxes Withheld: Present Employer', $a['tax_withheld_adjusted']),
-            array('25B', 'Amount of Taxes Withheld: Previous Employer, if applicable', $a['prev_tax_withheld']),
-            array('26', 'Total Amount of Taxes Withheld as adjusted', $a['tax_withheld_adjusted'] + $a['prev_tax_withheld']),
-            array('27', '5% Tax Credit (PERA Act of 2008)', $a['pera_credit']),
-            array('28', 'Total Taxes Withheld', $a['tax_withheld_adjusted'] + $a['prev_tax_withheld'] + $a['pera_credit']),
+            array('19', 'Gross Compensation Income from Present', 'Employer', '(Sum of Items 38 and 52)', $a['pres_gross'], 22),
+            array('20', 'Less: Total Non-Taxable/Exempt Compensation', 'Income from Present Employer (From Item 38)', '', $a['pres_nt_total'], 22),
+            array('21', 'Taxable Compensation Income from Present', 'Employer (Item 19 Less Item 20) (From Item 52)', '', $a['pres_tx_total'], 22),
+            array('22', 'Add: Taxable Compensation Income from', 'Previous Employer, if applicable', '', $a['prev_tx_total'], 22),
+            array('23', 'Gross Taxable Compensation Income', '', '(Sum of Items 21 and 22)', $a['taxable_comp_total'], 22),
+            array('24', 'Tax Due', '', '', $a['tax_due'], 19),
+            array('25', 'Amount of Taxes Withheld', '', '', null, 11),
+            array('25A', 'Present Employer', '', '', $a['tax_withheld_adjusted'], 19),
+            array('25B', 'Previous Employer', '', '', $a['prev_tax_withheld'], 19),
+            array('26', 'Total Amount of Taxes Withheld as adjusted', '', '(Sum of Items 25A and 25B)', $tw, 22),
+            array('27', '5% Tax Credit (PERA Act of 2008)', '', '', $a['pera_credit'], 19),
+            array('28', 'Total Taxes Withheld (sum of Items 26 and 27)', '', '', $tw + $a['pera_credit'], 19),
         );
-        foreach ($sum as $s) {
-            $yl = self::amountRow($pdf, $colL, $colW, $yl, $s[0], $s[1], $s[2]);
+        $sumTop = $yl;
+        foreach ($sum as $r) {
+            $yl += $r[5];
         }
-        $yr = self::bar($pdf, $colR, $colW, $y, 'Part IV-B - Details of Compensation Income');
-        $pdf->setFont('B', 6.5)->text($colR + 2, $yr + 2, 'A. NON-TAXABLE/EXEMPT COMPENSATION INCOME');
-        $yr += 11;
-        $nt = array(
-            array('29', 'Basic Salary (including the exempt P250,000 and below) or SMW', $a['pres_nt_smw']),
-            array('30', 'Holiday Pay (MWE)', $a['mwe_holiday_pay']), array('31', 'Overtime Pay (MWE)', $a['mwe_overtime_pay']),
-            array('32', 'Night Shift Differential (MWE)', $a['mwe_night_diff']), array('33', 'Hazard Pay (MWE)', $a['mwe_hazard_pay']),
-            array('34', '13th Month Pay and Other Benefits (maximum of P90,000)', $a['pres_nt_13th']),
-            array('35', 'De Minimis Benefits', $a['pres_nt_deminimis']),
-            array('36', 'SSS, GSIS, PHIC & PAG-IBIG Contributions and Union Dues (Employee share only)', $a['pres_nt_contrib']),
-            array('37', 'Salaries and Other Forms of Compensation', $a['pres_nt_other']),
-            array('38', 'Total Non-Taxable/Exempt Compensation Income', $a['pres_nt_total']),
-        );
-        foreach ($nt as $s) {
-            $yr = self::amountRow($pdf, $colR, $colW, $yr, $s[0], $s[1], $s[2]);
-        }
-        $pdf->setFont('B', 6.5)->text($colR + 2, $yr + 2, 'B. TAXABLE COMPENSATION INCOME REGULAR');
-        $yr += 11;
-        $tx = array(
-            array('39', 'Basic Salary', $a['pres_tx_basic']), array('40', 'Representation', 0), array('41', 'Transportation', 0),
-            array('42', 'Cost of Living Allowance (COLA)', 0), array('43', 'Fixed Housing Allowance', 0), array('44', 'Others', 0),
-        );
-        foreach ($tx as $s) {
-            $yr = self::amountRow($pdf, $colR, $colW, $yr, $s[0], $s[1], $s[2]);
-        }
-        $pdf->setFont('B', 6.5)->text($colR + 2, $yr + 2, 'SUPPLEMENTARY');
-        $yr += 11;
-        $sup = array(
-            array('45', 'Commission', 0), array('46', 'Profit Sharing', 0), array('47', "Fees Including Director's Fees", 0),
-            array('48', 'Taxable 13th Month Benefits', $a['pres_tx_13th']), array('49', 'Hazard Pay', 0), array('50', 'Overtime Pay', 0),
-            array('51', 'Others', $a['pres_tx_other']), array('52', 'Total Taxable Compensation Income', $a['pres_tx_total']),
-        );
-        foreach ($sup as $s) {
-            $yr = self::amountRow($pdf, $colR, $colW, $yr, $s[0], $s[1], $s[2]);
-        }
-        $y = max($yl, $yr) + 6;
-        $pdf->setFont('', 6.6);
-        $y = $pdf->para($L, $y, $W, 'I/We declare, under the penalties of perjury that this certificate has been made in good faith, verified by me/us, and to the best of my/our knowledge and belief, is true and correct, pursuant to the provisions of the National Internal Revenue Code, as amended, and the regulations issued under authority thereof. Further, I/we give my/our consent to the processing of my/our information as contemplated under the *Data Privacy Act of 2012 (R.A. No. 10173) for legitimate and lawful purposes.', 8);
-        $y += 2;
-        $pdf->rect($L, $y, $half, 46);
-        $pdf->rect($L + $half, $y, $half, 46);
-        if (!empty($p['signatory'])) {
-            $s = $p['signatory'];
-            if (!empty($p['use_signature']) && !empty($p['signature_path']) && is_file(storage_path($p['signature_path']))) {
-                try {
-                    $pdf->image(storage_path($p['signature_path']), $L + $half * 0.25 + (float)$p['offset_x'], $y + 2 + (float)$p['offset_y'], 100, 22);
-                } catch (Exception $ex) {
+        self::g21($pdf, $L, $sumTop, $LW, $yl - $sumTop);
+        $yy = $sumTop;
+        foreach ($sum as $r) {
+            $lx = $L + 3;
+            if (in_array($r[0], array('25A', '25B'), true)) {
+                $lx += 12;
+            }
+            if ($r[1] !== '') {
+                if ($r[2] === '' && $r[3] !== '' && $r[5] > 19) {
+                    self::lbl21($pdf, $lx, $yy + 3, $r[0], $r[1]);
+                    $pdf->setFont('BI', 6.4)->text($L + 18, $yy + 12, $r[3]);
+                } else {
+                    self::lbl21($pdf, $lx, $yy + 3, $r[0], $r[1]);
+                    if ($r[2] !== '') {
+                        $pdf->setFont('', 6.6)->text($L + 18, $yy + 12, $r[2]);
+                        if ($r[3] !== '') {
+                            $pdf->setFont('BI', 6.4)->text($L + 20 + $pdf->strWidth($r[2], '', 6.6), $yy + 12, $r[3]);
+                        }
+                    }
                 }
             }
-            $pdf->setFont('B', 8)->cell($L, $y + 20, $half, 11, strtoupper($s['name']) . ($s['title'] ? ', ' . $s['title'] : ''), 'C');
+            if ($r[4] !== null) {
+                self::box21($pdf, $boxR - 120, $yy + 3, 120, 13, self::money21($r[4]), 'R', 8.5);
+            }
+            $yy += $r[5];
         }
-        $pdf->line($L + 20, $y + 32, $L + $half - 20, $y + 32);
-        $pdf->setFont('', 6.2)->cell($L, $y + 33, $half, 9, 'Present Employer/Authorized Agent Signature over Printed Name', 'C');
-        $pdf->setFont('B', 8)->cell($L + $half, $y + 20, $half, 11, strtoupper($e['name']), 'C');
-        $pdf->line($L + $half + 20, $y + 32, $L + $W - 20, $y + 32);
-        $pdf->setFont('', 6.2)->cell($L + $half, $y + 33, $half, 9, 'Employee Signature over Printed Name', 'C');
-        $y += 50;
-        if ($p['substituted']) {
-            $pdf->setFont('B', 6.6)->text($L, $y, 'To be accomplished under substituted filing');
-            $pdf->setFont('', 6.4);
-            $pdf->para($L, $y + 9, $W, 'I declare, under the penalties of perjury, that the information herein stated are reported under BIR Form No. 1604-C which has been filed with the Bureau of Internal Revenue.', 8);
-        }
-        self::footer($pdf, $p, $tplRev, $L, $W);
-    }
 
-    private static function amountRow($pdf, $x, $w, $y, $num, $label, $cents)
-    {
-        $pdf->rect($x, $y, $w, 13);
-        $pdf->line($x + $w - 82, $y, $x + $w - 82, $y + 13);
-        $pdf->setFont('B', 6.3)->text($x + 2, $y + 3.5, $num);
-        $pdf->setFont('', 6.3)->cell($x + 16, $y, $w - 100, 13, $label);
-        $pdf->setFont('B', 7.5)->cell($x + $w - 82, $y, 82, 13, self::money($cents), 'R');
-        return $y + 13;
+        // ---------------------------------------------------------------- right column: part IV-B
+        $vx = $L + $W - 118;
+        $yr = $top;
+        $rowsR = array(
+            array('h', 'A.  NON-TAXABLE/EXEMPT COMPENSATION INCOME', 16),
+            array('amt', 'Amount', 10),
+            array('29', 'Basic Salary (including the exempt P250,000 &', 'below) or the Statutory Minimum Wage of the MWE', '', $a['pres_nt_smw'], 24, true),
+            array('30', 'Holiday Pay (MWE)', '', '', $a['mwe_holiday_pay'], 19, true),
+            array('31', 'Overtime Pay (MWE)', '', '', $a['mwe_overtime_pay'], 19, true),
+            array('32', 'Night Shift Differential (MWE)', '', '', $a['mwe_night_diff'], 19, true),
+            array('33', 'Hazard Pay (MWE)', '', '', $a['mwe_hazard_pay'], 19, true),
+            array('34', '13th Month Pay and Other Benefits', '', '(maximum of P90,000)', $a['pres_nt_13th'], 24, true),
+            array('35', 'De Minimis Benefits', '', '', $a['pres_nt_deminimis'], 19, true),
+            array('36', 'SSS, GSIS, PHIC & PAG-IBIG Contributions', 'and Union Dues (Employee share only)', '', $a['pres_nt_contrib'], 24, true),
+            array('37', 'Salaries and Other Forms of Compensation', '', '', $a['pres_nt_other'], 19, true),
+            array('38', 'Total Non-Taxable/Exempt Compensation', 'Income', '(Sum of Items 29 to 37)', $a['pres_nt_total'], 24, true),
+            array('h', 'B.  TAXABLE COMPENSATION INCOME REGULAR', 17),
+            array('39', 'Basic Salary', '', '', $a['pres_tx_basic'], 19, true),
+            array('40', 'Representation', '', '', 0, 19, false),
+            array('41', 'Transportation', '', '', 0, 19, false),
+            array('42', 'Cost of Living Allowance (COLA)', '', '', 0, 19, false),
+            array('43', 'Fixed Housing Allowance', '', '', 0, 19, false),
+            array('spec', '44', 'Others', 12),
+            array('44A', '', '', '', 0, 19, true),
+            array('44B', '', '', '', 0, 19, false),
+            array('h', 'SUPPLEMENTARY', 17),
+            array('45', 'Commission', '', '', 0, 19, false),
+            array('46', 'Profit Sharing', '', '', 0, 19, false),
+            array('47', "Fees Including Director's Fees", '', '', 0, 19, false),
+            array('48', 'Taxable 13th Month Pay Benefits', '', '', $a['pres_tx_13th'], 19, true),
+            array('49', 'Hazard Pay', '', '', 0, 19, false),
+            array('50', 'Overtime Pay', '', '', 0, 19, false),
+            array('spec', '51', 'Others', 12),
+            array('51A', $a['pres_tx_other'] ? 'Other compensation' : '', '', '', $a['pres_tx_other'], 19, (bool)$a['pres_tx_other']),
+            array('51B', '', '', '', 0, 19, false),
+            array('52', 'Total Taxable Compensation Income', '', '(Sum of Items 39 to 51B)', $a['pres_tx_total'], 26, true),
+        );
+        self::g21($pdf, $RX, $top, $RW, $yl - $top);
+        foreach ($rowsR as $r) {
+            if ($r[0] === 'h') {
+                $pdf->setFont('B', 7)->text($RX + 4, $yr + 5, $r[1]);
+                $yr += $r[2];
+                continue;
+            }
+            if ($r[0] === 'amt') {
+                $pdf->setFont('B', 6.8)->cell($vx, $yr, 114, 10, $r[1], 'C');
+                $yr += $r[2];
+                continue;
+            }
+            if ($r[0] === 'spec') {
+                self::lbl21($pdf, $RX + 3, $yr + 2, $r[1], $r[2], 6.6, '(Specify)');
+                $yr += $r[3];
+                continue;
+            }
+            if (in_array($r[0], array('44A', '44B', '51A', '51B'), true)) {
+                $pdf->setFont('B', 6.6)->text($RX + 16, $yr + 6, $r[0]);
+                self::box21($pdf, $RX + 34, $yr + 3, 118, 14, $r[1], 'L', 7.5);
+            } elseif ($r[2] === '' && $r[3] !== '' && $r[5] > 19) {
+                self::lbl21($pdf, $RX + 3, $yr + 3, $r[0], $r[1]);
+                $pdf->setFont('BI', 6.4)->text($RX + 18, $yr + 12, $r[3]);
+            } else {
+                self::lbl21($pdf, $RX + 3, $yr + 3, $r[0], $r[1]);
+                if ($r[2] !== '') {
+                    $pdf->setFont('', 6.6)->text($RX + 18, $yr + 12, $r[2]);
+                    if ($r[3] !== '') {
+                        $pdf->setFont('BI', 6.4)->text($RX + 20 + $pdf->strWidth($r[2], '', 6.6), $yr + 12, $r[3]);
+                    }
+                }
+            }
+            self::box21($pdf, $vx, $yr + 3, 114, 13, $r[6] ? self::money21($r[4]) : ($r[4] ? self::money21($r[4]) : ''), 'R', 8.5);
+            $yr += $r[5];
+        }
+        $pdf->setLineWidth(1.2)->rect($L, $top - 10, $W, $yl - $top + 10)->setLineWidth(0.6);
+        $pdf->setLineWidth(1)->line($RX, $top - 10, $RX, $yl)->setLineWidth(0.6);
+
+        // ---------------------------------------------------------------- declaration and signatures
+        $y = $yl;
+        self::g21($pdf, $L, $y, $W, 25);
+        $pdf->setFont('', 5.9)->para($L + 6, $y + 2.5, $W - 12, 'I/We declare, under the penalties of perjury, that this certificate has been made in good faith, verified by me/us, and to the best of my/our knowledge and belief, is true and correct pursuant to the provisions of the National Internal Revenue Code, as amended, and the regulations issued under authority thereof. Further, I/we give my/our consent to the processing of my/our information as contemplated under the *Data Privacy Act of 2012 (R.A. No. 10173) for legitimate and lawful purposes.', 6.9);
+        $y += 25;
+        $sigTop = $y;
+        $signer = !empty($p['signatory']) ? strtoupper($p['signatory']['name']) : '';
+        $empName = self::printName21($e);
+        $sigLine = function ($yy, $num, $name, $caption, $withImage) use ($pdf, $L, $p) {
+            if ($withImage && !empty($p['use_signature']) && !empty($p['signature_path']) && is_file(storage_path($p['signature_path']))) {
+                try {
+                    $pdf->image(storage_path($p['signature_path']), $L + 170 + (float)$p['offset_x'], $yy - 10 + (float)$p['offset_y'], 96, 22);
+                } catch (Exception $ex) {
+                    // a signature image problem never blocks printing; the name prints regardless
+                }
+            }
+            $pdf->setFont('B', 7.5)->text($L + 26, $yy + 3, $num);
+            $pdf->setFont('', 8.5)->cell($L + 76, $yy, 300, 11, $name, 'C');
+            $pdf->line($L + 76, $yy + 11, $L + 376, $yy + 11);
+            $pdf->setFont('', 6)->cell($L + 76, $yy + 11.5, 300, 8, $caption, 'C');
+        };
+        $sigLine($y + 4, '51', $signer, 'Present Employer/Authorized Agent Signature Over Printed Name', true);
+        $pdf->setFont('', 6.4)->text($L + 404, $y + 7, 'Date Signed');
+        self::date21($pdf, $L + 446, $y + 4, '', 12);
+        $y += 26;
+        $pdf->setFont('B', 7)->text($L + 12, $y, 'CONFORME:');
+        $y += 8;
+        $sigLine($y + 2, '52', $empName, 'Employee Signature Over Printed Name', false);
+        $pdf->setFont('', 6.4)->text($L + 404, $y + 5, 'Date Signed');
+        self::date21($pdf, $L + 446, $y + 2, '', 12);
+        $y += 24;
+        $pdf->setFont('', 6)->text($L + 12, $y + 1, 'CTC/Valid ID No.');
+        $pdf->setFont('I', 5.6)->text($L + 12, $y + 8, 'of Employee');
+        self::box21($pdf, $L + 66, $y + 1, 110, 12, '', 'L');
+        $pdf->setFont('', 6)->text($L + 184, $y + 1, 'Place of');
+        $pdf->text($L + 184, $y + 8, 'Issue');
+        self::box21($pdf, $L + 212, $y + 1, 120, 12, '', 'L');
+        $pdf->setFont('', 6.4)->text($L + 404, $y + 4, 'Date of Issue');
+        self::date21($pdf, $L + 446, $y + 1, '', 12);
+        $pdf->setFont('', 5.8)->cell($R - 50, $y - 8, 48, 8, 'Amount Paid, if CTC', 'C');
+        self::box21($pdf, $R - 50, $y + 1, 46, 12, '', 'R');
+        $y += 17;
+        $pdf->setLineWidth(1)->rect($L, $sigTop, $W, $y - $sigTop)->setLineWidth(0.6);
+        $pdf->setLineWidth(1)->rect($L, $y, $W, 11)->setLineWidth(0.6);
+        $pdf->setFont('B', 7.3)->cell($L, $y, $W, 11, 'To be accomplished under substituted filing', 'C');
+        $y += 11;
+        $subH = 68;
+        $half = $W / 2;
+        $pdf->setLineWidth(1)->rect($L, $y, $W, $subH)->line($L + $half, $y, $L + $half, $y + $subH)->setLineWidth(0.6);
+        $pdf->setFont('', 5.9)->para($L + 6, $y + 3, $half - 12, 'I declare, under the penalties of perjury, that the information herein stated are reported under BIR Form No. 1604-C which has been filed with the Bureau of Internal Revenue.', 7);
+        $pdf->para($L + $half + 6, $y + 3, $half - 12, 'I declare, under the penalties of perjury that I am qualified under substituted filing of Income Tax Returns (BIR Form No. 1700), since I received purely compensation income from only one employer in the Philippines for the calendar year; that taxes have been correctly withheld by my employer (tax due equals tax withheld); that the BIR Form No. 1604-C filed by my employer to the BIR shall constitute as my income tax return; and that BIR Form No. 2316 shall serve the same purpose as if BIR Form No. 1700 had been filed pursuant to the provisions of Revenue Regulations (RR) No. 3-2002, as amended.', 6.8);
+        $sub = !empty($p['substituted']);
+        $sy = $y + 27;
+        if ($sub && !empty($p['use_signature']) && !empty($p['signature_path']) && is_file(storage_path($p['signature_path']))) {
+            try {
+                $pdf->image(storage_path($p['signature_path']), $L + 96 + (float)$p['offset_x'], $sy - 12 + (float)$p['offset_y'], 96, 22);
+            } catch (Exception $ex) {
+            }
+        }
+        $pdf->setFont('B', 7.5)->text($L + 22, $sy + 3, '53');
+        $pdf->setFont('', 8.5)->cell($L + 40, $sy, $half - 60, 11, $sub ? $signer : '', 'C');
+        $pdf->line($L + 40, $sy + 11, $L + $half - 20, $sy + 11);
+        $pdf->setFont('', 6)->cell($L + 20, $sy + 12, $half - 40, 8, 'Present Employer/Authorized Agent Signature Over Printed Name', 'C');
+        $pdf->cell($L + 20, $sy + 19, $half - 40, 8, '(Head of Accounting/Human Resource or Authorized Representative)', 'C');
+        $ey = $y + $subH - 21;
+        $pdf->setFont('B', 7.5)->text($L + $half + 22, $ey + 3, '54');
+        $pdf->setFont('', 8.5)->cell($L + $half + 40, $ey, $half - 60, 11, $sub ? $empName : '', 'C');
+        $pdf->line($L + $half + 40, $ey + 11, $L + $W - 20, $ey + 11);
+        $pdf->setFont('', 6)->cell($L + $half + 40, $ey + 12, $half - 60, 8, 'Employee Signature Over Printed Name', 'C');
+        $y += $subH;
+        $pdf->setFont('', 6.2)->text($L, $y + 3, '*NOTE: The BIR Data Privacy is in the BIR website (www.bir.gov.ph)');
+        $pdf->setFont('', 5.2)->fillRgb(90, 90, 90);
+        $foot = 'Certificate ' . $p['cert_no'] . ', revision ' . $p['revision'] . '. ' . self::REV_2316 . '. Generated ' . date('m/d/Y H:i') . ' by G-SMaRT BIR Integration System.';
+        $pdf->text($R - $pdf->strWidth($foot, '', 5.2), $y + 4, $foot);
+        $pdf->fillRgb(0, 0, 0);
+        $pdf->endScale();
     }
 }

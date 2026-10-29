@@ -397,6 +397,8 @@ H
 <li>Click <b>Compute totals</b> to fill the totals from their parts before saving.</li>
 </ul>
 <p>The <b>Check</b> column shows whether each record adds up. A record that does not add up to the centavo blocks the 1604-C, because the BIR validator rejects inconsistent rows. Use <b>Import compensation</b> to load a whole year from your payroll system, and <b>Generate 1604-C</b> when the year is complete.</p>
+<h3>One 1604-C file for both schedules</h3>
+<p>The BIR system does not separate Schedule 1 and Schedule 2, so the system writes one 1604-C file for the year: the header, the Schedule 1 employees with their control line, then the minimum wage earners of Schedule 2 with theirs. Each schedule numbers its employees from 1 and totals only its own lines. A year with no minimum wage earners gives a file with Schedule 1 only. When the BIR validator passes the file, both schedule layouts are approved with it.</p>
 H
 ),
 
@@ -528,7 +530,7 @@ $ch[] = array('title' => 'Generating BIR files', 'sections' => array(
 'generate' => $S('Generate a file', 'generate', 'Preview the rows and checks, then write the DAT file.', <<<'H'
 <figure><img src="{img:generate}" alt="Generate a file"><figcaption>Previewing September's QAP: rows, totals, data quality and a byte preview.</figcaption></figure>
 <ol class="steps">
-<li>Choose the <b>Form</b>, the <b>Schedule</b> and the <b>Branch</b>.</li>
+<li>Choose the <b>Form</b>, the <b>Schedule</b> and the <b>Branch</b>. For the 1604-C the schedule is fixed to <i>Schedules 1 and 2 in one file</i>.</li>
 <li>Choose the <b>Year</b> and the period: month, quarter, half or year, depending on the form. For SAWT, also choose the return it goes with (for example 1701Q).</li>
 <li>Tick <b>Amended return</b> if this replaces a file already filed.</li>
 <li>Click <b>Preview rows and checks</b>. The system builds the rows from saved records and runs the data quality checks. Nothing is stored yet.</li>
@@ -540,7 +542,7 @@ $ch[] = array('title' => 'Generating BIR files', 'sections' => array(
 <li><b>QAP</b> (1601-EQ, 1601-FQ): one file per month of the quarter.</li>
 <li><b>SLS, SLP, SLI</b>: one file per month, covering all branches of the TIN.</li>
 <li><b>MAP</b> (1600-VT, 1600-PT): monthly.</li>
-<li><b>1604-C, 1604-E, 1604-F</b>: the year.</li>
+<li><b>1604-C, 1604-E, 1604-F</b>: the year. The 1604-C is one file holding Schedule 1 and Schedule 2 (minimum wage earners), as the BIR system expects; the schedule is not chosen separately.</li>
 <li><b>SAWT</b>: the period of the return it is attached to.</li>
 </ul>
 <h3>Errors and warnings</h3>
@@ -718,13 +720,14 @@ H
 <ol class="steps">
 <li>Choose the form, branch, year and quarter (2307, 2306) or year (2316), and click <b>Load</b>.</li>
 <li>Tick the payees or employees to issue for. Each row shows the income and tax that will print.</li>
-<li>Choose the <b>signatory</b> and <b>paper</b> size (A4, Letter or Folio).</li>
+<li>Choose the <b>signatory</b> and <b>paper</b> size (A4, Letter or Folio). Form 2316 is an 8.5 x 13 in page, so Folio is chosen for it; on A4 or Letter it is scaled down to fit.</li>
 <li>Tick <b>Apply the signatory's approved signature image</b> if allowed. Use the offsets to move the image for your printer.</li>
 <li>Click <b>Issue selected</b>.</li>
 </ol>
 <p>Payees that already have a certificate for the period are skipped unless you tick <b>Issue even if a certificate already exists</b>.</p>
 <div class="mshots"><figure><img src="{img:cert2307}" alt="Form 2307"><figcaption>Form 2307 as printed.</figcaption></figure><figure><img src="{img:cert2316}" alt="Form 2316"><figcaption>Form 2316 as printed.</figcaption></figure></div>
-<div class="mnote">Certificates are drawn to the January 2018 (ENCS) layouts. Check each form's current revision on the BIR website before issuing.</div>
+<div class="mnote">Certificates follow the current BIR revisions: 2307 and 2306 January 2018 (ENCS), and 2316 September 2021 (ENCS), with items 6B Local Home Address, 6D Foreign Address, 8 Telephone Number, 44A/44B and 51A/51B (others, specify), the CTC or valid ID of the employee, and items 53 and 54 for substituted filing. Check each form's revision on the BIR website before issuing.</div>
+<p>On the 2316, items 51 and 53 print the chosen signatory and items 52 and 54 the employee's name (first name first). Items 53 and 54 are filled only for employees under substituted filing. The dates signed and the CTC or ID details are left for signing.</p>
 H
 ),
 

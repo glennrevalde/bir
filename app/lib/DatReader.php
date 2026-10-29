@@ -106,8 +106,12 @@ class DatReader
         $lines = explode("\n", rtrim($text, "\n"));
         $records = array();
         $rows = array();
+        $rowParts = array();
         $header = null;
         $controls = array();
+        $controlsByPart = array();
+        $partClosed = array();
+        $partRows = array();
         $delim = $spec['delimiter'];
         $start = (int)$spec['column_header_row'] === 1 ? 1 : 0;
         foreach ($lines as $idx => $line) {
@@ -146,10 +150,17 @@ class DatReader
                     $norm[$k] = $f['data_type'] === 'amount' ? Money::fromDb($v === '' ? '0' : $v) : ($f['data_type'] === 'rate' ? self::rateBack($v, $f['fmt']) : ($f['data_type'] === 'date' ? self::dateBack($v) : $v));
                 }
             }
-            $entry = array('line' => $lineNo, 'record_code' => $rec['record_code'], 'role' => $rec['role'], 'fields' => $assoc, 'field_count' => count($fields), 'expected' => $expected);
+            $part = isset($rec['part']) ? $rec['part'] : 0;
+            $entry = array('line' => $lineNo, 'record_code' => $rec['record_code'], 'role' => $rec['role'], 'fields' => $assoc, 'field_count' => count($fields), 'expected' => $expected,
+                'part' => $part);
             $records[] = $entry;
             if ($rec['role'] === 'detail') {
+                if (isset($rec['part']) && !empty($partClosed[$part])) {
+                    $issue('error', 'ORDER', $lineNo, null, 'Line ' . $lineNo . ' (' . $rec['record_code'] . ') comes after the control record of its schedule.');
+                }
                 $rows[] = $norm;
+                $rowParts[] = $part;
+                $partRows[$part] = true;
             } elseif ($rec['role'] === 'header') {
                 if ($header !== null) {
                     $issue('error', 'MULTI_HEADER', $lineNo, null, 'More than one header record.');
@@ -159,7 +170,19 @@ class DatReader
                 }
                 $header = $assoc;
             } else {
+                if (isset($rec['part']) && empty($partRows[$part])) {
+                    $issue('error', 'ORDER', $lineNo, null, 'Line ' . $lineNo . ' (' . $rec['record_code'] . ') is a control record with no detail lines of its schedule before it.');
+                }
                 $controls[] = $assoc;
+                $controlsByPart[$part][] = $assoc;
+                $partClosed[$part] = true;
+            }
+        }
+        if (!empty($spec['composite'])) {
+            foreach (array_keys($partRows) as $p) {
+                if (empty($controlsByPart[$p])) {
+                    $issue('error', 'NO_CONTROL', count($lines), null, 'The control record of ' . $spec['parts'][$p]['schedule_code'] . ' is missing.');
+                }
             }
         }
         $hasHeaderSpec = false;
@@ -177,7 +200,7 @@ class DatReader
         if ($records && $hasControlSpec && end($records)['role'] !== 'control') {
             $issue('error', 'ORDER', count($lines), null, 'The control record must be the last line.');
         }
-        return array('records' => $records, 'rows' => $rows, 'header' => $header, 'controls' => $controls, 'issues' => $issues,
+        return array('records' => $records, 'rows' => $rows, 'row_parts' => $rowParts, 'header' => $header, 'controls' => $controls, 'controls_by_part' => $controlsByPart, 'issues' => $issues,
             'line_ending' => $eol, 'has_bom' => $hasBom, 'non_ascii' => $nonAscii, 'ends_with_newline' => $endsWithNewline, 'line_count' => count($lines));
     }
 
@@ -275,7 +298,7 @@ class DatReader
             if ((int)$spec['column_header_row'] !== 1 && !self::matchRecord($spec, $fields, array())) {
                 continue;
             }
-            $score = Specs::statusRank($spec['status']);
+            $score = Specs::statusRank($spec['status']) * 2 + 1;
             $parsed = self::parse($bytes, $spec);
             $errs = 0;
             foreach ($parsed['issues'] as $i) {
@@ -283,7 +306,41 @@ class DatReader
                     $errs++;
                 }
             }
-            $found[] = array('spec' => $spec, 'tokens' => $tok, 'errors' => $errs, 'score' => $score);
+            $found[] = array('spec' => $spec, 'key' => (string)$spec['id'], 'tokens' => $tok, 'errors' => $errs, 'score' => $score);
+        }
+        // A file holding several schedules of one form (1604-C Schedules 1 and 2) is read with their layouts joined.
+        $forms = array();
+        foreach ($found as $c) {
+            if (Specs::combinedParts($c['spec']['form_code'])) {
+                $forms[$c['spec']['form_code']] = $c['tokens'];
+            }
+        }
+        foreach ($forms as $form => $tok) {
+            $parts = array();
+            foreach (Specs::combinedParts($form) as $code) {
+                $best = null;
+                foreach (DB::all('SELECT id, status FROM layout_specs WHERE form_code = ? AND schedule_code = ? AND status <> ? ORDER BY id DESC', array($form, $code, 'retired')) as $r) {
+                    if (!$best || Specs::statusRank($r['status']) > Specs::statusRank($best['status'])) {
+                        $best = $r;
+                    }
+                }
+                if ($best) {
+                    $parts[] = Specs::load($best['id']);
+                }
+            }
+            $spec = Specs::composite($parts);
+            if (!$spec || empty($spec['composite'])) {
+                continue;
+            }
+            $parsed = self::parse($bytes, $spec);
+            $errs = 0;
+            foreach ($parsed['issues'] as $i) {
+                if ($i['severity'] === 'error') {
+                    $errs++;
+                }
+            }
+            $found[] = array('spec' => $spec, 'key' => 'c:' . implode(',', array_map(function ($p) { return $p['id']; }, $spec['parts'])), 'tokens' => $tok,
+                'errors' => $errs, 'score' => Specs::statusRank($spec['status']) * 2);
         }
         usort($found, function ($a, $b) {
             if ($a['errors'] !== $b['errors']) {

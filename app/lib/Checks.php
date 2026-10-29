@@ -51,10 +51,14 @@ class Checks
         };
         if (!$spec) {
             $add('error', 'NO_LAYOUT', null, null, 'No file layout is registered for ' . $form . ' ' . $schedule . ' covering this period.');
-        } elseif ($spec['status'] === 'draft') {
-            $add('warning', 'LAYOUT_DRAFT', null, null, 'Layout #' . $spec['id'] . ' is an unsourced draft. The file will be labelled UNVALIDATED DRAFT.');
-        } elseif ($spec['status'] === 'pending_verification') {
-            $add('warning', 'LAYOUT_PENDING', null, null, 'Layout #' . $spec['id'] . ' is pending verification. Record an official validator result to confirm it.');
+        }
+        foreach (Specs::partsOf($spec) as $part) {
+            $of = !empty($spec['composite']) ? ' (' . $part['schedule_code'] . ')' : '';
+            if ($part['status'] === 'draft') {
+                $add('warning', 'LAYOUT_DRAFT', null, null, 'Layout #' . $part['id'] . $of . ' is an unsourced draft. The file will be labelled UNVALIDATED DRAFT.');
+            } elseif ($part['status'] === 'pending_verification') {
+                $add('warning', 'LAYOUT_PENDING', null, null, 'Layout #' . $part['id'] . $of . ' is pending verification. Record an official validator result to confirm it.');
+            }
         }
         if (!preg_match('/^\d{9}$/', $agent['tin'])) {
             $add('error', 'AGENT_TIN', null, 'tin', 'Client TIN must be 9 digits.');
@@ -113,7 +117,7 @@ class Checks
                 foreach (self::compArithmetic($r) as $m) {
                     $add('error', 'COMP_MATH', $n, null, 'Row ' . $n . ' (' . party_name($r) . '): ' . $m);
                 }
-                if ($schedule === 'S1' && $r['pera_credit'] > 0) {
+                if ((isset($r['schedule_code']) ? $r['schedule_code'] : $schedule) === 'S1' && $r['pera_credit'] > 0) {
                     $add('warning', 'PERA', $n, 'pera_credit', 'Row ' . $n . ' has a PERA credit; this case is not covered by the validated sample.');
                 }
                 if ($r['over_withheld_refunded'] > 0 || $r['prev_gross'] > 0) {
@@ -171,23 +175,32 @@ class Checks
         if (count($parsed['rows']) !== count($rows)) {
             $add('error', 'ROW_COUNT', null, null, 'Parsed ' . count($parsed['rows']) . ' detail records; the dataset has ' . count($rows) . '.');
         }
-        // Round-trip: compare each parsed row with the dataset row on identifiers and amounts.
+        // Round-trip: compare each parsed row with the dataset row on identifiers and amounts, using the
+        // detail record of the row's own schedule when the file holds more than one.
         $cmpKeys = array();
         foreach ($spec['records'] as $r) {
             if ($r['role'] === 'detail') {
+                $p = isset($r['part']) ? $r['part'] : 0;
                 foreach ($r['fields'] as $f) {
                     if (strpos($f['source_expr'], 'row.') === 0 && in_array($f['data_type'], array('amount', 'digits', 'code', 'date'), true)) {
-                        $cmpKeys[substr($f['source_expr'], 4)] = $f['data_type'];
+                        $cmpKeys[$p][substr($f['source_expr'], 4)] = $f['data_type'];
                     }
                 }
             }
         }
+        $wantParts = array();
         foreach ($rows as $i => $want) {
+            $wantParts[$i] = Specs::partOf($spec, $want);
             if (!isset($parsed['rows'][$i])) {
                 break;
             }
             $got = $parsed['rows'][$i];
-            foreach ($cmpKeys as $k => $type) {
+            $gotPart = isset($parsed['row_parts'][$i]) ? $parsed['row_parts'][$i] : 0;
+            if ($wantParts[$i] !== null && $gotPart !== $wantParts[$i]) {
+                $add('error', 'ROUND_TRIP', $i + 1, 'schedule_code', 'Detail ' . ($i + 1) . ' was written in another schedule than its record (' . $want['schedule_code'] . ').');
+                continue;
+            }
+            foreach (isset($cmpKeys[$gotPart]) ? $cmpKeys[$gotPart] : array() as $k => $type) {
                 $w = isset($want[$k]) ? $want[$k] : '';
                 $g = isset($got[$k]) ? $got[$k] : '';
                 if ($type === 'amount') {
@@ -201,12 +214,20 @@ class Checks
                 }
             }
         }
-        // Control and header totals must equal the sum of detail records as parsed.
+        // Control and header totals must equal the sum of detail records as parsed. In a combined file each
+        // schedule's control line totals that schedule's lines only.
         foreach ($spec['records'] as $r) {
             if ($r['role'] === 'detail') {
                 continue;
             }
-            $assoc = $r['role'] === 'header' ? $parsed['header'] : (isset($parsed['controls'][0]) ? $parsed['controls'][0] : null);
+            $part = isset($r['part']) ? $r['part'] : null;
+            if ($r['role'] === 'header') {
+                $assoc = $parsed['header'];
+            } elseif ($part !== null) {
+                $assoc = isset($parsed['controls_by_part'][$part][0]) ? $parsed['controls_by_part'][$part][0] : null;
+            } else {
+                $assoc = isset($parsed['controls'][0]) ? $parsed['controls'][0] : null;
+            }
             if (!$assoc) {
                 continue;
             }
@@ -216,12 +237,18 @@ class Checks
                 }
                 $k = substr($f['source_expr'], 4);
                 $sum = 0;
-                foreach ($parsed['rows'] as $pr) {
+                foreach ($parsed['rows'] as $j => $pr) {
+                    if ($part !== null && (isset($parsed['row_parts'][$j]) ? $parsed['row_parts'][$j] : 0) !== $part) {
+                        continue;
+                    }
                     $sum += isset($pr[$k]) ? (int)$pr[$k] : 0;
                 }
-                if ($k === 'creditable_input' || !self::detailHas($spec, $k)) {
+                if ($k === 'creditable_input' || !self::detailHas($spec, $k, $part)) {
                     $sum = 0;
-                    foreach ($rows as $dr) {
+                    foreach ($rows as $j => $dr) {
+                        if ($part !== null && (isset($wantParts[$j]) ? $wantParts[$j] : Specs::partOf($spec, $dr)) !== $part) {
+                            continue;
+                        }
                         $sum += isset($dr[$k]) ? (int)$dr[$k] : 0;
                     }
                 }
@@ -234,10 +261,10 @@ class Checks
         return array('issues' => $issues, 'parsed' => $parsed);
     }
 
-    private static function detailHas($spec, $key)
+    private static function detailHas($spec, $key, $part = null)
     {
         foreach ($spec['records'] as $r) {
-            if ($r['role'] === 'detail') {
+            if ($r['role'] === 'detail' && ($part === null || (isset($r['part']) ? $r['part'] : 0) === $part)) {
                 foreach ($r['fields'] as $f) {
                     if ($f['source_expr'] === 'row.' . $key) {
                         return true;

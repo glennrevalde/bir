@@ -7,7 +7,7 @@ foreach ($forms as $f) {
     $formMap[$f['code']] = $f;
 }
 $form = isset($formMap[input('form')]) ? input('form') : '1601EQ';
-$schedules = DB::all('SELECT * FROM report_schedules WHERE form_code = ? ORDER BY sort_order', array($form));
+$schedules = Datasets::generateSchedules($form);
 $schedCodes = array();
 foreach ($schedules as $s) {
     $schedCodes[$s['schedule_code']] = $s['schedule_code'] . ': ' . $s['name'];
@@ -71,7 +71,12 @@ View::pageBar('Generate a file', View::clientContext('from saved records'), '<a 
   <input type="hidden" name="p" value="generate"><input type="hidden" name="preview" value="1">
   <div class="sheet-body"><div class="form-grid">
     <div class="field half"><label for="form">Form</label><?= View::select('form', $formOpts, $form, 'id="form" onchange="this.form.preview.value=\'\';this.form.submit()"') ?><span class="hint"><?= e($f['description']) ?></span></div>
-    <div class="field half"><label for="schedule">Schedule</label><?= View::select('schedule', $schedCodes, $schedule, 'id="schedule"') ?></div>
+    <?php if (count($schedCodes) === 1 && Specs::isCombined($form, $schedule)) { ?>
+      <div class="field half"><label for="schedule_shown">Schedule</label><input type="hidden" name="schedule" value="<?= e($schedule) ?>"><input id="schedule_shown" type="text" value="Schedules 1 and 2 in one file" readonly>
+        <span class="hint">The BIR system keeps Schedule 1 and Schedule 2 (minimum wage earners) in one 1604-C file, so both are written together.</span></div>
+    <?php } else { ?>
+      <div class="field half"><label for="schedule">Schedule</label><?= View::select('schedule', $schedCodes, $schedule, 'id="schedule"') ?></div>
+    <?php } ?>
     <?php if ($form === 'SAWT') { ?>
       <div class="field half"><label for="sawt_form">Attached to return</label><?= View::select('sawt_form', array_map(function ($x) { return $x[0]; }, $sawtForms), $sawtForm, 'id="sawt_form" onchange="this.form.preview.value=\'\';this.form.submit()"') ?></div>
     <?php } ?>
@@ -99,7 +104,7 @@ View::pageBar('Generate a file', View::clientContext('from saved records'), '<a 
   <div class="cols cols-main">
     <div>
       <div class="sheet">
-        <div class="sheet-head"><div><h2><?= e($ctx['period']['label']) ?>: <?= plural(count($ctx['dataset']['rows']), 'detail row') ?></h2><p>Built from <?= plural($ctx['dataset']['source_count'], 'saved record') ?><?= $f['family'] === 'RELIEF' ? ', consolidated per counterparty' : ', grouped per payee and ATC' ?></p></div></div>
+        <div class="sheet-head"><div><h2><?= e($ctx['period']['label']) ?>: <?= plural(count($ctx['dataset']['rows']), 'detail row') ?></h2><p>Built from <?= plural($ctx['dataset']['source_count'], 'saved record') ?><?= $form === '1604C' ? ', one row per employee' : ($f['family'] === 'RELIEF' ? ', consolidated per counterparty' : ', grouped per payee and ATC') ?></p></div></div>
         <div class="figures">
           <div><strong><?= Money::fmt($base) ?></strong><span><?= $form === '1604C' ? 'Gross compensation' : 'Base amount' ?></span></div>
           <div><strong><?= Money::fmt($tax) ?></strong><span><?= in_array($form, array('SLS'), true) ? 'Output VAT' : ($form === 'SLP' ? 'Input tax' : 'Tax withheld') ?></span></div>
@@ -118,8 +123,9 @@ View::pageBar('Generate a file', View::clientContext('from saved records'), '<a 
         <div class="table-wrap"><table class="table table-stack">
           <?php $rows = array_slice($ctx['dataset']['rows'], 0, 200);
           if ($form === '1604C') { ?>
-            <thead><tr><th>Employee</th><th>TIN</th><th class="num">Gross</th><th class="num">Taxable</th><th class="num">Tax due</th><th class="num">Withheld</th></tr></thead><tbody>
-            <?php foreach ($rows as $r) { ?><tr><td data-label="Employee"><?= e($r['last_name'] . ', ' . $r['first_name']) ?></td><td data-label="TIN"><?= e(Tin::display($r['tin'], $r['tin_branch'])) ?></td>
+            <thead><tr><th>Employee</th><th>Schedule</th><th>TIN</th><th class="num">Gross</th><th class="num">Taxable</th><th class="num">Tax due</th><th class="num">Withheld</th></tr></thead><tbody>
+            <?php foreach ($rows as $r) { ?><tr><td data-label="Employee"><?= e($r['last_name'] . ', ' . $r['first_name']) ?></td>
+              <td data-label="Schedule"><?= isset($r['schedule_code']) ? ($r['schedule_code'] === 'S2' ? '2, MWE' : '1') : '' ?></td><td data-label="TIN"><?= e(Tin::display($r['tin'], $r['tin_branch'])) ?></td>
               <td data-label="Gross" class="num"><?= Money::fmt($r['pres_gross']) ?></td><td data-label="Taxable" class="num"><?= Money::fmt($r['taxable_comp_total']) ?></td>
               <td data-label="Tax due" class="num"><?= Money::fmt($r['tax_due']) ?></td><td data-label="Withheld" class="num"><?= Money::fmt($r['tax_withheld_adjusted']) ?></td></tr><?php } ?>
           <?php } elseif ($f['family'] === 'RELIEF') {
@@ -142,10 +148,12 @@ View::pageBar('Generate a file', View::clientContext('from saved records'), '<a 
         <div class="sheet-head"><h2>File</h2></div>
         <div class="sheet-body"><dl class="kv">
           <dt>Filename</dt><dd class="mono"><?= $ctx['preview'] ? e($ctx['preview']['filename']) : '' ?></dd>
-          <?php if ($spec) { ?>
-          <dt>Layout</dt><dd><a href="<?= e(url('spec_view', array('id' => $spec['id']))) ?>">#<?= (int)$spec['id'] ?> <?= e($spec['version_label']) ?></a></dd>
-          <dt>Layout status</dt><dd><?= View::status($spec['status']) ?></dd>
-          <dt>Evidence</dt><dd class="conf conf-<?= e($spec['confidence']) ?>"><?= e(Specs::confidenceLabel($spec['confidence'])) ?></dd>
+          <?php if ($spec) { $parts = Specs::partsOf($spec);
+            foreach ($parts as $part) { $of = count($parts) > 1 ? ', ' . $part['schedule_code'] : ''; ?>
+          <dt>Layout<?= e($of) ?></dt><dd><a href="<?= e(url('spec_view', array('id' => $part['id']))) ?>">#<?= (int)$part['id'] ?> <?= e($part['version_label']) ?></a></dd>
+          <dt>Status<?= e($of) ?></dt><dd><?= View::status($part['status']) ?></dd>
+          <dt>Evidence<?= e($of) ?></dt><dd class="conf conf-<?= e($part['confidence']) ?>"><?= e(Specs::confidenceLabel($part['confidence'])) ?></dd>
+            <?php } ?>
           <dt>Encoding</dt><dd><?= e($spec['encoding']) ?>, <?= e($spec['line_ending']) ?> line endings</dd>
           <?php } ?>
         </dl></div>

@@ -21,7 +21,7 @@ $signatories = DB::all('SELECT * FROM signatories WHERE client_id = ? AND status
 $issued = array();
 if (is_post()) {
     $ids = array_map('intval', (array)input('ids', array()));
-    $opts = array('signatory_id' => input_int('signatory_id') ?: null, 'use_signature' => input('use_signature') ? 1 : 0, 'paper' => input('paper', 'A4'),
+    $opts = array('signatory_id' => input_int('signatory_id') ?: null, 'use_signature' => input('use_signature') ? 1 : 0, 'paper' => input('paper', $form === '2316' ? 'FOLIO' : 'A4'),
         'offset_x' => (float)input('offset_x', 0), 'offset_y' => (float)input('offset_y', 0), 'branch_id' => $branch['id']);
     $errors = array();
     foreach ($ids as $pid) {
@@ -85,7 +85,8 @@ View::pageBar('Issue certificates', View::clientContext('from saved records'), '
   <?php } ?></tbody></table></div>
   <div class="sheet-body"><div class="form-grid">
     <div class="field"><label for="signatory_id">Signatory</label><?= View::select('signatory_id', $sigOpts, $signatories ? $signatories[0]['id'] : '', 'id="signatory_id"', 'No signatory') ?><span class="hint"><a href="<?= e(url('client_form', array('id' => $client['id'], 'tab' => 'signatories'))) ?>">Manage signatories</a></span></div>
-    <div class="field"><label for="paper">Paper</label><?= View::select('paper', array('A4' => 'A4', 'LETTER' => 'Letter (8.5 x 11 in)', 'FOLIO' => 'Long / folio (8.5 x 13 in)'), 'A4', 'id="paper"') ?></div>
+    <div class="field"><label for="paper">Paper</label><?= View::select('paper', array('A4' => 'A4', 'LETTER' => 'Letter (8.5 x 11 in)', 'FOLIO' => 'Long / folio (8.5 x 13 in)'), $form === '2316' ? 'FOLIO' : 'A4', 'id="paper"') ?>
+      <?php if ($form === '2316') { ?><span class="hint">The September 2021 form is an 8.5 x 13 in page. On A4 or Letter it is scaled down to fit.</span><?php } ?></div>
     <div class="field"><label for="offset_x">Signature offset, right (points)</label><input id="offset_x" name="offset_x" type="number" step="1" value="0"></div>
     <div class="field"><label for="offset_y">Signature offset, down (points)</label><input id="offset_y" name="offset_y" type="number" step="1" value="0"></div>
     <div class="field wide"><label class="check"><input type="checkbox" name="use_signature" value="1"> Apply the signatory's approved signature image (authorized signatories only)</label>

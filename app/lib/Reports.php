@@ -41,7 +41,6 @@ class Reports
         if ($in['form'] === 'SRS') {
             $vars['srs_atcs'] = !empty($in['srs_atcs']) ? $in['srs_atcs'] : explode(',', sys_config('srs_atcs', 'WI158,WC158,WI160,WC160'));
         }
-        $spec = Specs::resolve($in['form'], $in['schedule'], $sawt, $from, $to);
         $agent = Datasets::agent($client, $branch);
         if ($override) {
             $ds = array('rows' => $override['rows'], 'source_table' => 'mixed', 'source_count' => $override['source_count']);
@@ -53,6 +52,11 @@ class Reports
             $ds = Datasets::build(array('form' => $in['form'], 'schedule' => $in['schedule'], 'client' => $client, 'branch' => $sched['family'] === 'RELIEF' ? null : $branch,
                 'from' => $from, 'to' => $to, 'vars' => $vars));
             $sourceMode = 'database';
+        }
+        // A combined schedule (1604-C Schedules 1 and 2) is written with the layouts of the schedules that have rows.
+        $spec = Specs::resolveFor($in['form'], $in['schedule'], $sawt, $from, $to, $ds['rows']);
+        if (!empty($spec['composite'])) {
+            $vars['parts'] = array_map(function ($p) { return $p['id']; }, $spec['parts']);
         }
         $period = array('from' => $from, 'to' => $to, 'label' => $label);
         $dq = Checks::dataQuality($in['form'], $in['schedule'], $client, $agent, $ds['rows'], $spec, $period);
@@ -152,9 +156,12 @@ class Reports
         list($base, $tax) = self::totals($ctx['dataset']['rows']);
         $branchId = $ctx['branch'] ? $ctx['branch']['id'] : null;
         $variant = isset($ctx['vars']['sawt_form']) ? $ctx['vars']['sawt_form'] : null;
-        $prev = DB::all('SELECT id, status FROM dat_files WHERE client_id = ? AND form_code = ? AND schedule_code = ? AND period_from = ? AND period_to = ?
-            AND COALESCE(branch_id, 0) = ? AND COALESCE(variant_key, \'\') = ? AND superseded_by IS NULL AND origin = ? AND status <> ?',
-            array($client['id'], $ctx['sched']['form_code'], $ctx['sched']['schedule_code'], $ctx['period']['from'], $ctx['period']['to'], (int)$branchId, (string)$variant, 'generated', 'superseded'));
+        // A combined file also replaces the separate Schedule 1 and Schedule 2 files made for the same period before.
+        $codes = Specs::isCombined($ctx['sched']['form_code'], $ctx['sched']['schedule_code'])
+            ? array_merge(array(Specs::COMBINED_CODE), Specs::combinedParts($ctx['sched']['form_code'])) : array($ctx['sched']['schedule_code']);
+        $prev = DB::all('SELECT id, status FROM dat_files WHERE client_id = ? AND form_code = ? AND schedule_code IN (' . DB::in($codes) . ') AND period_from = ? AND period_to = ?
+            AND COALESCE(branch_id, 0) = ? AND COALESCE(variant_key, \'\') = ? AND superseded_by IS NULL AND origin = ? AND status <> ? ORDER BY id DESC',
+            array_merge(array($client['id'], $ctx['sched']['form_code']), $codes, array($ctx['period']['from'], $ctx['period']['to'], (int)$branchId, (string)$variant, 'generated', 'superseded')));
         $fileId = DB::insert('dat_files', array(
             'organization_id' => Ctx::orgId(), 'client_id' => $client['id'], 'branch_id' => $branchId, 'run_id' => $runId,
             'form_code' => $ctx['sched']['form_code'], 'schedule_code' => $ctx['sched']['schedule_code'], 'variant_key' => $variant,
@@ -163,6 +170,7 @@ class Reports
             'spec_id' => $ctx['spec']['id'], 'origin' => 'generated', 'amended' => $ctx['amended'],
             'status' => $sErr ? 'structure_failed' : 'pending_bir', 'file_label' => $ready ? 'submission_ready' : 'unvalidated_draft',
             'record_count' => count($ctx['dataset']['rows']), 'total_base' => Money::toPlain($base), 'total_tax' => Money::toPlain($tax),
+            'parse_summary' => !empty($ctx['spec']['composite']) ? json_encode(array('parts' => array_map(function ($p) { return $p['id']; }, $ctx['spec']['parts']))) : null,
             'supersedes_id' => $supersedes ?: ($prev ? (int)$prev[0]['id'] : null), 'created_by' => Auth::id(), 'created_at' => now(), 'updated_at' => now(),
         ));
         foreach ($prev as $p) {
@@ -210,7 +218,7 @@ class Reports
             if (!$snap) {
                 return null;
             }
-            $w = DatWriter::make(Specs::load($f['spec_id']), array('agent' => $snap['agent'], 'period' => $snap['period'], 'rows' => $snap['rows'], 'vars' => $snap['vars']));
+            $w = DatWriter::make(Specs::forFile($f), array('agent' => $snap['agent'], 'period' => $snap['period'], 'rows' => $snap['rows'], 'vars' => $snap['vars']));
         } catch (Exception $e) {
             return null;
         }
@@ -237,7 +245,15 @@ class Reports
         }
         $run = DB::row('SELECT * FROM report_runs WHERE id = ?', array($f['run_id']));
         $snap = self::snapshot($run['id']);
-        $spec = Specs::resolve($run['form_code'], $run['schedule_code'], $run['variant_key'], $run['period_from'], $run['period_to']);
+        $spec = Specs::resolveFor($run['form_code'], $run['schedule_code'], $run['variant_key'], $run['period_from'], $run['period_to'], $snap['rows']);
+        if (!$spec) {
+            throw new RuntimeException('No layout is registered for this form and period.');
+        }
+        if (!empty($spec['composite'])) {
+            $snap['vars']['parts'] = array_map(function ($p) { return $p['id']; }, $spec['parts']);
+        } else {
+            unset($snap['vars']['parts']);
+        }
         $sched = Datasets::schedule($run['form_code'], $run['schedule_code']);
         $branch = $run['branch_id'] ? DB::row('SELECT * FROM branches WHERE id = ?', array($run['branch_id'])) : null;
         $ctx = array('client' => Ctx::client(), 'branch' => $branch, 'sched' => $sched, 'spec' => $spec, 'agent' => $snap['agent'], 'period' => $snap['period'],

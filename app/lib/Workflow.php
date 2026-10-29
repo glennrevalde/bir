@@ -181,9 +181,12 @@ class Workflow
         if ($ev['outcome'] === 'success' && $f && $f['status'] === 'bir_validated') {
             self::approveFile($f);
             Audit::log('approval.auto', 'dat_files', $f['id'], 'Approved automatically after the BIR validator passed ' . $f['filename'], null, null, null, $f['client_id']);
-            if ($ev['spec_id'] && DB::val('SELECT status FROM layout_specs WHERE id = ?', array($ev['spec_id'])) !== 'approved') {
-                self::approveSpec($ev['spec_id'], $ev['id']);
-                Audit::log('approval.auto', 'layout_specs', $ev['spec_id'], 'Layout approved automatically by the validator result for ' . $f['filename']);
+            // Every layout the file was written with is proven by the result (both schedules of a combined 1604-C).
+            foreach (Specs::partsOf(Specs::forFile($f)) as $part) {
+                if (DB::val('SELECT status FROM layout_specs WHERE id = ?', array($part['id'])) !== 'approved') {
+                    self::approveSpec($part['id'], $ev['id']);
+                    Audit::log('approval.auto', 'layout_specs', $part['id'], 'Layout approved automatically by the validator result for ' . $f['filename']);
+                }
             }
         }
     }

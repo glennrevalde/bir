@@ -864,6 +864,104 @@ $ntBytes = file_get_contents(storage_path($ntFile['storage_path']));
 ok((bool)preg_match('/^D1,1601EQ,[^\r\n]*,,(""|),?"?CONSINGSAY CORPORATION/m', $ntBytes) || strpos($ntBytes, '"CONSINGSAY CORPORATION"') !== false, 'the payee line is written', substr($ntBytes, 0, 400));
 
 // =====================================================================
+section('1604-C: Schedules 1 and 2 in one file');
+$Cm = make_org('Combo', '684785510', 'firm_owner', 'COMBINED ALPHALIST CORP');
+login_as($Cm['user'], $Cm['org'], $Cm['client']);
+ok(array_map(function ($x) { return $x['schedule_code']; }, Datasets::generateSchedules('1604C')) === array(Specs::COMBINED_CODE), 'Generate offers 1604-C only as Schedules 1 and 2 in one file');
+$compRow = function ($empId, $sched, $amounts, $region) use ($Cm) {
+    $d = array('organization_id' => $Cm['org'], 'client_id' => $Cm['client'], 'branch_id' => $Cm['branch'], 'employee_id' => $empId, 'tax_year' => 2025, 'schedule_code' => $sched,
+        'region_code' => $region, 'employment_from' => '2025-01-01', 'employment_to' => '2025-12-31', 'factor_days' => $sched === 'S2' ? 312 : null, 'nationality' => 'FILIPINO',
+        'employment_status' => 'R', 'separation_reason' => 'NA', 'substituted_filing' => 'Y', 'status' => 'posted', 'created_at' => now());
+    foreach (Records::compFields() as $fields) {
+        foreach ($fields as $k => $l) {
+            $d[$k] = isset($amounts[$k]) ? $amounts[$k] : '0.00';
+        }
+    }
+    return DB::insert('compensation_records', $d);
+};
+$e1 = DB::insert('employees', array('organization_id' => $Cm['org'], 'client_id' => $Cm['client'], 'branch_id' => $Cm['branch'], 'tin' => '901234567', 'tin_branch' => '0000',
+    'last_name' => 'REYES', 'first_name' => 'MARIA', 'middle_name' => 'SANTOS', 'region_code' => 'NCR', 'status' => 'active', 'created_at' => now()));
+$compRow($e1, 'S1', $set, 'NCR');
+$cin = array('form' => '1604C', 'schedule' => Specs::COMBINED_CODE, 'branch_id' => $Cm['branch'], 'year' => 2025, 'part' => 1, 'sawt_form' => null, 'amended' => 0);
+$cctx = Reports::context($cin);
+ok(empty($cctx['spec']['composite']) && $cctx['preview']['bytes'] === $fixture, 'with only Schedule 1 employees the file is byte for byte the validator-passed sample');
+$cf1 = Reports::generate($cctx, true);
+$cfr1 = DB::row('SELECT * FROM dat_files WHERE id = ?', array($cf1));
+ok($cfr1['schedule_code'] === Specs::COMBINED_CODE && $cfr1['status'] === 'pending_bir', 'the file is stored as 1604C S1+S2 and passes the structure check', json_encode($cfr1));
+$e2 = DB::insert('employees', array('organization_id' => $Cm['org'], 'client_id' => $Cm['client'], 'branch_id' => $Cm['branch'], 'tin' => '124950665', 'tin_branch' => '0000',
+    'last_name' => 'ABABAO', 'first_name' => 'ERLINDA', 'middle_name' => 'AMOLONG', 'region_code' => 'VII', 'is_mwe' => 1, 'status' => 'active', 'created_at' => now()));
+$mweComp = $compRow($e2, 'S2', array('pres_gross' => '296250.00', 'pres_nt_smw' => '240000.00', 'pres_nt_13th' => '35850.00', 'pres_nt_contrib' => '20400.00', 'pres_nt_total' => '296250.00',
+    'smw_per_day' => '769.23', 'smw_per_month' => '19999.98', 'smw_per_year' => '240000.00'), 'VII');
+$cctx = Reports::context($cin);
+$clines = explode("\r\n", rtrim($cctx['preview']['bytes'], "\r\n"));
+$codes = array_map(function ($l) { return substr($l, 0, strpos($l, ',')); }, $clines);
+ok(!empty($cctx['spec']['composite']) && $codes === array('H1604C', 'D1', 'C1', 'D2', 'C2'), 'both schedules go into one file: header, Schedule 1 lines and control, Schedule 2 lines and control', implode(' ', $codes));
+ok(implode("\r\n", array_slice($clines, 0, 3)) . "\r\n" === $fixture && strpos($clines[3], 'D2,1604C,684785510,0000,12/31/2025,1,124950665,0000,"ABABAO","ERLINDA","AMOLONG",VII,') === 0,
+    'Schedule 1 keeps the validated bytes; Schedule 2 numbers its lines from 1', $clines[3]);
+ok(strpos($clines[4], 'C2,1604C,684785510,0000,12/31/2025,296250.00,296250.00,0.00,0.00') === 0, 'each control line totals its own schedule', $clines[4]);
+$cErr = array_filter($cctx['dq'], function ($i) { return $i['severity'] === 'error'; });
+ok(!$cErr && $cctx['preview']['filename'] === '6847855100000123120251604C.DAT', 'one filename for the whole 1604-C, no data errors', json_encode(array_values($cErr)));
+$cf2 = Reports::generate($cctx, true);
+$cfr2 = DB::row('SELECT * FROM dat_files WHERE id = ?', array($cf2));
+$l2 = DB::all('SELECT e.severity, e.message FROM validation_errors e JOIN validation_runs r ON r.id = e.validation_run_id WHERE r.dat_file_id = ? AND r.level = 2', array($cf2));
+ok($cfr2['status'] === 'pending_bir' && !$l2 && (int)$cfr2['record_count'] === 2, 'Level 2 reads the combined file back with no issues', json_encode($l2));
+ok(DB::val('SELECT status FROM dat_files WHERE id = ?', array($cf1)) === 'superseded', 'the new file replaces the earlier one for the year');
+$cspec = Specs::forFile($cfr2);
+ok(count($cspec['parts']) === 2 && $cspec['parts'][1]['schedule_code'] === 'S2', 'the stored file remembers both layouts');
+$tamp = str_replace($clines[4], str_replace('296250.00,296250.00', '296250.01,296250.00', $clines[4]), $cctx['preview']['bytes']);
+$ts = Checks::structure($cspec, $tamp, $cfr2['filename'], $cctx['agent'], $cctx['period'], $cctx['dataset']['rows']);
+ok(in_array('CONTROL_TOTAL', array_map(function ($i) { return $i['code']; }, $ts['issues']), true), 'a Schedule 2 control total that disagrees with its lines is caught');
+$bad = str_replace($clines[2] . "\r\n", '', $cctx['preview']['bytes']);
+$bs = DatReader::parse($bad, $cspec);
+ok(in_array('NO_CONTROL', array_map(function ($i) { return $i['code']; }, $bs['issues']), true), 'a missing Schedule 1 control line is caught');
+@unlink(storage_path($cfr2['storage_path']));
+ok(Reports::storedBytes($cfr2) === $cctx['preview']['bytes'], 'a missing combined file is rebuilt from its snapshot with both layouts');
+$det = DatReader::detect($cfr2['filename'], $cctx['preview']['bytes']);
+ok($det && strpos($det[0]['key'], 'c:') === 0 && $det[0]['errors'] === 0, 'an uploaded combined 1604-C is recognised with both layouts', json_encode(array_map(function ($c) { return array($c['key'], $c['errors']); }, $det)));
+ok(Specs::byKey($det[0]['key'])['parts'][0]['id'] === $cspec['parts'][0]['id'], 'the upload choice loads the joined layouts');
+$rg = Reports::regenerate($cf2);
+ok(DB::val('SELECT sha256 FROM dat_files WHERE id = ?', array($rg)) === $cfr2['sha256'] && DB::val('SELECT schedule_code FROM dat_files WHERE id = ?', array($rg)) === Specs::COMBINED_CODE,
+    're-processing writes the same combined bytes');
+$repTmp = tmp_file(file_get_contents(__DIR__ . '/fixtures/6847855100000123120251604C.TXT'));
+Evidence::record($rg, array('validator_version' => '7.4', 'executed_on' => '2026-01-20', 'outcome' => '', 'patch_date' => '', 'report_type' => '', 'notes' => ''),
+    array('name' => 'r.txt', 'tmp_name' => $repTmp, 'error' => 0, 'size' => filesize($repTmp)), null);
+$partStatus = DB::col('SELECT status FROM layout_specs WHERE id IN (' . DB::in(array_map(function ($p) { return $p['id']; }, $cspec['parts'])) . ')', array_map(function ($p) { return $p['id']; }, $cspec['parts']));
+ok(DB::val('SELECT status FROM dat_files WHERE id = ?', array($rg)) === 'approved' && $partStatus === array('approved', 'approved'), 'a validator pass approves the file and both schedule layouts', json_encode($partStatus));
+
+section('BIR Form 2316, September 2021 (ENCS)');
+$pdfText = function ($pdf) {
+    $t = '';
+    preg_match_all('/stream\n(.*?)\nendstream/s', $pdf, $mm);
+    foreach ($mm[1] as $st) {
+        $u = @gzuncompress($st);
+        if ($u !== false) {
+            $t .= $u;
+        }
+    }
+    return $t;
+};
+$p2316 = Certificates::build2316(Ctx::client(), DB::row('SELECT * FROM branches WHERE id = ?', array($Cm['branch'])), $mweComp);
+$cid2316 = Certificates::issue($p2316, array('paper' => 'FOLIO', 'branch_id' => $Cm['branch']));
+$c2316 = DB::row('SELECT * FROM certificates WHERE id = ?', array($cid2316));
+$tx = $pdfText(file_get_contents(storage_path($c2316['pdf_path'])));
+ok($c2316['template_revision'] === '2316 September 2021 (ENCS) replica', 'the certificate records the September 2021 revision');
+$need = array('(September 2021 \(ENCS\))', '(2316 09/21ENCS)', '(Local Home Address)', '(Foreign Address)', '(Telephone Number)', '(44A)', '(51B)', '(\(Specify\))',
+    '(To be accomplished under substituted filing)', '(53)', '(54)', '(ERLINDA AMOLONG ABABAO)', '(ABABAO, ERLINDA AMOLONG)', '(296,250.00)', '(240,000.00)', '(769.23)', '(19,999.98)',
+    '(Amount Paid, if CTC)', '(5% Tax Credit \(PERA Act of 2008\))');
+$missing = array();
+foreach ($need as $n) {
+    if (strpos($tx, $n) === false) {
+        $missing[] = $n;
+    }
+}
+ok(!$missing, 'the PDF carries the items of the new form: 6B to 6E, 8, 44A/44B, 51A/51B, CTC, 53 and 54', implode(' ', $missing));
+ok(strpos($tx, 'January 2018') === false && strpos($tx, '01/18ENCS') === false, 'nothing of the January 2018 layout remains');
+$pdfA4 = new Pdf('A4');
+Certificates::render($pdfA4, json_decode($c2316['payload_json'], true), $c2316['template_revision']);
+$a4 = $pdfText($pdfA4->output('x'));
+ok(preg_match('/^q 0\.88[0-9]* 0 0 0\.88[0-9]* /m', $a4) === 1, 'on A4 the 8.5 x 13 form is scaled down to fit', substr($a4, 0, 80));
+
+// =====================================================================
 section("User's Manual");
 $missing = array();
 foreach (Help::chapters() as $c) {

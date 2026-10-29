@@ -22,8 +22,30 @@ class Datasets
 
     public static function schedule($form, $schedule)
     {
+        if (Specs::isCombined($form, $schedule)) {
+            // The BIR keeps these schedules in one file: a combined schedule built from the first one.
+            $parts = Specs::combinedParts($form);
+            $s = self::schedule($form, $parts[0]);
+            if (!$s) {
+                return null;
+            }
+            $s['schedule_code'] = Specs::COMBINED_CODE;
+            $s['name'] = 'Schedules 1 and 2 in one file (all employees, minimum wage earners included)';
+            $s['dataset_key'] = 'comp_year:*';
+            return $s;
+        }
         return DB::row('SELECT s.*, f.family, f.frequency, f.name AS form_name, f.output_format FROM report_schedules s JOIN form_types f ON f.code = s.form_code
             WHERE s.form_code = ? AND s.schedule_code = ?', array($form, $schedule));
+    }
+
+    /** Schedules offered when generating a file: a combined form offers only its one combined schedule. */
+    public static function generateSchedules($form)
+    {
+        if (Specs::combinedParts($form)) {
+            $s = self::schedule($form, Specs::COMBINED_CODE);
+            return $s ? array($s) : array();
+        }
+        return DB::all('SELECT * FROM report_schedules WHERE form_code = ? ORDER BY sort_order', array($form));
     }
 
     /** Filer (withholding agent / taxpayer) context for headers and filenames. */
@@ -200,16 +222,21 @@ class Datasets
         return array('rows' => array_values($groups), 'source_table' => 'withholding_entries', 'source_count' => count($rows));
     }
 
+    /** Compensation rows for a year; schedule '*' takes every schedule, Schedule 1 first, then Schedule 2. */
     public static function compensation($clientId, $branchId, $year, $schedule)
     {
         $sql = 'SELECT c.*, e.tin, e.tin_branch, e.last_name, e.first_name, e.middle_name FROM compensation_records c JOIN employees e ON e.id = c.employee_id
-            WHERE c.client_id = ? AND c.status = ? AND c.tax_year = ? AND c.schedule_code = ?';
-        $p = array($clientId, 'posted', $year, $schedule);
+            WHERE c.client_id = ? AND c.status = ? AND c.tax_year = ?';
+        $p = array($clientId, 'posted', $year);
+        if ($schedule !== '*') {
+            $sql .= ' AND c.schedule_code = ?';
+            $p[] = $schedule;
+        }
         if ($branchId) {
             $sql .= ' AND c.branch_id = ?';
             $p[] = $branchId;
         }
-        $rows = DB::all($sql . ' ORDER BY e.last_name, e.first_name, e.id', $p);
+        $rows = DB::all($sql . ' ORDER BY c.schedule_code, e.last_name, e.first_name, e.id', $p);
         $out = array();
         $amountKeys = array();
         foreach (Records::compFields() as $fields) {
@@ -219,7 +246,8 @@ class Datasets
             $row = array('tin' => (string)$r['tin'], 'tin_branch' => (string)$r['tin_branch'], 'last_name' => (string)$r['last_name'], 'first_name' => (string)$r['first_name'],
                 'middle_name' => (string)$r['middle_name'], 'region_code' => $r['region_code'], 'employment_from' => $r['employment_from'], 'employment_to' => $r['employment_to'],
                 'nationality' => $r['nationality'], 'employment_status' => $r['employment_status'], 'separation_reason' => $r['separation_reason'],
-                'substituted_filing' => $r['substituted_filing'], 'factor_days' => $r['factor_days'], 'source_ids' => array((int)$r['id']), 'employee_id' => (int)$r['employee_id']);
+                'substituted_filing' => $r['substituted_filing'], 'factor_days' => $r['factor_days'], 'source_ids' => array((int)$r['id']), 'employee_id' => (int)$r['employee_id'],
+                'schedule_code' => $r['schedule_code']);
             foreach ($amountKeys as $k) {
                 $row[$k] = Money::fromDb($r[$k]);
             }
@@ -242,7 +270,7 @@ class Datasets
             if (!$f) {
                 continue;
             }
-            $spec = Specs::load($f['spec_id']);
+            $spec = Specs::forFile($f);
             $parsed = DatReader::parse((string)Reports::storedBytes($f), $spec);
             foreach ($parsed['rows'] as $r) {
                 $count++;
