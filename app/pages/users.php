@@ -12,6 +12,26 @@ foreach (DB::all('SELECT * FROM roles WHERE rank_order >= ? ORDER BY rank_order'
 }
 $clients = DB::all('SELECT id, tin, registered_name, last_name, first_name, middle_name, taxpayer_type FROM client_entities WHERE organization_id = ? AND deleted_at IS NULL ORDER BY registered_name, last_name', array($orgId));
 
+/**
+ * Whether the signed-in person may change another member's sign-in details (email, temporary password).
+ * Returns the reason they may not, or null. The platform administrator may change anyone's.
+ */
+$accountGuard = function ($m) use ($orgId, $assignable) {
+    if ((int)$m['user_id'] === Auth::id()) {
+        return 'Change your own sign-in details under Account and security.';
+    }
+    if (Ctx::isSuper()) {
+        return null;
+    }
+    if ((int)$m['is_superadmin'] === 1 || !isset($assignable[$m['role_code']])) {
+        return 'You cannot change the sign-in details of a member with a higher role.';
+    }
+    if (DB::val('SELECT id FROM memberships WHERE user_id = ? AND organization_id <> ? AND status = ? LIMIT 1', array($m['user_id'], $orgId, 'active'))) {
+        return 'This person also belongs to another organization, so only the platform administrator can change their sign-in details.';
+    }
+    return null;
+};
+
 if (is_post()) {
     $action = input('action');
     try {
@@ -30,11 +50,17 @@ if (is_post()) {
             if (!$all && !$sel) {
                 throw new RuntimeException('Choose at least one client for a limited member.');
             }
-            DB::tx(function () use ($email, $name, $role, $all, $sel, $orgId) {
+            $tempPw = (string)input('temp_password');
+            if ($tempPw !== '' && ($p = Auth::passwordProblem($tempPw))) {
+                throw new RuntimeException('Temporary password: ' . $p);
+            }
+            $isNew = DB::tx(function () use ($email, $name, $role, $all, $sel, $orgId, $tempPw) {
                 $u = DB::row('SELECT * FROM users WHERE email = ?', array($email));
                 $newUser = false;
                 if (!$u) {
-                    $uid = DB::insert('users', array('email' => $email, 'password_hash' => Auth::hash(random_token(24)), 'full_name' => $name, 'status' => 'active',
+                    // With a temporary password the account works at once; the person sets their own password at first sign-in.
+                    $uid = DB::insert('users', array('email' => $email, 'password_hash' => Auth::hash($tempPw !== '' ? $tempPw : random_token(24)), 'full_name' => $name, 'status' => 'active',
+                        'must_change_password' => $tempPw !== '' ? 1 : 0, 'email_verified_at' => $tempPw !== '' ? now() : null, 'password_changed_at' => $tempPw !== '' ? now() : null,
                         'created_at' => now(), 'updated_at' => now()));
                     $newUser = true;
                 } else {
@@ -50,16 +76,27 @@ if (is_post()) {
                         DB::insert('membership_scopes', array('membership_id' => $mid, 'client_id' => $cid, 'branch_id' => null));
                     }
                 }
-                if ($newUser) {
+                if ($newUser && $tempPw !== '') {
+                    Mailer::send($email, 'You were added to ' . Ctx::org()['name'] . ' on G-SMaRT BIR',
+                        "Hello $name,\n\n" . Auth::user()['full_name'] . " added you to " . Ctx::org()['name'] . " in G-SMaRT BIR.\nThey will give you a temporary password. Sign in at "
+                        . absolute_url('login') . " with " . $email . " and that password, then choose your own password.\n");
+                } elseif ($newUser) {
                     $tok = Auth::issueToken($uid, 'reset', 60 * 48);
                     Mailer::send($email, 'You were invited to ' . Ctx::org()['name'] . ' on G-SMaRT BIR',
                         "Hello $name,\n\n" . Auth::user()['full_name'] . " invited you to " . Ctx::org()['name'] . ".\nSet your password here (valid for 48 hours):\n" . absolute_url('reset', array('token' => $tok)) . "\n");
                 } else {
                     Mailer::send($email, 'You were added to ' . Ctx::org()['name'], "Hello $name,\n\nYou now have access to " . Ctx::org()['name'] . " in G-SMaRT BIR. Sign in with your existing account.\n");
                 }
-                Audit::log('member.invite', 'memberships', $mid, 'Invited ' . $email . ' as ' . $role);
+                Audit::log('member.invite', 'memberships', $mid, 'Invited ' . $email . ' as ' . $role . ($newUser && $tempPw !== '' ? ' with a temporary password' : ''));
+                return $newUser;
             });
-            flash('success', 'Invitation sent to ' . $email . '.');
+            if ($tempPw !== '' && $isNew) {
+                flash('success', $name . ' was added. Give them these details: email ' . $email . ', password ' . $tempPw . '. They must choose their own password when they first sign in.');
+            } elseif ($tempPw !== '') {
+                flash('success', $name . ' already has an account, so it was added to this organization and the temporary password was not used. They sign in with their existing password.');
+            } else {
+                flash('success', 'Invitation sent to ' . $email . '.');
+            }
         } elseif ($action === 'update') {
             $m = DB::row('SELECT * FROM memberships WHERE id = ? AND organization_id = ?', array(input_int('membership_id'), $orgId));
             if (!$m) {
@@ -87,25 +124,25 @@ if (is_post()) {
                 Audit::log('member.update', 'memberships', $m['id'], 'Changed member to ' . $role . ($all ? ', all clients' : ', ' . count($sel) . ' clients'), array('role' => $m['role_code'], 'all' => $m['all_clients']), array('role' => $role, 'all' => $all));
             });
             flash('success', 'Member updated.');
-        } elseif ($action === 'email') {
-            $m = DB::row('SELECT m.*, u.is_superadmin, u.email FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.id = ? AND m.organization_id = ?', array(input_int('membership_id'), $orgId));
+        } elseif ($action === 'email' || $action === 'temp_password') {
+            $m = DB::row('SELECT m.*, u.is_superadmin, u.email, u.full_name FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.id = ? AND m.organization_id = ?', array(input_int('membership_id'), $orgId));
             if (!$m) {
                 throw new RuntimeException('Member not found.');
             }
-            if ((int)$m['user_id'] === Auth::id()) {
-                throw new RuntimeException(Ctx::isSuper() ? 'Change your own email under Account and security.' : 'Ask another owner or administrator to change your sign-in email.');
+            if ($why = $accountGuard($m)) {
+                throw new RuntimeException($why);
             }
-            if (!Ctx::isSuper()) {
-                if ((int)$m['is_superadmin'] === 1 || !isset($assignable[$m['role_code']])) {
-                    throw new RuntimeException('You cannot change the email of a member with a higher role.');
+            if ($action === 'email') {
+                $new = Auth::changeEmail($m['user_id'], input('email'), trim((string)input('reason')));
+                flash('success', 'Sign-in email changed to ' . $new . '. Both addresses were told.');
+            } else {
+                $pw = (string)input('temp_password');
+                Auth::setTemporaryPassword($m['user_id'], $pw, (bool)input('mfa_off'), trim((string)input('reason')));
+                if ($m['status'] !== 'active') {
+                    flash('warning', 'This membership is disabled. Set its status to Active so ' . $m['full_name'] . ' can sign in.');
                 }
-                // An account shared with another organization is changed only by the platform administrator.
-                if (DB::val('SELECT id FROM memberships WHERE user_id = ? AND organization_id <> ? AND status = ? LIMIT 1', array($m['user_id'], $orgId, 'active'))) {
-                    throw new RuntimeException('This person also belongs to another organization, so only the platform administrator can change their sign-in email.');
-                }
+                flash('success', 'Temporary password set. Give ' . $m['full_name'] . ' these details: email ' . $m['email'] . ', password ' . $pw . '. They must choose their own password when they first sign in.');
             }
-            $new = Auth::changeEmail($m['user_id'], input('email'), trim((string)input('reason')));
-            flash('success', 'Sign-in email changed to ' . $new . '. Both addresses were told.');
         } elseif ($action === 'support') {
             $m = DB::row('SELECT * FROM memberships WHERE id = ? AND organization_id = ? AND role_code = ?', array(input_int('membership_id'), $orgId, 'support'));
             if (!$m) {
@@ -126,7 +163,7 @@ if (is_post()) {
     }
     redirect(url('users'));
 }
-$members = DB::all('SELECT m.*, u.email, u.full_name, u.last_login_at, u.mfa_enabled, u.email_verified_at, r.name AS role_name,
+$members = DB::all('SELECT m.*, u.email, u.full_name, u.last_login_at, u.mfa_enabled, u.email_verified_at, u.must_change_password, r.name AS role_name,
     (SELECT MAX(expires_at) FROM support_grants g WHERE g.user_id = u.id AND g.organization_id = m.organization_id AND g.revoked_at IS NULL) AS support_until
     FROM memberships m JOIN users u ON u.id = m.user_id JOIN roles r ON r.code = m.role_code WHERE m.organization_id = ? ORDER BY r.rank_order, u.full_name', array($orgId));
 $edit = input_int('edit');
@@ -146,12 +183,12 @@ $clientChecks = function ($selected) use ($clients) {
     <tr class="<?= $m['status'] !== 'active' ? 'void' : '' ?>"><td data-label="Member"><strong><?= e($m['full_name']) ?></strong><span class="sub"><?= e($m['email']) ?></span></td>
       <td data-label="Role"><?= e($m['role_name']) ?><?= $m['role_code'] === 'support' ? '<span class="sub">' . ($m['support_until'] && $m['support_until'] > now() ? 'Access until ' . e(fmt_dt($m['support_until'])) : 'No active access') . '</span>' : '' ?></td>
       <td data-label="Clients"><?= e($scope) ?></td>
-      <td data-label="Security"><?= $m['mfa_enabled'] ? '<span class="st st-ok">Two-step on</span>' : '<span class="st st-wait">Password only</span>' ?><?= $m['email_verified_at'] ? '' : '<span class="sub">Invitation not accepted</span>' ?></td>
+      <td data-label="Security"><?= $m['mfa_enabled'] ? '<span class="st st-ok">Two-step on</span>' : '<span class="st st-wait">Password only</span>' ?><?= $m['email_verified_at'] ? ((int)$m['must_change_password'] === 1 ? '<span class="sub">Temporary password, not yet changed</span>' : '') : '<span class="sub">Invitation not accepted</span>' ?></td>
       <td data-label="Last sign-in"><?= e(fmt_dt($m['last_login_at']) ?: 'Never') ?></td>
       <td class="actions"><?php if ((int)$m['user_id'] !== Auth::id()) { ?><a class="btn btn-sm btn-quiet" href="<?= e(url('users', array('edit' => $m['id']))) ?>">Edit</a><?php } else { ?><span class="small muted">You</span><?php } ?></td></tr>
   <?php } ?></tbody></table></div></div>
   <div>
-  <?php if ($edit && ($em = DB::row('SELECT m.*, u.full_name, u.email, u.is_superadmin FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.id = ? AND m.organization_id = ?', array($edit, $orgId)))) {
+  <?php if ($edit && ($em = DB::row('SELECT m.*, u.full_name, u.email, u.is_superadmin, u.mfa_enabled, u.must_change_password FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.id = ? AND m.organization_id = ?', array($edit, $orgId)))) {
       $sel = array_map('intval', DB::col('SELECT client_id FROM membership_scopes WHERE membership_id = ?', array($em['id']))); ?>
     <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="update"><input type="hidden" name="membership_id" value="<?= (int)$em['id'] ?>">
       <div class="sheet-head"><h2>Edit <?= e($em['full_name']) ?></h2></div>
@@ -163,20 +200,32 @@ $clientChecks = function ($selected) use ($clients) {
       </div>
       <div class="sheet-foot"><a class="btn btn-quiet" href="<?= e(url('users')) ?>">Cancel</a><button class="btn btn-primary">Save member</button></div>
     </form>
-    <?php $shared = (bool)DB::val('SELECT id FROM memberships WHERE user_id = ? AND organization_id <> ? AND status = ? LIMIT 1', array($em['user_id'], $orgId, 'active'));
-      $canEmail = (int)$em['user_id'] !== Auth::id() && (Ctx::isSuper() || ((int)$em['is_superadmin'] !== 1 && isset($assignable[$em['role_code']]) && !$shared)); ?>
+    <?php $guard = $accountGuard($em); ?>
+    <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="temp_password"><input type="hidden" name="membership_id" value="<?= (int)$em['id'] ?>">
+      <div class="sheet-head"><div><h2>Temporary password</h2><p><?= $em['must_change_password'] ? 'A temporary password is waiting to be replaced' : 'For signing in without the email link' ?></p></div></div>
+      <?php if (!$guard) { ?>
+      <div class="sheet-body stack">
+        <div class="field"><label for="temp_pw">Temporary password</label>
+          <div class="input-btn"><input id="temp_pw" name="temp_password" type="text" minlength="10" maxlength="200" required autocomplete="off" spellcheck="false" class="mono" data-temp-pw>
+            <button type="button" class="btn" data-gen-pw="#temp_pw">Generate</button></div>
+          <span class="hint">At least 10 characters with letters and numbers. Give it to <?= e($em['full_name']) ?> yourself; it is not emailed.</span></div>
+        <?php if ($em['mfa_enabled']) { ?><label class="check"><input type="checkbox" name="mfa_off" value="1"> Also turn off two-step sign-in (for a lost phone)</label><?php } ?>
+        <div class="field"><label for="preason">Reason</label><input id="preason" name="reason" type="text" maxlength="200" placeholder="For example, forgot password"></div>
+        <p class="small muted"><?= e($em['full_name']) ?> signs in with <?= e($em['email']) ?> and this password, then must choose their own password before doing anything else.</p>
+      </div>
+      <div class="sheet-foot"><button class="btn btn-primary">Set temporary password</button></div>
+      <?php } else { ?><div class="sheet-body small muted"><?= e($guard) ?></div><?php } ?>
+    </form>
     <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="email"><input type="hidden" name="membership_id" value="<?= (int)$em['id'] ?>">
       <div class="sheet-head"><div><h2>Sign-in email</h2><p>Now <?= e($em['email']) ?></p></div></div>
-      <?php if ($canEmail) { ?>
+      <?php if (!$guard) { ?>
       <div class="sheet-body stack">
         <div class="field"><label for="new_email">New email</label><input id="new_email" name="email" type="email" maxlength="190" required autocomplete="off"></div>
         <div class="field"><label for="ereason">Reason</label><input id="ereason" name="reason" type="text" maxlength="200" placeholder="For example, moved to a company address"></div>
         <p class="small muted">The password and two-step sign-in stay the same. The old and the new address are both told about the change.</p>
       </div>
       <div class="sheet-foot"><button class="btn btn-primary">Change email</button></div>
-      <?php } else { ?>
-      <div class="sheet-body small muted"><?= $shared ? 'This person also belongs to another organization, so only the platform administrator can change their sign-in email.' : 'You cannot change the email of a member with a higher role.' ?></div>
-      <?php } ?>
+      <?php } else { ?><div class="sheet-body small muted"><?= e($guard) ?></div><?php } ?>
     </form>
     <?php if ($em['role_code'] === 'support') { ?>
     <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="support"><input type="hidden" name="membership_id" value="<?= (int)$em['id'] ?>">
@@ -188,15 +237,19 @@ $clientChecks = function ($selected) use ($clients) {
     <?php } ?>
   <?php } else { ?>
     <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="invite">
-      <div class="sheet-head"><h2>Invite a member</h2></div>
+      <div class="sheet-head"><h2>Add a member</h2></div>
       <div class="sheet-body stack">
         <div class="field"><label for="full_name">Name</label><input id="full_name" name="full_name" type="text" required></div>
         <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required></div>
         <div class="field"><label for="role_code">Role</label><?= View::select('role_code', $assignable, 'preparer', 'id="role_code"') ?></div>
         <div class="field"><label for="scope">Clients</label><?= View::select('scope', array('all' => 'All clients', 'selected' => 'Only the selected clients'), 'all', 'id="scope"') ?></div>
         <?= $clientChecks(array()) ?>
+        <div class="field"><label for="itemp_pw">Temporary password (optional)</label>
+          <div class="input-btn"><input id="itemp_pw" name="temp_password" type="text" maxlength="200" autocomplete="off" spellcheck="false" class="mono">
+            <button type="button" class="btn" data-gen-pw="#itemp_pw">Generate</button></div>
+          <span class="hint">Leave blank to email a link for setting a password. With a temporary password the person can sign in at once with the email and password you give them, and chooses their own on first sign-in.</span></div>
       </div>
-      <div class="sheet-foot"><button class="btn btn-primary">Send invitation</button></div>
+      <div class="sheet-foot"><button class="btn btn-primary">Add member</button></div>
     </form>
   <?php } ?>
     <div class="sheet"><div class="sheet-head"><h2>What each role can do</h2></div><div class="sheet-body small">

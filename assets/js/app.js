@@ -99,6 +99,22 @@
     sync();
   });
 
+  /* temporary password: a 12-character password with letters and digits, no look-alike characters */
+  $$('[data-gen-pw]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var inp = document.querySelector(b.getAttribute('data-gen-pw'));
+      if (!inp) return;
+      var L = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ', D = '23456789', all = L + D, out = '';
+      var r = new Uint32Array(12);
+      (window.crypto || window.msCrypto).getRandomValues(r);
+      for (var i = 0; i < 12; i++) { out += (i === 3 || i === 8 ? D : (i === 0 ? L : all)).charAt(r[i] % (i === 3 || i === 8 ? D.length : (i === 0 ? L.length : all.length))); }
+      inp.value = out;
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      inp.focus();
+      inp.select();
+    });
+  });
+
   /* help drawer */
   var drawer = $('#help-drawer');
   function closeHelp() { if (drawer) drawer.hidden = true; }

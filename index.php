@@ -28,8 +28,8 @@ if (!in_array($page, $public, true)) {
     $u = Auth::user();
     $allowedWhenForced = array('settings', 'logout', 'help', 'manual');
     if ((int)$u['must_change_password'] === 1 && !in_array($page, $allowedWhenForced, true)) {
-        flash('warning', 'Set a new password before continuing.');
-        redirect(url('settings'));
+        flash('warning', 'You signed in with a temporary password. Choose your own password to continue.');
+        redirect(url('settings', array('tab' => 'password')));
     }
     if (sys_config('enforce_mfa_privileged', '0') === '1' && (int)$u['mfa_enabled'] !== 1 && Auth::isPrivileged($u) && !in_array($page, $allowedWhenForced, true)) {
         flash('warning', 'Your role requires two-step sign-in. Set it up to continue.');

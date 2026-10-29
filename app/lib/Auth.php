@@ -232,6 +232,39 @@ class Auth
     }
 
     /**
+     * Give a user a temporary password chosen by an administrator. The user can sign in with it at once
+     * (an unaccepted invitation counts as accepted) and must choose their own password before anything else.
+     * Failed attempts on the account are cleared; $mfaOff also removes two-step sign-in so it can be set up again.
+     * The password itself is never written to the audit trail or sent by email.
+     */
+    public static function setTemporaryPassword($userId, $pw, $mfaOff = false, $note = '')
+    {
+        $pw = (string)$pw;
+        if ($p = self::passwordProblem($pw)) {
+            throw new RuntimeException('Temporary password: ' . $p);
+        }
+        $u = DB::row('SELECT * FROM users WHERE id = ?', array($userId));
+        if (!$u) {
+            throw new RuntimeException('User not found.');
+        }
+        $set = array('password_hash' => self::hash($pw), 'must_change_password' => 1, 'password_changed_at' => now(), 'failed_logins' => 0,
+            'email_verified_at' => $u['email_verified_at'] ?: now(), 'updated_at' => now());
+        if ($mfaOff) {
+            $set['mfa_secret'] = null;
+            $set['mfa_enabled'] = 0;
+        }
+        DB::update('users', $set, 'id = ?', array($userId));
+        DB::q('DELETE FROM login_attempts WHERE email = ? AND success = 0', array(strtolower($u['email'])));
+        Audit::log('user.temp_password', 'users', $userId, 'Set a temporary password for ' . $u['full_name'] . ($mfaOff && $u['mfa_enabled'] ? ' and turned off two-step sign-in' : ''),
+            null, null, $note ?: null);
+        Mailer::send($u['email'], 'Your G-SMaRT BIR password was reset',
+            "Hello " . $u['full_name'] . ",\n\n" . (self::user() ? self::user()['full_name'] : 'An administrator') . " gave your G-SMaRT BIR account a temporary password on " . date('M j, Y g:i A') . ".\n"
+            . "They will give it to you directly. Sign in with " . $u['email'] . " and that password, then choose your own password.\n"
+            . "If you did not expect this, contact your administrator.\n");
+        return $u;
+    }
+
+    /**
      * Change a user's sign-in email. The address must be valid and not used by another account. Both the
      * old and the new address are told about the change, and the audit trail keeps the old one.
      */

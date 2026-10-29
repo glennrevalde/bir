@@ -263,6 +263,9 @@ legend { font-weight: 700; font-size: 14px; padding: 0 6px; color: var(--ink); }
 .inline-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .inline-form .field { flex: 1 1 160px; }
 .inline-form .field.grow { flex: 3 1 260px; }
+.input-btn { display: flex; gap: 8px; align-items: stretch; }
+.input-btn input { flex: 1 1 auto; min-width: 0; }
+.input-btn .btn { flex: 0 0 auto; }
 
 /* ------------------------------------------------------------------ buttons (keycaps) */
 .btn {

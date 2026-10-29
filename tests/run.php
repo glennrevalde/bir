@@ -977,6 +977,20 @@ throws(function () use ($emU) { Auth::changeEmail($emU, 'emailco@test.local'); }
 throws(function () use ($emU) { Auth::changeEmail($emU, 'not-an-email'); }, 'an invalid address is refused', 'valid email');
 ok(!DB::val('SELECT id FROM users WHERE email = ?', array('old.address@test.local')), 'the old address no longer signs in to the account');
 
+section('Temporary password set by an administrator');
+$tpU = DB::insert('users', array('email' => 'invited.never@test.local', 'password_hash' => Auth::hash(random_token(24)), 'full_name' => 'Never Accepted', 'status' => 'active',
+    'mfa_enabled' => 1, 'mfa_secret' => 'x', 'created_at' => now()));
+DB::insert('login_attempts', array('email' => 'invited.never@test.local', 'ip' => '10.0.0.9', 'success' => 0, 'created_at' => now()));
+throws(function () use ($tpU) { Auth::setTemporaryPassword($tpU, 'short1'); }, 'a weak temporary password is refused', 'at least 10');
+Auth::setTemporaryPassword($tpU, 'Temp4Ever22', false, 'forgot password');
+$tpRow = DB::row('SELECT * FROM users WHERE id = ?', array($tpU));
+ok(password_verify('Temp4Ever22', $tpRow['password_hash']) && (int)$tpRow['must_change_password'] === 1 && $tpRow['email_verified_at'], 'the person can sign in with it and must choose their own password; the unaccepted invitation counts as accepted');
+ok(!DB::val('SELECT COUNT(*) FROM login_attempts WHERE email = ? AND success = 0', array('invited.never@test.local')) && (int)$tpRow['mfa_enabled'] === 1, 'failed attempts are cleared; two-step stays on unless asked');
+ok(strpos((string)DB::val("SELECT CONCAT(summary, COALESCE(before_json, ''), COALESCE(after_json, ''), COALESCE(reason, '')) FROM audit_events WHERE action = 'user.temp_password' AND subject_id = ? ORDER BY id DESC LIMIT 1", array($tpU)), 'Temp4Ever22') === false
+    && strpos((string)DB::val('SELECT body FROM mail_outbox WHERE to_email = ? ORDER BY id DESC LIMIT 1', array('invited.never@test.local')), 'Temp4Ever22') === false, 'the password is not in the audit trail or the email');
+Auth::setTemporaryPassword($tpU, 'Another9Temp', true);
+ok((int)DB::val('SELECT mfa_enabled FROM users WHERE id = ?', array($tpU)) === 0, 'two-step sign-in can be turned off for a lost phone');
+
 // =====================================================================
 section("User's Manual");
 $missing = array();

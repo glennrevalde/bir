@@ -192,11 +192,20 @@ H
 <figure><img src="{img:users}" alt="Members and roles"><figcaption>Members, their roles, client access and security.</figcaption></figure>
 <ol class="steps">
 <li>Open Admin, Members and roles.</li>
-<li>Under <b>Invite a member</b>, enter the name and email and choose a role. See <a href="{sec:roles}">Roles</a>.</li>
+<li>Under <b>Add a member</b>, enter the name and email and choose a role. See <a href="{sec:roles}">Roles</a>.</li>
 <li>Under <b>Clients</b>, keep <b>All clients</b>, or untick it and choose the clients this person may see.</li>
-<li>Click <b>Send invitation</b>. New people receive a link to set their password; existing users get access at once.</li>
+<li>Optionally type a <b>Temporary password</b>, or click <b>Generate</b> for one.</li>
+<li>Click <b>Add member</b>. Without a temporary password, new people receive an email link to set their password. With one, they can sign in at once with the email and the password you give them, and must choose their own password first. People who already have an account get access at once with their existing password.</li>
 </ol>
 <p>Click <b>Edit</b> on a member to change the role, client access or status. You cannot change your own role. The Security column shows whether the person uses two-step sign-in.</p>
+<h3>Giving a member a temporary password</h3>
+<p>Use this when someone forgot their password, never received the invitation email, or your office does not send email. Click <b>Edit</b> on the member and, under <b>Temporary password</b>, type one or click <b>Generate</b>, add a reason, and click <b>Set temporary password</b>. The confirmation shows the email and password to give the person. They sign in with them and must choose their own password before anything else; until then the Security column shows <i>Temporary password, not yet changed</i>.</p>
+<ul>
+<li>An invitation that was not accepted counts as accepted, and earlier failed sign-in attempts on the account are cleared.</li>
+<li>If the person lost the phone used for two-step sign-in, tick <b>Also turn off two-step sign-in</b> so they can set it up again.</li>
+<li>The password is never emailed or kept in the audit trail. The person gets an email saying a temporary password was set.</li>
+<li>The same limits apply as for changing an email: members at or below your role, and only the Platform Administrator for people who also belong to another organization.</li>
+</ul>
 <h3>Changing a member's sign-in email</h3>
 <p>On the member's Edit panel, under <b>Sign-in email</b>, enter the new address and a reason, then click <b>Change email</b>. The address must not belong to another account. The password and two-step sign-in stay the same, both addresses are told, and the old address is kept in the audit trail. You can change the email of members at or below your own role. If the person also belongs to another organization, only the Platform Administrator can change it.</p>
 <h3>Support access</h3>

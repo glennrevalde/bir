@@ -40,6 +40,11 @@ if (is_post()) {
             DB::update('users', array('password_hash' => Auth::hash($pw), 'must_change_password' => 0, 'password_changed_at' => now(), 'updated_at' => now()), 'id = ?', array($u['id']));
             session_regenerate_id(true);
             Audit::log('user.password', 'user', $u['id'], 'Changed password');
+            if ((int)$u['must_change_password'] === 1) {
+                // first sign-in with a temporary password: carry on to the work
+                flash('success', 'Password changed. Use it from now on.');
+                redirect(url('dashboard'));
+            }
             flash('success', 'Password changed.');
             $tab = 'password';
         } elseif ($action === 'mfa_start') {
@@ -107,7 +112,7 @@ $tabs = array('profile' => 'Profile', 'password' => 'Password', 'mfa' => 'Two-st
     <div class="sheet"><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="password">
       <div class="sheet-head"><div><h2>Change password</h2><p>Last changed <?= e(fmt_dt($u['password_changed_at']) ?: 'never') ?></p></div></div>
       <div class="sheet-body">
-        <?php if ((int)$u['must_change_password'] === 1) { ?><div class="callout warn" style="margin-bottom:14px">You are using a temporary password. Choose your own to continue.</div><?php } ?>
+        <?php if ((int)$u['must_change_password'] === 1) { ?><div class="callout warn" style="margin-bottom:14px">You are using a temporary password. Enter it as the current password, then choose your own to continue.</div><?php } ?>
         <div class="form-grid">
           <div class="field"><label for="current">Current password</label><input id="current" name="current" type="password" autocomplete="current-password" required></div>
           <div class="field"><label for="password">New password</label><input id="password" name="password" type="password" autocomplete="new-password" required><span class="hint">At least 10 characters with letters and numbers</span></div>
