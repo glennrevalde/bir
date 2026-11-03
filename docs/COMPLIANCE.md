@@ -25,14 +25,14 @@ Status `draft` means unsourced or analog. `pending_verification` means sourced b
 | 1601-FQ | Schedules 1 to 3 | draft | analog | No published field table found; mirrors 1601-EQ |
 | 1600-VT, 1600-PT | Schedule 1 | draft | official header, analog detail | Header and filename from RMC 25-2024 Annex A/B; detail mirrors QAP |
 | 1604-C | Schedule 1 | pending verification | validated | Reproduces byte for byte a v7.4 TY2025 sample whose validator report reads "No Errors Encountered" (see `tests/fixtures/README.md`) |
-| 1604-C | Schedule 2 (MWE) | draft | analog | Column set from the printed schedule (RMC 160-2022 attachment); DAT positions unconfirmed |
+| 1604-C | Schedule 2 (MWE) | pending verification | official | 59-field D2 and 45-field C2 lines as written by the BIR Alphalist Data Entry and Validation module v7.4 (sched2dets) and checked by its validator; replaces the earlier unsourced draft, which is retired |
 | 1604-E | Schedules 3 and 4 | draft | analog | Annex lists the schedules but the published PDF is image-only |
 | 1604-F | Schedules 4 to 6 | draft | analog | Same as 1604-E |
 | SAWT | generic | pending verification | low | One secondary generator (quoted shape noted for 1701/1701Q) |
 | SAWT | 1702-Q variant | pending verification | low | One secondary generator describing an unquoted, untrimmed 1702-Q shape |
 | SRS | Semestral | draft | analog | RR 14-2008 / RMC 5-2009; a secondary source reports RMC 122-2019 ended SRS submission. Confirm before use |
 
-The 1604-C is generated as one file holding both schedules, because the BIR system does not separate them: the H1604C header once, the D1 lines and their C1 control, then the D2 lines and their C2 control. Each schedule numbers its lines from 1 and its control line totals only its own lines. A year without minimum wage earners gives exactly the validated Schedule 1 bytes. A validator pass on a combined file approves both layouts.
+The 1604-C is generated as one file holding both schedules, because the BIR system does not separate them: the H1604C header once, the D1 lines and their C1 control, then the D2 lines and their C2 control. Each schedule numbers its lines from 1 and its control line totals only its own lines. A year without minimum wage earners gives exactly the validated Schedule 1 bytes. A validator pass on a combined file approves both layouts. The Level 1 checks follow the formulas of the v7.4 validator for both schedules: totals, net taxable equal to taxable compensation, tax due on the graduated rates, tax due equal to the actual amount withheld, the 90,000.00 ceiling on non-taxable 13th month pay and the accepted region codes. The test suite runs generated files through a port of those checks.
 
 Each layout page (Admin, File layouts) shows these notes per field, lets you clone a layout into a new draft version with its own effective dates, edit it, and send it for approval.
 

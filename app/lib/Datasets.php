@@ -251,6 +251,21 @@ class Datasets
             foreach ($amountKeys as $k) {
                 $row[$k] = Money::fromDb($r[$k]);
             }
+            $row['tax_year'] = (int)$r['tax_year'];
+            $row['factor_days'] = (int)$r['factor_days'];
+            // The BIR validator accepts ARMM, not BARMM.
+            $row['region_code'] = $r['region_code'] === 'BARMM' ? 'ARMM' : $r['region_code'];
+            // Net taxable compensation always equals taxable compensation, present and previous (no exemptions since TRAIN).
+            if ($row['net_taxable_comp'] !== $row['taxable_comp_total']) {
+                $row['net_adjusted'] = $row['net_taxable_comp'];
+                $row['net_taxable_comp'] = $row['taxable_comp_total'];
+            }
+            // Columns of the BIR DAT writer that join or total our fields:
+            // taxable salaries and other compensation (Schedule 2 has no separate taxable basic salary),
+            // and the actual amount withheld (previous employer, present employer as adjusted and the PERA credit).
+            $row['prev_tx_salaries'] = $row['prev_tx_basic'] + $row['prev_tx_other'];
+            $row['pres_tx_salaries'] = $row['pres_tx_basic'] + $row['pres_tx_other'];
+            $row['actual_withheld'] = $row['prev_tax_withheld'] + $row['tax_withheld_adjusted'] + $row['pera_credit'];
             $out[] = $row;
         }
         return array('rows' => $out, 'source_table' => 'compensation_records', 'source_count' => count($rows));

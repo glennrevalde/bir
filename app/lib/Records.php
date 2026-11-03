@@ -959,6 +959,36 @@ class Payroll
         return array('NCR', 'CAR', 'I', 'II', 'III', 'IV-A', 'IV-B', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'BARMM', 'NIR');
     }
 
+    /** Region codes the BIR Alphalist validator v7.4 accepts in the 1604-C (BARMM is written as ARMM). */
+    public static function datRegions()
+    {
+        return array('I', 'II', 'III', 'IV-A', 'IV-B', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'NCR', 'ARMM', 'CAR');
+    }
+
+    /**
+     * Annual income tax on taxable compensation (centavos) under the graduated rates of the TRAIN law:
+     * the 2023 schedule from tax year 2023, the 2018 schedule before. Returns the exact amount in centavos
+     * (a float, since the rate can leave a fraction of a centavo).
+     */
+    public static function graduatedTax($cents, $year)
+    {
+        $brackets = (int)$year >= 2023 || !(int)$year
+            ? array(array(800000000, 220250000, 35), array(200000000, 40250000, 30), array(80000000, 10250000, 25), array(40000000, 2250000, 20), array(25000000, 0, 15))
+            : array(array(800000000, 241000000, 35), array(200000000, 49000000, 32), array(80000000, 13000000, 30), array(40000000, 3000000, 25), array(25000000, 0, 20));
+        foreach ($brackets as $b) {
+            if ($cents > $b[0]) {
+                return $b[1] + ($cents - $b[0]) * $b[2] / 100;
+            }
+        }
+        return 0;
+    }
+
+    /** The validator accepts a tax that agrees with the exact amount in whole pesos or to the centavo. */
+    public static function taxMatches($taxCents, $exact)
+    {
+        return (int)$taxCents === (int)round($exact) || (int)floor($taxCents / 100) === (int)floor($exact / 100 + 1e-9);
+    }
+
     public static function employeeValidate($in, $clientId, $id = null)
     {
         $e = array();
@@ -1088,6 +1118,14 @@ class Payroll
                     break;
                 }
             }
+        }
+        // Since the TRAIN law there are no exemptions: the validator requires net taxable compensation to
+        // equal taxable compensation, present and previous.
+        if ($d['net_taxable_comp'] !== $d['taxable_comp_total']) {
+            if (Money::fromDb($d['net_taxable_comp']) !== 0) {
+                $w['net_taxable_comp'] = 'Net taxable compensation was set to ' . Money::fmtDb($d['taxable_comp_total']) . ', equal to taxable compensation, present and previous';
+            }
+            $d['net_taxable_comp'] = $d['taxable_comp_total'];
         }
         foreach (Checks::compArithmetic($d) as $msg) {
             $w['arith_' . md5($msg)] = $msg;

@@ -130,7 +130,7 @@ View::pageBar($spec['form_code'] . ' ' . $spec['schedule_code'] . ($spec['varian
       <div class="field"><label for="fmt">Format</label><input id="fmt" name="fmt" type="text" value="<?= e($ef ? $ef['fmt'] : '') ?>" placeholder="2dp, trim, pct2, frac2, name, addr"></div>
       <div class="field"><label for="max_len">Max length</label><input id="max_len" name="max_len" type="number" value="<?= e($ef ? $ef['max_len'] : '') ?>"></div>
       <div class="field"><label for="quote_mode">Quote</label><?= View::select('quote_mode', array('never' => 'Never', 'always' => 'Always', 'nonempty' => 'When not empty'), $ef ? $ef['quote_mode'] : 'never', 'id="quote_mode"') ?></div>
-      <div class="field"><label for="fconf">Evidence</label><?= View::select('confidence', array('official' => 'Official annex', 'validated' => 'Validator-passed sample', 'medium' => 'Two or more sources', 'low' => 'Single source', 'analog' => 'Unsourced'), $ef ? $ef['confidence'] : 'low', 'id="fconf"') ?></div>
+      <div class="field"><label for="fconf">Evidence</label><?= View::select('confidence', array('official' => 'Official BIR source', 'validated' => 'Validator-passed sample', 'medium' => 'Two or more sources', 'low' => 'Single source', 'analog' => 'Unsourced'), $ef ? $ef['confidence'] : 'low', 'id="fconf"') ?></div>
       <div class="field half"><label for="fnotes">Notes</label><input id="fnotes" name="notes" type="text" value="<?= e($ef ? $ef['notes'] : '') ?>"></div>
       <div class="field"><label class="check"><input type="checkbox" name="required" value="1" <?= $ef && $ef['required'] ? 'checked' : '' ?>> Required</label></div>
     </div></div>
@@ -164,7 +164,7 @@ View::pageBar($spec['form_code'] . ' ' . $spec['schedule_code'] . ($spec['varian
       <label class="check"><input type="checkbox" name="trailing_newline" value="1" <?= (int)$spec['trailing_newline'] ? 'checked' : '' ?>> Last line ends with a line break</label>
       <div class="field"><label for="effective_from">Effective from</label><input id="effective_from" name="effective_from" type="date" value="<?= e($spec['effective_from']) ?>"></div>
       <div class="field"><label for="effective_to">Effective until</label><input id="effective_to" name="effective_to" type="date" value="<?= e($spec['effective_to']) ?>"></div>
-      <div class="field"><label for="sconf">Overall evidence</label><?= View::select('confidence', array('official' => 'Official annex', 'validated' => 'Validator-passed sample', 'medium' => 'Two or more sources', 'low' => 'Single source', 'analog' => 'Unsourced'), $spec['confidence'], 'id="sconf"') ?></div>
+      <div class="field"><label for="sconf">Overall evidence</label><?= View::select('confidence', array('official' => 'Official BIR source', 'validated' => 'Validator-passed sample', 'medium' => 'Two or more sources', 'low' => 'Single source', 'analog' => 'Unsourced'), $spec['confidence'], 'id="sconf"') ?></div>
       <div class="field"><label for="source_ref">Sources</label><textarea id="source_ref" name="source_ref"><?= e($spec['source_ref']) ?></textarea></div>
       <div class="field"><label for="snotes">Notes</label><textarea id="snotes" name="notes"><?= e($spec['notes']) ?></textarea></div>
     </div>

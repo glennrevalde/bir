@@ -355,7 +355,17 @@ function gsb_layouts()
     $d1[] = gsb_f('employment_from', 'Period of employment from', 'row.employment_from', 'date', 10, 1, 'never', null, 'validated');
     $d1[] = gsb_f('employment_to', 'Period of employment to', 'row.employment_to', 'date', 10, 1, 'never', null, 'validated');
     foreach ($pres as $k => $lbl) { $d1[] = $amt($k, $lbl); $c1[] = $sum($k, 'Total ' . lcfirst($lbl)); }
-    foreach ($tail as $k => $lbl) { $d1[] = $amt($k, $lbl); $c1[] = $sum($k, 'Total ' . lcfirst($lbl)); }
+    foreach ($tail as $k => $lbl) {
+        if ($k === 'tax_withheld_adjusted') {
+            // The BIR data entry module writes the actual amount withheld: previous employer, present employer and the
+            // PERA credit, which its validator requires to equal the tax due.
+            $d1[] = gsb_f($k, 'Amount of tax withheld as adjusted (actual amount withheld)', 'row.actual_withheld', 'amount', 15, 1, 'never', '2dp', 'validated');
+            $c1[] = gsb_f($k, 'Total actual amount withheld', 'sum.actual_withheld', 'amount', 17, 1, 'never', '2dp', 'validated');
+            continue;
+        }
+        $d1[] = $amt($k, $lbl);
+        $c1[] = $sum($k, 'Total ' . lcfirst($lbl));
+    }
     $d1[] = gsb_f('nationality', 'Nationality', 'row.nationality', 'code', 30, 1, 'never', null, 'validated');
     $d1[] = gsb_f('employment_status', 'Employment status', 'row.employment_status', 'code', 2, 1, 'never', null, 'validated', 'R, C, CP, S, P or AL');
     $d1[] = gsb_f('separation_reason', 'Reason of separation', 'row.separation_reason', 'code', 2, 1, 'never', null, 'validated', 'T, TR, R, D or NA');
@@ -382,48 +392,97 @@ function gsb_layouts()
         ),
     );
 
-    // ------------------------------------------------------------------ 1604-C Schedule 2 (MWE) draft
-    $mwe = array(
-        gsb_f('rec_type', 'Schedule code', 'lit:D2', 'raw', 2, 1, 'never', null, 'analog'),
-        gsb_f('form_type', 'Form type', 'lit:1604C', 'raw', 5, 1, 'never', null, 'analog'),
-        gsb_f('tin_wa', 'Employer TIN', 'agent.tin', 'digits', 9, 1, 'never', null, 'analog'),
-        gsb_f('branch_wa', 'Employer branch code', 'agent.branch', 'digits', 4, 1, 'never', null, 'analog'),
-        gsb_f('return_period', 'Period end', 'period.mm_dd_yyyy_end', 'raw', 10, 1, 'never', null, 'analog'),
-        gsb_f('seq_no', 'Sequence number', 'seq', 'int', 8, 1, 'never', null, 'analog'),
-        gsb_f('emp_tin', 'Employee TIN', 'row.tin', 'digits', 9, 1, 'never', null, 'analog'),
-        gsb_f('emp_branch', 'Employee TIN branch', 'row.tin_branch', 'digits', 4, 1, 'never', null, 'analog'),
-        gsb_f('last_name', 'Last name', 'row.last_name', 'text', 50, 1, 'always', 'name', 'analog'),
-        gsb_f('first_name', 'First name', 'row.first_name', 'text', 50, 1, 'always', 'name', 'analog'),
-        gsb_f('middle_name', 'Middle name', 'row.middle_name', 'text', 50, 0, 'always', 'name', 'analog'),
-        gsb_f('region', 'Region', 'row.region_code', 'code', 5, 1, 'never', null, 'analog'),
-        gsb_f('employment_from', 'Period of employment from', 'row.employment_from', 'date', 10, 1, 'never', null, 'analog'),
-        gsb_f('employment_to', 'Period of employment to', 'row.employment_to', 'date', 10, 1, 'never', null, 'analog'),
-        gsb_f('pres_gross', 'Gross compensation', 'row.pres_gross', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('smw_per_day', 'SMW per day', 'row.smw_per_day', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('smw_per_month', 'SMW per month', 'row.smw_per_month', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('smw_per_year', 'SMW per year', 'row.smw_per_year', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('factor_days', 'Factor used (days per year)', 'row.factor_days', 'int', 3, 1, 'never', null, 'analog'),
-        gsb_f('mwe_holiday_pay', 'Holiday pay', 'row.mwe_holiday_pay', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('mwe_overtime_pay', 'Overtime pay', 'row.mwe_overtime_pay', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('mwe_night_diff', 'Night shift differential', 'row.mwe_night_diff', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('mwe_hazard_pay', 'Hazard pay', 'row.mwe_hazard_pay', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('pres_nt_13th', '13th month and other benefits', 'row.pres_nt_13th', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('pres_nt_deminimis', 'De minimis benefits', 'row.pres_nt_deminimis', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('pres_nt_contrib', 'SSS/GSIS/PHIC/HDMF and union dues', 'row.pres_nt_contrib', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('pres_nt_total', 'Total non-taxable compensation', 'row.pres_nt_total', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('pres_tx_total', 'Taxable compensation (other than SMW)', 'row.pres_tx_total', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('tax_withheld_adjusted', 'Tax withheld as adjusted', 'row.tax_withheld_adjusted', 'amount', 15, 1, 'never', '2dp', 'analog'),
-        gsb_f('nationality', 'Nationality', 'row.nationality', 'code', 30, 1, 'never', null, 'analog'),
-        gsb_f('employment_status', 'Employment status', 'row.employment_status', 'code', 2, 1, 'never', null, 'analog'),
-        gsb_f('separation_reason', 'Reason of separation', 'row.separation_reason', 'code', 2, 1, 'never', null, 'analog'),
+    // ------------------------------------------------------------------ 1604-C Schedule 2 (minimum wage earners)
+    // Field order and formulas from the BIR Alphalist Data Entry and Validation module v7.4: its DAT writer
+    // (sched2dets: 59 fields per D2 line, 45 per C2 line) and its 1604-C validator.
+    $o = function ($key, $label, $src = null) {
+        return gsb_f($key, $label, $src ?: 'row.' . $key, 'amount', 15, 1, 'never', '2dp', 'official');
+    };
+    $os = function ($key, $label, $src = null) {
+        return gsb_f($key, $label, $src ?: 'sum.' . $key, 'amount', 17, 1, 'never', '2dp', 'official');
+    };
+    $mweHead = array(
+        gsb_f('rec_type', 'Schedule code', 'lit:D2', 'raw', 2, 1, 'never', null, 'official'),
+        gsb_f('form_type', 'Form type', 'lit:1604C', 'raw', 5, 1, 'never', null, 'official'),
+        gsb_f('tin_wa', 'Employer TIN', 'agent.tin', 'digits', 9, 1, 'never', null, 'official'),
+        gsb_f('branch_wa', 'Employer branch code', 'agent.branch', 'digits', 4, 1, 'never', null, 'official'),
+        gsb_f('return_period', 'Period end', 'period.mm_dd_yyyy_end', 'raw', 10, 1, 'never', null, 'official'),
+        gsb_f('seq_no', 'Sequence number', 'seq', 'int', 8, 1, 'never', null, 'official'),
+        gsb_f('emp_tin', 'Employee TIN', 'row.tin', 'digits', 9, 1, 'never', null, 'official'),
+        gsb_f('emp_branch', 'Employee TIN branch', 'row.tin_branch', 'digits', 4, 1, 'never', null, 'official'),
+        gsb_f('last_name', 'Last name', 'row.last_name', 'text', 30, 1, 'always', 'name', 'official'),
+        gsb_f('first_name', 'First name', 'row.first_name', 'text', 30, 1, 'always', 'name', 'official'),
+        gsb_f('middle_name', 'Middle name', 'row.middle_name', 'text', 30, 0, 'always', 'name', 'official'),
+        gsb_f('region', 'Region where assigned', 'row.region_code', 'code', 5, 1, 'never', null, 'official', 'I to XIII, IV-A, IV-B, NCR, CAR or ARMM.'),
     );
+    $mwe = array_merge($mweHead, array(
+        $o('prev_gross', 'Previous employer: gross compensation'),
+        $o('prev_nt_smw', 'Previous: basic/statutory minimum wage'),
+        $o('prev_mwe_holiday_pay', 'Previous: holiday pay'),
+        $o('prev_mwe_overtime_pay', 'Previous: overtime pay'),
+        $o('prev_mwe_night_diff', 'Previous: night shift differential'),
+        $o('prev_mwe_hazard_pay', 'Previous: hazard pay'),
+        $o('prev_nt_13th', 'Previous: non-taxable 13th month and other benefits'),
+        $o('prev_nt_deminimis', 'Previous: de minimis benefits'),
+        $o('prev_nt_contrib', 'Previous: SSS/GSIS/PHIC/HDMF and union dues'),
+        $o('prev_nt_other', 'Previous: non-taxable salaries and other compensation'),
+        $o('prev_nt_total', 'Previous: total non-taxable'),
+        $o('prev_tx_13th', 'Previous: taxable 13th month and other benefits'),
+        $o('prev_tx_salaries', 'Previous: taxable salaries and other compensation'),
+        $o('prev_tx_total', 'Previous: total taxable'),
+        gsb_f('employment_from', 'Period of employment from', 'row.employment_from', 'date', 10, 1, 'never', null, 'official'),
+        gsb_f('employment_to', 'Period of employment to', 'row.employment_to', 'date', 10, 1, 'never', null, 'official'),
+        $o('pres_gross', 'Present employer: gross compensation'),
+        $o('smw_per_day', 'Statutory minimum wage per day'),
+        $o('smw_per_month', 'Statutory minimum wage per month'),
+        $o('smw_per_year', 'Statutory minimum wage per year'),
+        gsb_f('factor_days', 'Factor used (days per year)', 'row.factor_days', 'int', 3, 1, 'never', null, 'official'),
+        $o('mwe_holiday_pay', 'Holiday pay'),
+        $o('mwe_overtime_pay', 'Overtime pay'),
+        $o('mwe_night_diff', 'Night shift differential'),
+        $o('mwe_hazard_pay', 'Hazard pay'),
+        $o('pres_nt_13th', 'Non-taxable 13th month and other benefits'),
+        $o('pres_nt_deminimis', 'De minimis benefits'),
+        $o('pres_nt_contrib', 'SSS/GSIS/PHIC/HDMF and union dues'),
+        $o('pres_nt_other', 'Non-taxable salaries and other compensation'),
+        $o('pres_nt_total', 'Total non-taxable/exempt compensation'),
+        $o('pres_tx_13th', 'Taxable 13th month and other benefits'),
+        $o('pres_tx_salaries', 'Taxable salaries and other compensation'),
+        $o('pres_tx_total', 'Total taxable compensation, present employer'),
+        $o('taxable_comp_total', 'Taxable compensation, present and previous'),
+        $o('net_taxable_comp', 'Net taxable compensation'),
+        $o('tax_due', 'Tax due (Jan to Dec)'),
+        $o('prev_tax_withheld', 'Tax withheld, previous employer'),
+        $o('pres_withheld_jan_nov', 'Tax withheld, present employer (Jan to Nov)'),
+        $o('pres_withheld_dec', 'Amount withheld and paid in December'),
+        $o('over_withheld_refunded', 'Over-withheld tax refunded'),
+        $o('tax_withheld_adjusted', 'Amount of tax withheld as adjusted (actual amount withheld)', 'row.actual_withheld'),
+        gsb_f('nationality', 'Nationality', 'row.nationality', 'code', 30, 1, 'never', null, 'official'),
+        gsb_f('employment_status', 'Employment status', 'row.employment_status', 'code', 2, 1, 'never', null, 'official', 'R, C, CP, S, P or AL'),
+        gsb_f('separation_reason', 'Reason of separation', 'row.separation_reason', 'code', 2, 1, 'never', null, 'official', 'T, TR, R, D or NA'),
+        gsb_f('substituted_filing', 'Substituted filing', 'row.substituted_filing', 'code', 1, 1, 'never', null, 'official'),
+        $o('pera_credit', '5% PERA tax credit'),
+        $o('pres_nt_smw', 'Basic/statutory minimum wage, actual (net of SSS/GSIS, PHIC, HDMF and union dues)'),
+    ));
+    $c2 = array(
+        gsb_f('rec_type', 'Control code', 'lit:C2', 'raw', 2, 1, 'never', null, 'official'),
+        gsb_f('form_type', 'Form type', 'lit:1604C', 'raw', 5, 1, 'never', null, 'official'),
+        gsb_f('tin_wa', 'Employer TIN', 'agent.tin', 'digits', 9, 1, 'never', null, 'official'),
+        gsb_f('branch_wa', 'Employer branch code', 'agent.branch', 'digits', 4, 1, 'never', null, 'official'),
+        gsb_f('return_period', 'Period end', 'period.mm_dd_yyyy_end', 'raw', 10, 1, 'never', null, 'official'),
+    );
+    foreach ($mwe as $f) {
+        if ($f['data_type'] === 'amount') {
+            $c2[] = $os($f['field_key'], 'Total ' . lcfirst($f['label']), 'sum.' . substr($f['source_expr'], 4));
+        }
+    }
     $L[] = array(
-        'form_code' => '1604C', 'schedule_code' => 'S2', 'variant_key' => null, 'version_label' => 'Analog draft (unsourced)',
-        'validator_version' => '7.4', 'effective_from' => '2024-01-01', 'status' => 'draft', 'confidence' => 'analog',
+        'form_code' => '1604C', 'schedule_code' => 'S2', 'variant_key' => null, 'version_label' => 'Alphalist v7.4 (BIR data entry module)',
+        'validator_version' => '7.4', 'effective_from' => '2024-01-01', 'status' => 'pending_verification', 'confidence' => 'official',
         'filename_pattern' => '{TIN}{BRANCH}{MMDDYYYY}1604C.DAT', 'delimiter' => ',', 'line_ending' => 'CRLF', 'trailing_newline' => 1,
         'encoding' => 'Windows-1252', 'column_header_row' => 0,
-        'source_ref' => 'Column set follows the printed 1604-C Schedule 2 in the RMC 160-2022 attachment. DAT positions and the D2 record code are not confirmed.',
-        'notes' => 'Research pending. Minimum wage earners must not be inferred from income alone.',
+        'source_ref' => 'Field order of the D2 and C2 lines written by the BIR Alphalist Data Entry and Validation module v7.4 (sched2dets) and checked by its 1604-C validator (59 detail fields, formula checks on totals, net taxable and tax due).',
+        'notes' => 'Each minimum wage earner is one D2 line of 59 fields after the Schedule 1 lines and their C1; C2 has 45 fields. Record a validator result to approve it.',
         'records' => array(
             array('record_code' => 'H1604C', 'role' => 'header', 'label' => 'Header', 'fields' => array(
                 gsb_f('form_type', 'Form type', 'lit:H1604C', 'raw', 6, 1, 'never', null, 'validated'),
@@ -431,18 +490,8 @@ function gsb_layouts()
                 gsb_f('branch_wa', 'Employer branch code', 'agent.branch', 'digits', 4, 1, 'never', null, 'validated'),
                 gsb_f('return_period', 'Period end', 'period.mm_dd_yyyy_end', 'raw', 10, 1, 'never', null, 'validated'),
             )),
-            array('record_code' => 'D2', 'role' => 'detail', 'label' => 'MWE detail (Schedule 2)', 'fields' => $mwe),
-            array('record_code' => 'C2', 'role' => 'control', 'label' => 'Control totals', 'fields' => array(
-                gsb_f('rec_type', 'Control code', 'lit:C2', 'raw', 2, 1, 'never', null, 'analog'),
-                gsb_f('form_type', 'Form type', 'lit:1604C', 'raw', 5, 1, 'never', null, 'analog'),
-                gsb_f('tin_wa', 'Employer TIN', 'agent.tin', 'digits', 9, 1, 'never', null, 'analog'),
-                gsb_f('branch_wa', 'Employer branch code', 'agent.branch', 'digits', 4, 1, 'never', null, 'analog'),
-                gsb_f('return_period', 'Period end', 'period.mm_dd_yyyy_end', 'raw', 10, 1, 'never', null, 'analog'),
-                gsb_f('pres_gross', 'Total gross compensation', 'sum.pres_gross', 'amount', 17, 1, 'never', '2dp', 'analog'),
-                gsb_f('pres_nt_total', 'Total non-taxable', 'sum.pres_nt_total', 'amount', 17, 1, 'never', '2dp', 'analog'),
-                gsb_f('pres_tx_total', 'Total taxable', 'sum.pres_tx_total', 'amount', 17, 1, 'never', '2dp', 'analog'),
-                gsb_f('tax_withheld_adjusted', 'Total tax withheld', 'sum.tax_withheld_adjusted', 'amount', 17, 1, 'never', '2dp', 'analog'),
-            )),
+            array('record_code' => 'D2', 'role' => 'detail', 'label' => 'Minimum wage earner detail (Schedule 2)', 'fields' => $mwe),
+            array('record_code' => 'C2', 'role' => 'control', 'label' => 'Control totals (Schedule 2)', 'fields' => $c2),
         ),
     );
 

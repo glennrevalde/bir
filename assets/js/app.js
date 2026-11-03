@@ -443,12 +443,23 @@
       function v(n) { var e = f.querySelector('[name="' + n + '"]'); return e ? (toCents(e.value) || 0) : 0; }
       function set(n, c) { var e = f.querySelector('[name="' + n + '"]'); if (e) e.value = (c / 100).toFixed(2); }
       ['prev', 'pres'].forEach(function (p) {
-        var nt = v(p + '_nt_smw') + v(p + '_nt_13th') + v(p + '_nt_deminimis') + v(p + '_nt_contrib') + v(p + '_nt_other');
+        // a minimum wage earner's holiday, overtime, night shift and hazard pay are part of the non-taxable total
+        var extra = p === 'pres' ? v('mwe_holiday_pay') + v('mwe_overtime_pay') + v('mwe_night_diff') + v('mwe_hazard_pay') : 0;
+        var nt = v(p + '_nt_smw') + v(p + '_nt_13th') + v(p + '_nt_deminimis') + v(p + '_nt_contrib') + v(p + '_nt_other') + extra;
         var tx = v(p + '_tx_basic') + v(p + '_tx_13th') + v(p + '_tx_other');
         set(p + '_nt_total', nt); set(p + '_tx_total', tx); set(p + '_gross', nt + tx);
       });
-      set('taxable_comp_total', v('prev_tx_total') + v('pres_tx_total'));
-      if (!v('net_taxable_comp')) set('net_taxable_comp', v('prev_tx_total') + v('pres_tx_total'));
+      var taxable = v('prev_tx_total') + v('pres_tx_total');
+      set('taxable_comp_total', taxable);
+      // no exemptions since the TRAIN law: net taxable equals taxable, present and previous
+      set('net_taxable_comp', taxable);
+      var yr = parseInt((f.querySelector('[name="tax_year"]') || {}).value, 10) || 2023;
+      var br = yr >= 2023
+        ? [[800000000, 220250000, 35], [200000000, 40250000, 30], [80000000, 10250000, 25], [40000000, 2250000, 20], [25000000, 0, 15]]
+        : [[800000000, 241000000, 35], [200000000, 49000000, 32], [80000000, 13000000, 30], [40000000, 3000000, 25], [25000000, 0, 20]];
+      var due = 0;
+      for (var i = 0; i < br.length; i++) { if (taxable > br[i][0]) { due = Math.round(br[i][1] + (taxable - br[i][0]) * br[i][2] / 100); break; } }
+      set('tax_due', due);
       set('tax_withheld_adjusted', v('pres_withheld_jan_nov') + v('pres_withheld_dec') - v('over_withheld_refunded'));
       b.textContent = 'Totals computed';
       setTimeout(function () { b.textContent = 'Compute totals'; }, 1600);

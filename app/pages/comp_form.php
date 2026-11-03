@@ -102,7 +102,7 @@ if ($arith) {
     </div></fieldset>
     <?php foreach (Records::compFields() as $group => $fields) { ?>
       <fieldset><legend><?= e($group) ?></legend><div class="form-grid">
-        <?php foreach ($fields as $k => $label) { $isTotal = in_array($k, array('prev_nt_total', 'prev_tx_total', 'pres_nt_total', 'pres_tx_total', 'prev_gross', 'pres_gross', 'taxable_comp_total', 'tax_withheld_adjusted'), true); ?>
+        <?php foreach ($fields as $k => $label) { $isTotal = in_array($k, array('prev_nt_total', 'prev_tx_total', 'pres_nt_total', 'pres_tx_total', 'prev_gross', 'pres_gross', 'taxable_comp_total', 'net_taxable_comp', 'tax_due', 'tax_withheld_adjusted'), true); ?>
           <div class="field <?= isset($errors[$k]) ? 'has-err' : '' ?>"><label for="c-<?= $k ?>"><?= e($label) ?><?= $isTotal ? ' (total)' : '' ?></label>
             <input id="c-<?= $k ?>" name="<?= $k ?>" type="text" inputmode="decimal" class="num" value="<?= e($v($k, '0.00')) ?>"<?= $dis ?>></div>
         <?php } ?>
@@ -112,6 +112,7 @@ if ($arith) {
   </div>
   <?php if ($can) { ?>
   <div class="sheet-foot">
+    <span class="small muted" style="margin-right:auto">Compute totals also sets net taxable compensation and the tax due on the graduated rates, as the BIR validator checks them.</span>
     <button type="button" class="btn" data-comp-compute>Compute totals</button>
     <button class="btn btn-primary" type="submit">Save record</button>
   </div>

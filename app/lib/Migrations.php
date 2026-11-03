@@ -6,7 +6,7 @@
  */
 class Migrations
 {
-    const CURRENT = 4;
+    const CURRENT = 5;
 
     public static function run()
     {
@@ -41,6 +41,12 @@ class Migrations
                     DB::q('UPDATE sales_entries SET vat_rate = 0 WHERE output_vat = 0 AND taxable_amount <> 0');
                 }
                 set_sys_config('schema_version', '4');
+            }
+            if ($v < 5) {
+                // 2026-11-03: 1604-C in the format of the BIR Alphalist Data Entry and Validation module v7.4
+                // (actual amount withheld in Schedule 1; the module's 59-field Schedule 2 line).
+                Specs::update1604cLayouts();
+                set_sys_config('schema_version', '5');
             }
         } catch (Exception $e) {
             // Without ALTER rights the update waits for database/migrations/; check.php reports it.

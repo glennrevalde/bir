@@ -12,6 +12,7 @@ if (PHP_SAPI !== 'cli') {
     exit('Run from the command line.');
 }
 require dirname(__DIR__) . '/app/bootstrap.php';
+require __DIR__ . '/bir_v74_1604c.php';
 require dirname(__DIR__) . '/tools/seed_lib.php';
 
 $testDb = config('db.name') . '_test';
@@ -145,6 +146,8 @@ $set = array('pres_gross' => '532000', 'pres_nt_13th' => '40000', 'pres_nt_demin
 foreach ($set as $k => $v) {
     $row[$k] = Money::fromDb($v);
 }
+$row['tax_year'] = 2025;
+$row['actual_withheld'] = $row['prev_tax_withheld'] + $row['tax_withheld_adjusted'] + $row['pera_credit'];
 $agent = array('tin' => '684785510', 'branch' => '0000');
 $period = array('from' => '2025-01-01', 'to' => '2025-12-31');
 $w = DatWriter::make($spec, array('agent' => $agent, 'period' => $period, 'rows' => array($row), 'vars' => array()));
@@ -898,7 +901,9 @@ $codes = array_map(function ($l) { return substr($l, 0, strpos($l, ',')); }, $cl
 ok(!empty($cctx['spec']['composite']) && $codes === array('H1604C', 'D1', 'C1', 'D2', 'C2'), 'both schedules go into one file: header, Schedule 1 lines and control, Schedule 2 lines and control', implode(' ', $codes));
 ok(implode("\r\n", array_slice($clines, 0, 3)) . "\r\n" === $fixture && strpos($clines[3], 'D2,1604C,684785510,0000,12/31/2025,1,124950665,0000,"ABABAO","ERLINDA","AMOLONG",VII,') === 0,
     'Schedule 1 keeps the validated bytes; Schedule 2 numbers its lines from 1', $clines[3]);
-ok(strpos($clines[4], 'C2,1604C,684785510,0000,12/31/2025,296250.00,296250.00,0.00,0.00') === 0, 'each control line totals its own schedule', $clines[4]);
+ok(strpos($clines[4], 'C2,1604C,684785510,0000,12/31/2025,' . str_repeat('0.00,', 14) . '296250.00,769.23,19999.98,240000.00,0.00,0.00,0.00,0.00,35850.00,0.00,20400.00,0.00,296250.00,') === 0
+    && substr($clines[4], -10) === ',240000.00' && count(explode(',', $clines[4])) === 45, 'each control line totals its own schedule (C2: the 45 fields of the BIR module)', $clines[4]);
+ok(count(explode(',', $clines[3])) === 59 && substr($clines[3], -31) === ',FILIPINO,R,NA,Y,0.00,240000.00', 'a Schedule 2 line has the 59 fields of the BIR module, ending with substituted filing, PERA credit and the actual SMW', $clines[3]);
 $cErr = array_filter($cctx['dq'], function ($i) { return $i['severity'] === 'error'; });
 ok(!$cErr && $cctx['preview']['filename'] === '6847855100000123120251604C.DAT', 'one filename for the whole 1604-C, no data errors', json_encode(array_values($cErr)));
 $cf2 = Reports::generate($cctx, true);
@@ -908,7 +913,7 @@ ok($cfr2['status'] === 'pending_bir' && !$l2 && (int)$cfr2['record_count'] === 2
 ok(DB::val('SELECT status FROM dat_files WHERE id = ?', array($cf1)) === 'superseded', 'the new file replaces the earlier one for the year');
 $cspec = Specs::forFile($cfr2);
 ok(count($cspec['parts']) === 2 && $cspec['parts'][1]['schedule_code'] === 'S2', 'the stored file remembers both layouts');
-$tamp = str_replace($clines[4], str_replace('296250.00,296250.00', '296250.01,296250.00', $clines[4]), $cctx['preview']['bytes']);
+$tamp = str_replace($clines[4], str_replace(',296250.00,769.23,', ',296250.01,769.23,', $clines[4]), $cctx['preview']['bytes']);
 $ts = Checks::structure($cspec, $tamp, $cfr2['filename'], $cctx['agent'], $cctx['period'], $cctx['dataset']['rows']);
 ok(in_array('CONTROL_TOTAL', array_map(function ($i) { return $i['code']; }, $ts['issues']), true), 'a Schedule 2 control total that disagrees with its lines is caught');
 $bad = str_replace($clines[2] . "\r\n", '', $cctx['preview']['bytes']);
@@ -990,6 +995,73 @@ ok(strpos((string)DB::val("SELECT CONCAT(summary, COALESCE(before_json, ''), COA
     && strpos((string)DB::val('SELECT body FROM mail_outbox WHERE to_email = ? ORDER BY id DESC LIMIT 1', array('invited.never@test.local')), 'Temp4Ever22') === false, 'the password is not in the audit trail or the email');
 Auth::setTemporaryPassword($tpU, 'Another9Temp', true);
 ok((int)DB::val('SELECT mfa_enabled FROM users WHERE id = ?', array($tpU)) === 0, 'two-step sign-in can be turned off for a lost phone');
+
+// =====================================================================
+section('1604-C against the checks of the BIR Alphalist module v7.4');
+ok(bir_v74_1604c($fixture, '684785510', '0000', '2025') === array(), 'the validator-passed sample passes the ported v7.4 checks');
+$Bv = make_org('Bvseven', '555000444', 'firm_owner', 'MINIMUM WAGE FARMS CORP');
+login_as($Bv['user'], $Bv['org'], $Bv['client']);
+$bvEmp = function ($tin, $last, $first, $middle, $mwe) use ($Bv) {
+    return DB::insert('employees', array('organization_id' => $Bv['org'], 'client_id' => $Bv['client'], 'branch_id' => $Bv['branch'], 'tin' => $tin, 'tin_branch' => '0000',
+        'last_name' => $last, 'first_name' => $first, 'middle_name' => $middle, 'region_code' => 'VII', 'is_mwe' => $mwe, 'status' => 'active', 'created_at' => now()));
+};
+$bvComp = function ($empId, $sched, $from, $amounts) use ($Bv) {
+    $d = array('organization_id' => $Bv['org'], 'client_id' => $Bv['client'], 'branch_id' => $Bv['branch'], 'employee_id' => $empId, 'tax_year' => 2025, 'schedule_code' => $sched,
+        'region_code' => 'VII', 'employment_from' => $from, 'employment_to' => '2025-12-31', 'factor_days' => $sched === 'S2' ? 312 : null, 'nationality' => 'FILIPINO',
+        'employment_status' => 'R', 'separation_reason' => 'NA', 'substituted_filing' => 'Y', 'status' => 'posted', 'created_at' => now());
+    foreach (Records::compFields() as $fields) {
+        foreach ($fields as $k => $l) {
+            $d[$k] = isset($amounts[$k]) ? $amounts[$k] : '0.00';
+        }
+    }
+    return DB::insert('compensation_records', $d);
+};
+// Schedule 1 as imported from a payroll file: net taxable left at 0.00 (the cause of the BIR's "Net Taxable" and "Tax Due" errors)
+foreach (array(array('300400501', 'DIMAANO', 'LUZ', 'PEREZ'), array('300400502', 'DIMAANO', 'RAMON JOSE', 'TAN')) as $p) {
+    $bvComp($bvEmp($p[0], $p[1], $p[2], $p[3], 0), 'S1', '2025-01-01', array('pres_gross' => '390000.00', 'pres_nt_13th' => '30000.00', 'pres_nt_contrib' => '15840.00',
+        'pres_nt_total' => '45840.00', 'pres_tx_basic' => '344160.00', 'pres_tx_total' => '344160.00', 'taxable_comp_total' => '344160.00', 'net_taxable_comp' => '0.00',
+        'tax_due' => '14124.00', 'pres_withheld_jan_nov' => '12947.00', 'pres_withheld_dec' => '1177.00', 'tax_withheld_adjusted' => '14124.00'));
+}
+// Schedule 2: minimum wage earners, full year and part year, with the actual SMW net of contributions
+$mweRows = array(
+    array('300400601', 'ALCANTARA', 'JOEL', 'PITO', '2025-01-01', '550.00', '14300.00', '171600.00', '185900.00', '14300.00', '12732.00'),
+    array('300400602', 'BAUTISTA', 'JENNY', 'GERA', '2025-07-09', '550.00', '14300.00', '171600.00', '77015.63', '5515.63', '5312.50'),
+    array('300400603', 'CABRERA', 'PRISCA', 'ABEL', '2025-07-11', '650.00', '16900.00', '202800.00', '91020.83', '6520.83', '6250.00'),
+);
+foreach ($mweRows as $p) {
+    $smw = Money::toPlain(Money::fromDb($p[8]) - Money::fromDb($p[9]) - Money::fromDb($p[10]));
+    $bvComp($bvEmp($p[0], $p[1], $p[2], $p[3], 1), 'S2', $p[4], array('pres_gross' => $p[8], 'smw_per_day' => $p[5], 'smw_per_month' => $p[6], 'smw_per_year' => $p[7],
+        'pres_nt_smw' => $smw, 'pres_nt_13th' => $p[9], 'pres_nt_contrib' => $p[10], 'pres_nt_total' => $p[8]));
+}
+$bvCtx = Reports::context(array('form' => '1604C', 'schedule' => Specs::COMBINED_CODE, 'branch_id' => $Bv['branch'], 'year' => 2025, 'part' => 1, 'sawt_form' => null, 'amended' => 0));
+$bvErr = array_values(array_filter($bvCtx['dq'], function ($i) { return $i['severity'] === 'error'; }));
+$bvWarn = implode(' ', array_map(function ($i) { return $i['message']; }, $bvCtx['dq']));
+ok(!$bvErr && strpos($bvWarn, 'net taxable compensation was saved as 0.00') !== false, 'net taxable saved as 0.00 is written as the taxable compensation, with a warning to save the record again', json_encode($bvErr));
+$bvBytes = $bvCtx['preview']['bytes'];
+$bvLines = explode("\r\n", rtrim($bvBytes, "\r\n"));
+$bvD1 = explode(',', $bvLines[1]);
+ok($bvD1[37] === '344160.00' && $bvD1[38] === '14124.00' && $bvD1[43] === '14124.00', 'Schedule 1 writes net taxable 344,160.00, tax due 14,124.00 and the actual amount withheld', $bvLines[1]);
+$bvD2 = explode(',', $bvLines[5]);
+ok(count($bvD2) === 59 && $bvD2[26] === '07/09/2025' && $bvD2[29] === '550.00' && $bvD2[32] === '312' && $bvD2[58] === '66187.50', 'a part-year minimum wage earner is written in the module\'s columns: dates, SMW per day, factor and the actual SMW', $bvLines[5]);
+$bvReport = bir_v74_1604c($bvBytes, '555000444', '0000', '2025');
+ok($bvReport === array(), 'the generated 1604-C passes every ported check of the BIR module v7.4', json_encode($bvReport));
+$bvFile = DB::row('SELECT * FROM dat_files WHERE id = ?', array(Reports::generate($bvCtx, true)));
+ok($bvFile['status'] === 'pending_bir' && (int)$bvFile['record_count'] === 5, 'Level 2 reads the file back with both schedules');
+// wrong tax due, unequal withholding, a region the validator refuses: stopped at Level 1 with the amount to use
+$bad = $bvCtx['dataset']['rows'][0];
+$bad['tax_due'] = 1412400 + 100;
+$bad['region_code'] = 'NIR';
+$badDq = Checks::dataQuality('1604C', Specs::COMBINED_CODE, Ctx::client(), $bvCtx['agent'], array($bad), $bvCtx['spec'], $bvCtx['period']);
+$badMsg = implode(' | ', array_map(function ($i) { return $i['message']; }, array_filter($badDq, function ($i) { return $i['severity'] === 'error'; })));
+ok(strpos($badMsg, 'does not match the graduated rates on 344,160.00 (14,124.00)') !== false && strpos($badMsg, 'does not equal tax due') !== false && strpos($badMsg, 'region NIR') !== false,
+    'a tax due off the graduated rates, withholding that does not equal it and region NIR are errors at Level 1', $badMsg);
+ok(Payroll::graduatedTax(34416000, 2025) == 1412400 && Payroll::graduatedTax(90000000, 2025) == 12750000 && Payroll::graduatedTax(25000000, 2025) == 0
+    && Payroll::graduatedTax(90000000, 2022) == 16000000, 'graduated rates: 2023 schedule from 2023, 2018 schedule before');
+list($cd, $ce, $cw) = Payroll::compValidate(array_merge(array('tax_year' => 2025, 'schedule_code' => 'S1', 'branch_id' => $Bv['branch'], 'region_code' => 'VII', 'employment_from' => '01/01/2025',
+    'employment_to' => '12/31/2025'), array('pres_gross' => '390000', 'pres_nt_13th' => '30000', 'pres_nt_contrib' => '15840', 'pres_nt_total' => '45840', 'pres_tx_basic' => '344160',
+    'pres_tx_total' => '344160', 'taxable_comp_total' => '344160', 'net_taxable_comp' => '0', 'tax_due' => '14124', 'pres_withheld_jan_nov' => '12947', 'pres_withheld_dec' => '1177',
+    'tax_withheld_adjusted' => '14124')), $Bv['client'], array('skip_party' => true));
+ok($cd['net_taxable_comp'] === '344160.00' && !$ce, 'saving a compensation record sets net taxable to the taxable compensation', json_encode(array($ce, $cw)));
 
 // =====================================================================
 section("User's Manual");

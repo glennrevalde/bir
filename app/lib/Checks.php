@@ -5,36 +5,71 @@
  */
 class Checks
 {
-    /** Arithmetic consistency of a compensation record (amounts as "0.00" strings or cents). Returns list of messages. */
+    /**
+     * Arithmetic of a compensation record, following the formulas the BIR Alphalist Data Entry and
+     * Validation module v7.4 applies to 1604-C Schedules 1 and 2 (amounts as "0.00" strings or centavos).
+     * Returns a list of messages; each one stops the BIR validator, so the 1604-C treats them as errors.
+     */
     public static function compArithmetic($d)
     {
         $c = function ($k) use ($d) {
+            if (!isset($d[$k]) || $d[$k] === null || $d[$k] === '') {
+                return 0;
+            }
             return is_int($d[$k]) ? $d[$k] : Money::fromDb($d[$k]);
         };
+        $f = function ($cents) {
+            return Money::fmt($cents);
+        };
         $msgs = array();
+        $mwe = (isset($d['schedule_code']) ? $d['schedule_code'] : 'S1') === 'S2';
         foreach (array('prev', 'pres') as $p) {
-            $nt = $c($p . '_nt_smw') + $c($p . '_nt_13th') + $c($p . '_nt_deminimis') + $c($p . '_nt_contrib') + $c($p . '_nt_other');
-            $tx = $c($p . '_tx_basic') + $c($p . '_tx_13th') + $c($p . '_tx_other');
             $who = $p === 'prev' ? 'Previous employer' : 'Present employer';
+            // holiday, overtime, night shift and hazard pay of a minimum wage earner are non-taxable (present employer)
+            $extra = $p === 'pres' ? $c('mwe_holiday_pay') + $c('mwe_overtime_pay') + $c('mwe_night_diff') + $c('mwe_hazard_pay') : 0;
+            $nt = $c($p . '_nt_smw') + $c($p . '_nt_13th') + $c($p . '_nt_deminimis') + $c($p . '_nt_contrib') + $c($p . '_nt_other') + $extra;
+            $tx = $c($p . '_tx_basic') + $c($p . '_tx_13th') + $c($p . '_tx_other');
             if ($nt !== $c($p . '_nt_total')) {
-                $msgs[] = $who . ': non-taxable items add up to ' . Money::fmt($nt) . ' but total non-taxable is ' . Money::fmt($c($p . '_nt_total'));
+                $msgs[] = $who . ': non-taxable items' . ($extra ? ' (with holiday, overtime, night shift and hazard pay)' : '') . ' add up to ' . $f($nt) . ' but total non-taxable is ' . $f($c($p . '_nt_total'))
+                    . ($mwe && $p === 'pres' && $c('pres_nt_smw') === 0 ? '. For a minimum wage earner, enter the statutory minimum wage actually paid, net of SSS, PhilHealth, Pag-IBIG and union dues, under "Non-taxable SMW / basic" (it is the last column of the BIR Schedule 2 line)' : '');
             }
             if ($tx !== $c($p . '_tx_total')) {
-                $msgs[] = $who . ': taxable items add up to ' . Money::fmt($tx) . ' but total taxable is ' . Money::fmt($c($p . '_tx_total'));
+                $msgs[] = $who . ': taxable items add up to ' . $f($tx) . ' but total taxable is ' . $f($c($p . '_tx_total'));
             }
-            if ($c($p . '_nt_total') + $c($p . '_tx_total') !== $c($p . '_gross')) {
-                $msgs[] = $who . ': gross ' . Money::fmt($c($p . '_gross')) . ' differs from non-taxable plus taxable (' . Money::fmt($c($p . '_nt_total') + $c($p . '_tx_total')) . ')';
+            if (($p === 'pres' || $c('prev_gross') + $c('prev_nt_total') + $c('prev_tx_total') !== 0) && $c($p . '_nt_total') + $c($p . '_tx_total') !== $c($p . '_gross')) {
+                $msgs[] = $who . ': gross ' . $f($c($p . '_gross')) . ' differs from non-taxable plus taxable (' . $f($c($p . '_nt_total') + $c($p . '_tx_total')) . ')';
+            }
+            if ($c($p . '_nt_13th') > 9000000) {
+                $msgs[] = $who . ': non-taxable 13th month pay and other benefits ' . $f($c($p . '_nt_13th')) . ' is over the 90,000.00 ceiling; move the excess to taxable';
             }
         }
+        if (!$mwe && $c('mwe_holiday_pay') + $c('mwe_overtime_pay') + $c('mwe_night_diff') + $c('mwe_hazard_pay') > 0) {
+            $msgs[] = 'Holiday, overtime, night shift and hazard pay of a minimum wage earner belong to Schedule 2; Schedule 1 has no columns for them';
+        }
+        if ($mwe && $c('prev_tx_basic') > 0) {
+            $msgs[] = 'Schedule 2 has no column for a previous employer\'s taxable basic salary; enter it under taxable salaries and other compensation';
+        }
         if ($c('prev_tx_total') + $c('pres_tx_total') !== $c('taxable_comp_total')) {
-            $msgs[] = 'Taxable compensation, present and previous, should be ' . Money::fmt($c('prev_tx_total') + $c('pres_tx_total'));
+            $msgs[] = 'Taxable compensation, present and previous, should be ' . $f($c('prev_tx_total') + $c('pres_tx_total'));
+        }
+        if ($c('net_taxable_comp') !== $c('taxable_comp_total')) {
+            $msgs[] = 'Net taxable compensation should equal taxable compensation, present and previous (' . $f($c('taxable_comp_total')) . ')';
+        }
+        $year = isset($d['tax_year']) ? (int)$d['tax_year'] : 0;
+        $due = Payroll::graduatedTax($c('taxable_comp_total'), $year);
+        if (!Payroll::taxMatches($c('tax_due'), $due)) {
+            $msgs[] = 'Tax due ' . $f($c('tax_due')) . ' does not match the graduated rates on ' . $f($c('taxable_comp_total')) . ' (' . $f((int)round($due)) . ')';
         }
         $adj = $c('pres_withheld_jan_nov') + $c('pres_withheld_dec') - $c('over_withheld_refunded');
         if ($adj !== $c('tax_withheld_adjusted')) {
-            $msgs[] = 'Tax withheld as adjusted should equal January to November plus December less refunds (' . Money::fmt($adj) . ')';
+            $msgs[] = 'Tax withheld as adjusted should equal January to November plus December less refunds (' . $f($adj) . ')';
         }
-        if ($c('prev_tax_withheld') + $c('tax_withheld_adjusted') !== $c('tax_due') && $c('tax_due') > 0) {
-            $msgs[] = 'Total withheld (previous plus present as adjusted, ' . Money::fmt($c('prev_tax_withheld') + $c('tax_withheld_adjusted')) . ') does not equal tax due (' . Money::fmt($c('tax_due')) . ')';
+        $total = $c('prev_tax_withheld') + $c('tax_withheld_adjusted') + $c('pera_credit');
+        if ($total !== $c('tax_due')) {
+            $msgs[] = 'Total withheld (previous plus present as adjusted' . ($c('pera_credit') ? ' plus the PERA credit' : '') . ', ' . $f($total) . ') does not equal tax due (' . $f($c('tax_due')) . '). The year-end adjustment must make them equal';
+        }
+        if ($c('pres_withheld_dec') > 0 && $c('over_withheld_refunded') > 0) {
+            $msgs[] = 'Enter either the amount withheld in December or the over-withheld tax refunded, not both';
         }
         return $msgs;
     }
@@ -114,6 +149,15 @@ class Checks
                 }
             }
             if ($form === '1604C') {
+                if (isset($r['region_code']) && !in_array($r['region_code'], Payroll::datRegions(), true)) {
+                    $add('error', 'REGION', $n, 'region_code', 'Row ' . $n . ' (' . party_name($r) . '): region ' . $r['region_code'] . ' is not accepted by the BIR validator. Use I to XIII, IV-A, IV-B, NCR, CAR or ARMM' . ($r['region_code'] === 'NIR' ? ' (Negros Occidental is VI; Negros Oriental and Siquijor are VII)' : '') . '.');
+                }
+                if (isset($r['schedule_code']) && $r['schedule_code'] === 'S2' && (int)$r['smw_per_day'] <= 0) {
+                    $add('error', 'SMW_DAY', $n, 'smw_per_day', 'Row ' . $n . ' (' . party_name($r) . '): the statutory minimum wage per day is required for a minimum wage earner.');
+                }
+                if (array_key_exists('net_adjusted', $r)) {
+                    $add('warning', 'NET_TAXABLE', $n, 'net_taxable_comp', 'Row ' . $n . ' (' . party_name($r) . '): net taxable compensation was saved as ' . Money::fmt($r['net_adjusted']) . '; the file writes ' . Money::fmt($r['net_taxable_comp']) . ' (present and previous taxable), as the BIR validator requires. Save the record again to correct it.');
+                }
                 foreach (self::compArithmetic($r) as $m) {
                     $add('error', 'COMP_MATH', $n, null, 'Row ' . $n . ' (' . party_name($r) . '): ' . $m);
                 }

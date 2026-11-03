@@ -86,8 +86,8 @@ class Specs
 
     public static function confidenceLabel($c)
     {
-        $m = array('official' => 'Official annex', 'validated' => 'Validator-passed sample', 'medium' => 'Two or more sources agree',
-            'low' => 'Single secondary source', 'analog' => 'Unsourced draft', 'high' => 'Official annex');
+        $m = array('official' => 'Official BIR source', 'validated' => 'Validator-passed sample', 'medium' => 'Two or more sources agree',
+            'low' => 'Single secondary source', 'analog' => 'Unsourced draft', 'high' => 'Official BIR source');
         return isset($m[$c]) ? $m[$c] : ucfirst($c);
     }
 
@@ -97,21 +97,59 @@ class Specs
         require_once APP_PATH . '/specs/layouts.php';
         $n = 0;
         foreach (gsb_layouts() as $L) {
-            $id = DB::insert('layout_specs', array(
-                'form_code' => $L['form_code'], 'schedule_code' => $L['schedule_code'], 'variant_key' => $L['variant_key'], 'version_label' => $L['version_label'],
-                'validator_version' => $L['validator_version'], 'effective_from' => $L['effective_from'], 'effective_to' => null, 'status' => $L['status'],
-                'confidence' => $L['confidence'], 'filename_pattern' => $L['filename_pattern'], 'delimiter' => $L['delimiter'], 'line_ending' => $L['line_ending'],
-                'trailing_newline' => $L['trailing_newline'], 'encoding' => $L['encoding'], 'column_header_row' => $L['column_header_row'], 'text_policy' => 'bir_upper',
-                'source_ref' => $L['source_ref'], 'notes' => $L['notes'], 'created_by' => $userId, 'created_at' => now(), 'updated_at' => now(),
-            ));
-            foreach ($L['records'] as $i => $R) {
-                $rid = DB::insert('spec_records', array('spec_id' => $id, 'record_code' => $R['record_code'], 'role' => $R['role'], 'label' => $R['label'], 'sort_order' => $i + 1));
-                foreach ($R['fields'] as $pos => $F) {
-                    DB::insert('spec_fields', array_merge($F, array('spec_record_id' => $rid, 'position' => $pos + 1)));
-                }
-            }
+            self::insertLayout($L, $userId);
             $n++;
         }
+        return $n;
+    }
+
+    /** Insert one layout definition from app/specs/layouts.php; returns the new layout id. */
+    public static function insertLayout($L, $userId = null)
+    {
+        $id = DB::insert('layout_specs', array(
+            'form_code' => $L['form_code'], 'schedule_code' => $L['schedule_code'], 'variant_key' => $L['variant_key'], 'version_label' => $L['version_label'],
+            'validator_version' => $L['validator_version'], 'effective_from' => $L['effective_from'], 'effective_to' => null, 'status' => $L['status'],
+            'confidence' => $L['confidence'], 'filename_pattern' => $L['filename_pattern'], 'delimiter' => $L['delimiter'], 'line_ending' => $L['line_ending'],
+            'trailing_newline' => $L['trailing_newline'], 'encoding' => $L['encoding'], 'column_header_row' => $L['column_header_row'], 'text_policy' => 'bir_upper',
+            'source_ref' => $L['source_ref'], 'notes' => $L['notes'], 'created_by' => $userId, 'created_at' => now(), 'updated_at' => now(),
+        ));
+        foreach ($L['records'] as $i => $R) {
+            $rid = DB::insert('spec_records', array('spec_id' => $id, 'record_code' => $R['record_code'], 'role' => $R['role'], 'label' => $R['label'], 'sort_order' => $i + 1));
+            foreach ($R['fields'] as $pos => $F) {
+                DB::insert('spec_fields', array_merge($F, array('spec_record_id' => $rid, 'position' => $pos + 1)));
+            }
+        }
+        return $id;
+    }
+
+    /**
+     * Bring the 1604-C layouts of an existing installation in line with the BIR Alphalist Data Entry and
+     * Validation module v7.4: Schedule 1 writes the actual amount withheld in its "tax withheld as adjusted"
+     * column, and Schedule 2 gets the module's 59-field D2 and 45-field C2 lines, replacing the unsourced draft.
+     * Returns the number of changes.
+     */
+    public static function update1604cLayouts()
+    {
+        require_once APP_PATH . '/specs/layouts.php';
+        $n = 0;
+        $n += DB::q("UPDATE spec_fields f JOIN spec_records r ON r.id = f.spec_record_id JOIN layout_specs s ON s.id = r.spec_id
+            SET f.source_expr = 'row.actual_withheld', f.label = 'Amount of tax withheld as adjusted (actual amount withheld)'
+            WHERE s.form_code = '1604C' AND s.schedule_code = 'S1' AND f.field_key = 'tax_withheld_adjusted' AND f.source_expr = 'row.tax_withheld_adjusted'")->rowCount();
+        $n += DB::q("UPDATE spec_fields f JOIN spec_records r ON r.id = f.spec_record_id JOIN layout_specs s ON s.id = r.spec_id
+            SET f.source_expr = 'sum.actual_withheld', f.label = 'Total actual amount withheld'
+            WHERE s.form_code = '1604C' AND s.schedule_code = 'S1' AND f.field_key = 'tax_withheld_adjusted' AND f.source_expr = 'sum.tax_withheld_adjusted'")->rowCount();
+        foreach (gsb_layouts() as $L) {
+            if ($L['form_code'] !== '1604C' || $L['schedule_code'] !== 'S2') {
+                continue;
+            }
+            if (!DB::val('SELECT id FROM layout_specs WHERE form_code = ? AND schedule_code = ? AND version_label = ?', array('1604C', 'S2', $L['version_label']))) {
+                $id = self::insertLayout($L, null);
+                DB::q("UPDATE layout_specs SET status = 'retired', updated_at = ? WHERE form_code = '1604C' AND schedule_code = 'S2' AND id <> ? AND status IN ('draft', 'pending_verification')
+                    AND version_label = 'Analog draft (unsourced)'", array(now(), $id));
+                $n++;
+            }
+        }
+        self::forget();
         return $n;
     }
 

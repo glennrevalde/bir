@@ -238,7 +238,7 @@ H
 <figure><img src="{img:specs}" alt="File layouts list"><figcaption>File layouts with their evidence level and status.</figcaption></figure>
 <p>The system never hard-codes a BIR format. Every field of every DAT comes from a layout here, and each field records where its definition came from:</p>
 <ul>
-<li><b>Official annex</b>: copied from a BIR annex table.</li>
+<li><b>Official BIR source</b>: copied from a BIR annex table, or from the BIR's own software (the 1604-C Schedule 2 follows the DAT writer and validator of the Alphalist Data Entry and Validation module v7.4).</li>
 <li><b>Validator-passed sample</b>: matches a file the official validator accepted.</li>
 <li><b>Two or more sources agree</b>, or <b>Single secondary source</b>: from published generators, not yet confirmed.</li>
 <li><b>Unsourced draft</b>: a placeholder so the module can be used; its files are always drafts.</li>
@@ -412,6 +412,18 @@ H
 <p>The <b>Check</b> column shows whether each record adds up. A record that does not add up to the centavo blocks the 1604-C, because the BIR validator rejects inconsistent rows. Use <b>Import compensation</b> to load a whole year from your payroll system, and <b>Generate 1604-C</b> when the year is complete.</p>
 <h3>One 1604-C file for both schedules</h3>
 <p>The BIR system does not separate Schedule 1 and Schedule 2, so the system writes one 1604-C file for the year: the header, the Schedule 1 employees with their control line, then the minimum wage earners of Schedule 2 with theirs. Each schedule numbers its employees from 1 and totals only its own lines. A year with no minimum wage earners gives a file with Schedule 1 only. When the BIR validator passes the file, both schedule layouts are approved with it.</p>
+<h3>What the BIR validator v7.4 checks</h3>
+<p>The 1604-C follows the Alphalist Data Entry and Validation module v7.4: a Schedule 1 line has 49 fields and a Schedule 2 line 59. The validator recomputes every line, so the system checks the same formulas before writing and lists any row that would fail:</p>
+<ul>
+<li>Total non-taxable = its parts. For a minimum wage earner the parts are holiday, overtime, night shift and hazard pay, the non-taxable 13th month and other benefits, de minimis, SSS/PhilHealth/Pag-IBIG and union dues, other non-taxable pay, and the statutory minimum wage actually paid, net of those contributions (enter it under <i>Non-taxable SMW / basic</i>).</li>
+<li>Gross = total non-taxable + total taxable; taxable, present and previous = the two taxable totals.</li>
+<li>Net taxable compensation = taxable compensation, present and previous. There are no personal exemptions since the TRAIN law, so the system sets it for you when a record is saved, and a record saved with another amount is written with the right one and a warning.</li>
+<li>Tax due = the graduated rates on net taxable compensation (2023 schedule: 0 up to 250,000; 15% of the excess over 250,000; 22,500 + 20% over 400,000; 102,500 + 25% over 800,000; 402,500 + 30% over 2,000,000; 2,202,500 + 35% over 8,000,000). <b>Compute totals</b> fills it in.</li>
+<li>Tax due = previous employer's tax withheld + present employer's tax withheld as adjusted + the PERA credit. The year-end adjustment (December withholding or refund) must make them equal.</li>
+<li>The non-taxable 13th month pay and other benefits are at most 90,000.00; the excess is taxable.</li>
+<li>The region is I to XIII, IV-A, IV-B, NCR, CAR or ARMM. BARMM is written as ARMM; NIR is not accepted yet, so use VI (Negros Occidental) or VII (Negros Oriental, Siquijor).</li>
+<li>A minimum wage earner needs the statutory minimum wage per day.</li>
+</ul>
 H
 ),
 
