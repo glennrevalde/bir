@@ -138,7 +138,7 @@ The built-in User's Manual (Overview, User's Manual, or your name menu) has nine
 
 - Most layouts are drafts or pending verification. Only the 1604-C Schedule 1 layout reproduces a validator-passed sample. Approve each layout only after your own validator run accepts a file made with it. See [docs/COMPLIANCE.md](docs/COMPLIANCE.md).
 - Legacy `.xls` workbooks are not read; save them as `.xlsx` first.
-- Certificate PDFs are system-drawn replicas of the January 2018 (ENCS) forms. Check each form's current revision on the BIR website before issuing.
+- Certificate PDFs (2307, 2306, 2316) print as the BIR Alphalist Data Entry and Validation Module v7.4 prints them, from the module's own templates, with its seal and PDF417 barcode.
 - SRS submission may no longer be required; confirm before relying on it.
 - The system does not submit anything to BIR. Validation and submission happen in BIR's own tools.
 - Outgoing mail (verification, password reset, approval notices) is kept in an outbox on the System page. Switch the mail mode there to send through PHP `mail()` once the server has a mail transport.

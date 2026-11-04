@@ -1,8 +1,9 @@
 <?php
 /**
  * Small, dependency-free PDF writer for print-ready certificates.
- * Supports Helvetica / Helvetica-Bold (WinAnsi), lines, rectangles, wrapped text and
- * JPEG / 8-bit PNG images including transparent signatures. Coordinates are points from the top-left.
+ * Supports Helvetica in four styles (WinAnsi), lines, rectangles, wrapped text, JPEG / 8-bit PNG images
+ * including transparent signatures, raw operator blocks for the BIR form drawings and PDF417 symbols.
+ * Coordinates are points from the top-left.
  */
 class Pdf
 {
@@ -76,6 +77,45 @@ class Pdf
         return $this;
     }
 
+    /**
+     * Paint a block of PDF operators written in the bottom-left coordinates of a page $srcH points tall
+     * (a blank BIR form). It may use the fonts F1 to F4. Colours and line width are reset afterwards.
+     */
+    public function raw($ops, $srcH)
+    {
+        $this->out('q 1 0 0 1 0 ' . self::n($this->h - $srcH) . ' cm');
+        $this->out(rtrim($ops));
+        $this->out('Q 0 G 0 g 0.6 w [] 0 d');
+        return $this;
+    }
+
+    /**
+     * A PDF417 symbol from its module rows ('1' is a dark module). $px is the size in pixels of the source
+     * image the rows were read from, where a module is two pixels wide and a row nine pixels tall.
+     */
+    public function pdf417($rows, $x, $y, $w, $h, $px)
+    {
+        $mw = $w * 2 / $px[0];
+        $rh = $h * 9 / $px[1];
+        $ops = '';
+        foreach (array_values($rows) as $r => $bits) {
+            $len = strlen($bits);
+            for ($i = 0; $i < $len; $i++) {
+                if ($bits[$i] !== '1') {
+                    continue;
+                }
+                $j = $i;
+                while ($j + 1 < $len && $bits[$j + 1] === '1') {
+                    $j++;
+                }
+                $ops .= self::n($x + $i * $mw) . ' ' . self::n($this->h - $y - ($r + 1) * $rh) . ' ' . self::n(($j - $i + 1) * $mw) . ' ' . self::n($rh) . " re\n";
+                $i = $j;
+            }
+        }
+        $this->out('q 0 g ' . $ops . 'f Q');
+        return $this;
+    }
+
     public function setLineWidth($w) { $this->out(self::n($w) . ' w'); return $this; }
     public function setDash($on = 0, $off = 0) { $this->out($on ? '[' . self::n($on) . ' ' . self::n($off) . '] 0 d' : '[] 0 d'); return $this; }
     public function strokeRgb($r, $g, $b) { $this->out(self::n($r / 255) . ' ' . self::n($g / 255) . ' ' . self::n($b / 255) . ' RG'); return $this; }
@@ -108,6 +148,13 @@ class Pdf
             $w += ($o >= 32 && $o <= 126) ? $tbl[$o - 32] : 556;
         }
         return $w * $size / 1000;
+    }
+
+    /** Text with its baseline at $y, stretched horizontally by $tz percent. */
+    public function textAt($x, $y, $s, $tz = 100)
+    {
+        $this->out('BT /' . $this->font . ' ' . self::n($this->size) . ' Tf ' . self::n($tz) . ' Tz ' . self::n($x) . ' ' . self::n($this->h - $y) . ' Td (' . self::esc(self::enc($s)) . ') Tj 100 Tz ET');
+        return $this;
     }
 
     /** Draw text with its top edge at $y. */

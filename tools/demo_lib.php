@@ -189,7 +189,7 @@ function gsb_seed_demo()
     $sig = DB::val('SELECT id FROM signatories WHERE client_id = ?', array($c1));
     foreach (array('print', 'hardware') as $k) {
         $payload = Certificates::buildWithholding('2307', $client, $branch, $sup[$k], '2026-01-01', '2026-03-31');
-        Certificates::issue($payload, array('signatory_id' => $sig, 'paper' => 'A4', 'branch_id' => $b0));
+        Certificates::issue($payload, array('signatory_id' => $sig, 'paper' => 'LEGAL', 'branch_id' => $b0));
     }
     $comp = DB::val('SELECT id FROM compensation_records WHERE client_id = ? ORDER BY id LIMIT 1', array($c1));
     Certificates::issue(Certificates::build2316($client, $branch, $comp), array('signatory_id' => $sig, 'paper' => 'FOLIO', 'branch_id' => $b0));
@@ -365,10 +365,10 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
     $branch = DB::row('SELECT * FROM branches WHERE id = ?', array($b0));
     $sig = DB::val('SELECT id FROM signatories WHERE client_id = ?', array($c1));
     foreach (array('logistics', 'lessor', 'caterer') as $k) {
-        Certificates::issue(Certificates::buildWithholding('2307', $client, $branch, $sup[$k], '2026-01-01', '2026-03-31'), array('signatory_id' => $sig, 'paper' => 'A4', 'branch_id' => $b0));
+        Certificates::issue(Certificates::buildWithholding('2307', $client, $branch, $sup[$k], '2026-01-01', '2026-03-31'), array('signatory_id' => $sig, 'paper' => 'LEGAL', 'branch_id' => $b0));
     }
     foreach (array('print', 'hardware', 'logistics', 'lessor') as $k) {
-        Certificates::issue(Certificates::buildWithholding('2307', $client, $branch, $sup[$k], '2026-04-01', '2026-06-30'), array('signatory_id' => $sig, 'paper' => 'A4', 'branch_id' => $b0));
+        Certificates::issue(Certificates::buildWithholding('2307', $client, $branch, $sup[$k], '2026-04-01', '2026-06-30'), array('signatory_id' => $sig, 'paper' => 'LEGAL', 'branch_id' => $b0));
     }
     foreach (DB::col('SELECT id FROM compensation_records WHERE client_id = ? ORDER BY id LIMIT 1, 20', array($c1)) as $compId) {
         Certificates::issue(Certificates::build2316($client, $branch, $compId), array('signatory_id' => $sig, 'paper' => 'FOLIO', 'branch_id' => $b0));
@@ -560,7 +560,7 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
     $br3 = DB::row('SELECT * FROM branches WHERE id = ?', array($b3));
     $sig3 = DB::val('SELECT id FROM signatories WHERE client_id = ?', array($c3));
     foreach (array('fert', 'truck', 'guard') as $k) {
-        Certificates::issue(Certificates::buildWithholding('2307', $client3, $br3, $bs[$k], '2026-04-01', '2026-06-30'), array('signatory_id' => $sig3, 'paper' => 'FOLIO', 'branch_id' => $b3));
+        Certificates::issue(Certificates::buildWithholding('2307', $client3, $br3, $bs[$k], '2026-04-01', '2026-06-30'), array('signatory_id' => $sig3, 'paper' => 'LEGAL', 'branch_id' => $b3));
     }
 
     // ------------------------------------------------------------------ Tala Bakeshop: a non-VAT individual whose customers withhold (SAWT)

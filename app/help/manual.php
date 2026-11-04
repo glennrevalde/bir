@@ -745,14 +745,23 @@ H
 <ol class="steps">
 <li>Choose the form, branch, year and quarter (2307, 2306) or year (2316), and click <b>Load</b>.</li>
 <li>Tick the payees or employees to issue for. Each row shows the income and tax that will print.</li>
-<li>Choose the <b>signatory</b> and <b>paper</b> size (A4, Letter or Folio). Form 2316 is an 8.5 x 13 in page, so Folio is chosen for it; on A4 or Letter it is scaled down to fit.</li>
+<li>Choose the <b>signatory</b> and <b>paper</b>. The paper the BIR module uses is chosen for you: legal (8.5 x 14 in) for Form 2307, long (8.5 x 13 in) for Forms 2316 and 2306. On smaller paper the form is scaled down to fit.</li>
 <li>Tick <b>Apply the signatory's approved signature image</b> if allowed. Use the offsets to move the image for your printer.</li>
 <li>Click <b>Issue selected</b>.</li>
 </ol>
 <p>Payees that already have a certificate for the period are skipped unless you tick <b>Issue even if a certificate already exists</b>.</p>
-<div class="mshots"><figure><img src="{img:cert2307}" alt="Form 2307"><figcaption>Form 2307 as printed.</figcaption></figure><figure><img src="{img:cert2316}" alt="Form 2316"><figcaption>Form 2316 as printed.</figcaption></figure></div>
-<div class="mnote">Certificates follow the current BIR revisions: 2307 and 2306 January 2018 (ENCS), and 2316 September 2021 (ENCS), with items 6B Local Home Address, 6D Foreign Address, 8 Telephone Number, 44A/44B and 51A/51B (others, specify), the CTC or valid ID of the employee, and items 53 and 54 for substituted filing. Check each form's revision on the BIR website before issuing.</div>
-<p>On the 2316, items 51 and 53 print the chosen signatory and items 52 and 54 the employee's name (first name first). Items 53 and 54 are filled only for employees under substituted filing. The dates signed and the CTC or ID details are left for signing.</p>
+<div class="mshots"><figure><img src="{img:cert2307}" alt="Form 2307"><figcaption>Form 2307 as printed, on legal paper.</figcaption></figure><figure><img src="{img:cert2316}" alt="Form 2316"><figcaption>Form 2316 as printed, on long paper.</figcaption></figure></div>
+<div class="mnote">Certificates print exactly as the BIR Alphalist Data Entry and Validation Module version 7.4 prints them: the same blank form (2307 and 2306 January 2018 (ENCS), 2316 September 2021 (ENCS)), the BIR seal, the same PDF417 barcode at the top right, and each value in the box the module writes it to.</div>
+<h3>What goes where</h3>
+<ul>
+<li><b>Period</b>: month, day and year each in its own box, as the module fills them.</li>
+<li><b>TIN</b>: the three groups of three digits and the four-digit branch code in their boxes.</li>
+<li><b>2307 and 2306 lines</b>: one line per ATC with the ATC's description, the amount for each month of the quarter, the total and the tax. The Total row shows a dash when it is zero, as on the module's form. A payee with more ATCs than the form has lines continues on a second copy of the form, with the totals on the last one.</li>
+<li><b>2307 and 2306 signatures</b>: the signatory, with title and TIN when they are on file, prints over the payor's signature line; the payee's name prints under CONFORME.</li>
+<li><b>2316 amounts</b>: items 19 to 52 print as the module computes them, 0.00 included. Other taxable compensation prints in item 44A. Item 5 shows the employer's RDO code, as the module prints it.</li>
+<li><b>2316 signatures</b>: items 51 and 53 print the chosen signatory, items 52 and 54 the employee's name (first name first). Items 53 and 54 are filled only for employees under substituted filing. The dates signed and the CTC or ID details are left for signing.</li>
+</ul>
+<p>The barcode is the same symbol the module prints. Read with a scanner, it gives <code>2307 01/18ENCS</code> on the 2307 and <code>2316 01/18ENCS</code> on the 2316 and on the 2306; the module uses those codes on its September 2021 2316 and on its 2306, and the system prints them unchanged so the forms match. The certificate number and the date it was printed appear in small grey type under the form.</p>
 H
 ),
 

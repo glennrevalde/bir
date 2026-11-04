@@ -51,7 +51,7 @@ if (is_post()) {
                 Records::save($mod, $d);
             }
             $payload = Certificates::buildWithholding('2307', $client, $branch, $cpId, $months[0] . '-01', last_day($months[2]));
-            return Certificates::issue($payload, array('signatory_id' => input_int('signatory_id') ?: null, 'paper' => input('paper', 'A4'), 'branch_id' => $branch['id']));
+            return Certificates::issue($payload, array('signatory_id' => input_int('signatory_id') ?: null, 'paper' => input('paper', Certificates::defaultPaper('2307')), 'branch_id' => $branch['id']));
         });
         flash('success', 'Saved ' . plural(count($toSave), 'withholding record') . ' and issued the certificate.');
         redirect(url('cert_view', array('id' => $certId)));
@@ -88,7 +88,7 @@ View::pageBar('Quick 2307 entry', View::clientContext('records first, then the c
       <div class="field"><label for="q">Quarter</label><?= View::select('q', array(1 => 'Q1', 2 => 'Q2', 3 => 'Q3', 4 => 'Q4'), $q, 'id="q"') ?></div>
       <div class="field"><label for="branch_id">Branch</label><?= View::select('branch_id', $branchOpts, input_int('branch_id', $ho ? (int)$ho['id'] : 0), 'id="branch_id"') ?></div>
       <div class="field"><label for="signatory_id">Signatory</label><?= View::select('signatory_id', $sig, key($sig), 'id="signatory_id"', 'None') ?></div>
-      <div class="field"><label for="paper">Paper</label><?= View::select('paper', array('A4' => 'A4', 'LETTER' => 'Letter', 'FOLIO' => 'Long / folio'), 'A4', 'id="paper"') ?></div>
+      <div class="field"><label for="paper">Paper</label><?= View::select('paper', Certificates::papers(), Certificates::defaultPaper('2307'), 'id="paper"') ?></div>
     </div></fieldset>
     <fieldset><legend>Payee</legend><div class="form-grid">
       <div class="field half"><label for="counterparty_id">Existing payee</label><?= View::select('counterparty_id', $po, input('counterparty_id'), 'id="counterparty_id"', 'New payee (fill in below)') ?></div>

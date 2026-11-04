@@ -949,22 +949,96 @@ $p2316 = Certificates::build2316(Ctx::client(), DB::row('SELECT * FROM branches 
 $cid2316 = Certificates::issue($p2316, array('paper' => 'FOLIO', 'branch_id' => $Cm['branch']));
 $c2316 = DB::row('SELECT * FROM certificates WHERE id = ?', array($cid2316));
 $tx = $pdfText(file_get_contents(storage_path($c2316['pdf_path'])));
-ok($c2316['template_revision'] === '2316 September 2021 (ENCS) replica', 'the certificate records the September 2021 revision');
-$need = array('(September 2021 \(ENCS\))', '(2316 09/21ENCS)', '(Local Home Address)', '(Foreign Address)', '(Telephone Number)', '(44A)', '(51B)', '(\(Specify\))',
+ok($c2316['template_revision'] === Certificates::REV_2316 && $c2316['template_revision'] === '2316 September 2021 (ENCS), BIR v7.4' && strlen(Certificates::REV_2316) <= 40,
+    'the certificate records the September 2021 revision as printed by the BIR module v7.4');
+$need = array('(September 2021 \(ENCS\))', '(2316 09/21 ENCS)', '(Local)', '(Home Address)', '(Foreign Address)', '(Telephone Number)', '(44A)', '(51B)', '(\(Specify\))',
     '(To be accomplished under substituted filing)', '(53)', '(54)', '(ERLINDA AMOLONG ABABAO)', '(ABABAO, ERLINDA AMOLONG)', '(296,250.00)', '(240,000.00)', '(769.23)', '(19,999.98)',
-    '(Amount Paid, if CTC)', '(5% Tax Credit \(PERA Act of 2008\))');
+    '(Amount Paid, if CTC)', '(5% Tax Credit \(PERA Act of 2008\))', '(X)');
 $missing = array();
 foreach ($need as $n) {
     if (strpos($tx, $n) === false) {
         $missing[] = $n;
     }
 }
-ok(!$missing, 'the PDF carries the items of the new form: 6B to 6E, 8, 44A/44B, 51A/51B, CTC, 53 and 54', implode(' ', $missing));
-ok(strpos($tx, 'January 2018') === false && strpos($tx, '01/18ENCS') === false, 'nothing of the January 2018 layout remains');
+ok(!$missing, 'the PDF carries the items of the new form: 6B to 6E, 8, 44A/44B, 51A/51B, CTC, 53 and 54, and the MWE mark', implode(' ', $missing));
+ok(strpos($tx, 'January 2018') === false && strpos($tx, '01/18ENCS') === false, 'nothing of the January 2018 layout remains in the text');
 $pdfA4 = new Pdf('A4');
 Certificates::render($pdfA4, json_decode($c2316['payload_json'], true), $c2316['template_revision']);
 $a4 = $pdfText($pdfA4->output('x'));
-ok(preg_match('/^q 0\.88[0-9]* 0 0 0\.88[0-9]* /m', $a4) === 1, 'on A4 the 8.5 x 13 form is scaled down to fit', substr($a4, 0, 80));
+$sc = min(1, (595.28 - 24) / (595.13 - 15.37), (841.89 - 24) / 913.38);
+ok(preg_match('/^q ' . preg_quote(rtrim(rtrim(sprintf('%.3F', $sc), '0'), '.'), '/') . ' 0 0 /m', $a4) === 1, 'on A4 the 8.5 x 13 form is scaled down to fit', substr($a4, 0, 80));
+
+section('BIR forms as printed by the BIR Alphalist module v7.4');
+// the PDF417 symbols were read from the module's own templates; zxing decodes them as below
+$expect = array('2316' => '2316 01/18ENCS', '2307' => '2307 01/18ENCS', '2306' => '2316 01/18ENCS');
+foreach ($expect as $code => $text) {
+    $s = Certificates::formSpec($code);
+    $b = $s['barcode'];
+    $rowsOk = count($b['rows']) === 6;
+    foreach ($b['rows'] as $r) {
+        // start pattern 81111113 and stop pattern 711311121, in modules
+        $rowsOk = $rowsOk && strlen($r) === 120 && strpos($r, '11111111010101000') === 0 && substr($r, -18) === '111111101000101001';
+    }
+    ok($b['text'] === $text && $rowsOk, 'Form ' . $code . ': the PDF417 barcode of the module (6 rows of 3 data columns, start and stop patterns intact)', $b['text']);
+    $bg = file_get_contents(APP_PATH . '/specs/forms/' . $s['bg']);
+    ok(strlen($bg) > 20000 && strpos($bg, 'BT /F') !== false && strpos($bg, '%IMG') === false && is_file(APP_PATH . '/specs/forms/bir_seal.png'), 'Form ' . $code . ': the blank form drawing and the BIR seal are there');
+}
+$s16 = $pdfText(file_get_contents(storage_path($c2316['pdf_path'])));
+ok(strpos($s16, 'Certificate of Compensation') !== false && strpos($s16, '/Im1 Do') !== false && preg_match('/q 0 g [\d. ]+ re\n/', $s16) === 1,
+    'a printed 2316 carries the form, the seal image and the barcode');
+// boxes: each value lands inside the box the module writes it to
+$boxCheck = function ($stream, $spec, $pageH, $name, $value) {
+    $f = $spec['fields'][$name];
+    preg_match_all('/([\d.]+) ([\d.]+) Td \(' . preg_quote($value, '/') . '\) Tj/', $stream, $mm, PREG_SET_ORDER);
+    foreach ($mm as $m) {
+        $x = (float)$m[1];
+        $top = $pageH - (float)$m[2];
+        if ($x >= $f[0] - 0.5 && $x <= $f[2] && $top >= $f[1] && $top <= $f[3] + 1) {
+            return true;
+        }
+    }
+    return false;
+};
+$sp16 = Certificates::formSpec('2316');
+$folio = $pdfText(file_get_contents(storage_path($c2316['pdf_path'])));
+ok($boxCheck($folio, $sp16, 936, 'Rectangle 131', 'ABABAO, ERLINDA AMOLONG') && $boxCheck($folio, $sp16, 936, 'Rectangle 557', '296,250.00')
+    && $boxCheck($folio, $sp16, 936, 'Text Box 810', 'ERLINDA AMOLONG ABABAO') && $boxCheck($folio, $sp16, 936, 'Rectangle 17', '2025'),
+    'on folio the 2316 keeps the module positions: name in item 4, gross in item 19, employee in item 52, year in item 1');
+$w7 = array('form' => '2307', 'period_from' => '2026-07-01', 'period_to' => '2026-09-30',
+    'payee' => array('tin' => '123456789', 'branch' => '0000', 'name' => 'Consingsay Corporation', 'address' => 'Mandaue City', 'zip' => '6014', 'foreign' => ''),
+    'payor' => array('tin' => '605188970', 'branch' => '0000', 'name' => 'A3 Facility Management', 'address' => 'North Road Tabok', 'zip' => '6014', 'rdo' => '083'),
+    'lines' => array(array('nature' => 'Rentals - real/personal properties', 'atc' => 'WC100', 'm' => array(0, 0, 1500000), 'total' => 1500000, 'tax' => 75000)),
+    'biz' => array(), 'total' => array('m' => array(0, 0, 1500000), 'total' => 1500000, 'tax' => 75000), 'biz_total' => array('m' => array(0, 0, 0), 'total' => 0, 'tax' => 0),
+    'cert_no' => '2307-2026-00001', 'revision' => 1, 'signatory' => array('name' => 'Jonah Lafuente', 'title' => '', 'tin' => ''), 'use_signature' => 0, 'signature_path' => null, 'offset_x' => 0, 'offset_y' => 0);
+$p7 = new Pdf(Certificates::defaultPaper('2307'));
+Certificates::render($p7, $w7, Certificates::REV_2307);
+$t7 = $pdfText($p7->output('x'));
+$sp7 = Certificates::formSpec('2307');
+ok(Certificates::defaultPaper('2307') === 'LEGAL' && Certificates::defaultPaper(2307) === 'LEGAL' && Certificates::defaultPaper('2316') === 'FOLIO' && Certificates::defaultPaper('2306') === 'FOLIO',
+    'the module paper: legal for 2307, long for 2316 and 2306');
+ok($boxCheck($t7, $sp7, 1008, 'Rectangle 138', '07') && $boxCheck($t7, $sp7, 1008, 'Rectangle 543', '01') && $boxCheck($t7, $sp7, 1008, 'Rectangle 19', '2026')
+    && $boxCheck($t7, $sp7, 1008, 'Rectangle 292', '09') && $boxCheck($t7, $sp7, 1008, 'Rectangle 541', '30'),
+    '2307 period in the module boxes: month, day and year separately');
+ok($boxCheck($t7, $sp7, 1008, 'Rectangle 27', '123') && $boxCheck($t7, $sp7, 1008, 'Rectangle 22', '0000') && $boxCheck($t7, $sp7, 1008, 'Rectangle 496', '605')
+    && $boxCheck($t7, $sp7, 1008, 'Rectangle 540', 'CONSINGSAY CORPORATION') && $boxCheck($t7, $sp7, 1008, 'Text Box 562', 'JONAH LAFUENTE')
+    && $boxCheck($t7, $sp7, 1008, 'Text Box 564', 'CONSINGSAY CORPORATION'), '2307 TINs, payee name, signatory and conforme in the module boxes');
+ok(strpos($t7, '(WC100)') !== false && strpos($t7, '(15,000.00)') !== false && strpos($t7, '(750.00)') !== false && preg_match('/\(-\) Tj/', $t7) === 1,
+    'the income line, its 3rd-month amount, and a dash for the empty Money Payments total as in the module');
+$many = $w7;
+$many['lines'] = array_fill(0, 15, $w7['lines'][0]);
+$pm = new Pdf('LEGAL');
+Certificates::render($pm, $many, Certificates::REV_2307);
+$tm = $pdfText($pm->output('x'));
+ok(substr_count($tm, 'Certificate of Creditable') === 2 && strpos($tm, '(Continued on the next page)') !== false, 'more lines than the form holds continue on a second copy of the form');
+$w6 = $w7;
+$w6['form'] = '2306';
+$p6 = new Pdf('FOLIO');
+Certificates::render($p6, $w6, Certificates::REV_2306);
+$t6 = $pdfText($p6->output('x'));
+$sp6 = Certificates::formSpec('2306');
+ok(strpos($t6, 'Certificate of Final Tax') !== false && $boxCheck($t6, $sp6, 936, 'Rectangle 15', 'CONSINGSAY CORPORATION') && $boxCheck($t6, $sp6, 936, 'Rectangle 74', '2026')
+    && $boxCheck($t6, $sp6, 936, 'TextBox 399', 'CONSINGSAY CORPORATION') && strpos($t6, 'Fill in all applicable') === false && strpos($t6, 'W I') === false,
+    '2306 fills the module boxes; the template leftovers the module hides are not printed');
 
 // =====================================================================
 section('Changing a sign-in email');
