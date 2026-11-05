@@ -9,8 +9,8 @@ Plain PHP, MySQL, HTML, CSS and JavaScript. No framework, no Composer, no build 
 | Area | Forms and outputs |
 |---|---|
 | VAT relief | Summary lists of sales (SLS), purchases (SLP) and importations (SLI) |
-| Withholding | 1601-EQ QAP, 1601-FQ QAP, 1600-VT and 1600-PT MAP, SAWT (generic and 1702-Q shape) |
-| Annual alphalists | 1604-C Schedules 1 and 2, 1604-E Schedules 3 and 4 (with QAP consolidation), 1604-F Schedules 4 to 6 |
+| Withholding | 1601-EQ QAP, 1601-FQ QAP, 1600-VT and 1600-PT MAP (as the BIR Alphalist module v7.4 writes them, each QAP month in one file), SAWT in the v7.4 layout for every attached return (1701Q, 1702Q, 2550M/Q, 2551Q and the others) |
+| Annual alphalists | 1604-C Schedules 1 and 2, 1604-E Schedules 3 and 4 (with QAP consolidation), 1604-F Schedules 4 to 6, each return in one file in the v7.4 format |
 | Other | Semestral List of Regular Suppliers (SRS) consolidation, reconciliation views |
 | Certificates | BIR Form 2307, 2306 and 2316 as PDF, single or batch, with void and reissue |
 | Operations | Excel and CSV import with column mapping, direct entry, spreadsheet-style grid entry, period locks, maker-checker approvals, hash-chained audit trail, encrypted backups, token API |
@@ -39,7 +39,7 @@ Every DAT is written by one serializer from a versioned layout registry, whether
 
 ### Updating an existing installation
 
-Copy the new files over the old ones (keep your `config.php` and storage folder). The database is brought up to date by itself the first time a page is opened: sales gain the VAT rate of the VAT sales workbook, purchases gain the R_Purchases columns, and taxes withheld on us gain the SAWT layout (the payment date becomes optional). If your MySQL user may not run `ALTER TABLE`, run the files in `database/migrations/` in name order in phpMyAdmin instead; `check.php` says when one is still needed. Nothing has to be deleted.
+Copy the new files over the old ones (keep your `config.php` and storage folder). The database is brought up to date by itself the first time a page is opened: sales gain the VAT rate of the VAT sales workbook, purchases gain the R_Purchases columns, and taxes withheld on us gain the SAWT layout (the payment date becomes optional). The SAWT layout of the BIR Alphalist module v7.4 replaces the two earlier SAWT layouts, and the VAT (WV), percentage tax (WB) and final tax (WF type) withholding codes of the module are added for review. The QAP, MAP, 1604-E and 1604-F layouts are replaced by the ones the v7.4 module writes, and the 1604-E Schedule 3 now reads the QAP Schedule 1 lines (Schedule 4 the exempt payees). If your MySQL user may not run `ALTER TABLE`, run the files in `database/migrations/` in name order in phpMyAdmin instead; `check.php` says when one is still needed. Nothing has to be deleted.
 
 From the command line you can install instead of importing SQL:
 
@@ -70,12 +70,12 @@ What the demo contains (all names and TINs invented, except the public validator
 
 | Client | What is in it |
 |---|---|
-| Kalamansi Trading Corp, 111-222-333 (Cebu, two branches, top withholding agent) | Sales, purchases and withholding for January to September 2026, October purchases imported from an R_Purchases workbook, September taxes withheld by customers imported from a SAWT printout (with its 1702Q SAWT for Q3), one importation, 8 employees with TY2025 compensation, QAP files for each month, SLS/SLP/SLI files, a 1604-C, 2307 and 2316 certificates, a corrected sale with its revision, a voided duplicate purchase, and January to March locked by the reviewer |
+| Kalamansi Trading Corp, 111-222-333 (Cebu, two branches, top withholding agent) | Sales, purchases and withholding for January to September 2026, October purchases imported from an R_Purchases workbook, September taxes withheld by customers imported from the 1702Q and 2550Q SAWT printouts (with the 1702Q and 2550Q SAWT files for Q3), one importation, 8 employees with TY2025 compensation, QAP files for each month, SLS/SLP/SLI files, a 1604-C, 2307 and 2316 certificates, a corrected sale with its revision, a voided duplicate purchase, and January to March locked by the reviewer |
 | Banwa Agri-Ventures Inc, 333-444-555 (Iloilo and Bacolod) | January to June sales loaded through a committed Excel import in the VAT sales format (gross taxable amounts) with a saved column mapping, July to September encoded directly, purchases and withholding all year, QAP and SLS/SLP files, 2307s |
 | Juan Dela Cruz, 222-333-444 | Taxes withheld by his clients and a SAWT |
 | Tala Bakeshop (Clarissa Mendoza), 444-555-666 | Non-VAT; taxes withheld by three customers and SAWT files for Q1 to Q3 |
 | Validator Sample Employer, 684-785-510 | The public 1604-C sample from the test fixtures. Its file reproduces the validator-passed bytes, the genuine validator report is recorded and accepted, and approval of the file and of the 1604-C layout wait in the approvals queue for reviewer@demo.local |
-| Puerto Digital Solutions Inc, 555-666-777 (second tenant, Makati) | 10 employees with TY2025 compensation and 2316s, a 1604-C, 2025 and 2026 withholding with a 1604-E Schedule 4, July to September QAP and SLS/SLP files |
+| Puerto Digital Solutions Inc, 555-666-777 (second tenant, Makati) | 10 employees with TY2025 compensation and 2316s, a 1604-C, 2025 and 2026 withholding with a 1604-E, July to September QAP and SLS/SLP files |
 
 Every other demo file stays at "pending BIR validation" because no real validator report exists for it. Filing records are left empty for the same reason. The RDO list comes pre-loaded in both SQL files.
 

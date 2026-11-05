@@ -72,8 +72,8 @@ View::pageBar('Generate a file', View::clientContext('from saved records'), '<a 
   <div class="sheet-body"><div class="form-grid">
     <div class="field half"><label for="form">Form</label><?= View::select('form', $formOpts, $form, 'id="form" onchange="this.form.preview.value=\'\';this.form.submit()"') ?><span class="hint"><?= e($f['description']) ?></span></div>
     <?php if (count($schedCodes) === 1 && Specs::isCombined($form, $schedule)) { ?>
-      <div class="field half"><label for="schedule_shown">Schedule</label><input type="hidden" name="schedule" value="<?= e($schedule) ?>"><input id="schedule_shown" type="text" value="Schedules 1 and 2 in one file" readonly>
-        <span class="hint">The BIR system keeps Schedule 1 and Schedule 2 (minimum wage earners) in one 1604-C file, so both are written together.</span></div>
+      <div class="field half"><label for="schedule_shown">Schedule</label><input type="hidden" name="schedule" value="<?= e($schedule) ?>"><input id="schedule_shown" type="text" value="<?= e(Specs::scheduleLabel($schedule)) ?> in one file" readonly>
+        <span class="hint"><?= e(Specs::combinedNote($form)) ?> A schedule without records is left out.</span></div>
     <?php } else { ?>
       <div class="field half"><label for="schedule">Schedule</label><?= View::select('schedule', $schedCodes, $schedule, 'id="schedule"') ?></div>
     <?php } ?>

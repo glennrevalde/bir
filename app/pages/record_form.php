@@ -126,7 +126,7 @@ $atcOn = isset($values['payment_date']) && $values['payment_date'] ? Records::pa
 if (!$atcOn && $key === 'withheld_on_us' && !empty($values['period_month']) && Records::parseMonth($values['period_month'])) {
     $atcOn = last_day(Records::parseMonth($values['period_month']));
 }
-$atcs = $mod['table'] === 'withholding_entries' ? Records::atcOptions($key === 'withheld_on_us' ? 'EWT' : null, $atcOn) : array();
+$atcs = $mod['table'] === 'withholding_entries' ? Records::atcOptions($key === 'withheld_on_us' ? $mod['kinds'] : null, $atcOn) : array();
 if ($key === 'withheld_on_us') {
     // Only the codes that fit this client as the payee: corporate codes for a non-individual, individual ones for a person.
     $fit = $client['taxpayer_type'] === 'individual' ? 'individual' : 'corporate';

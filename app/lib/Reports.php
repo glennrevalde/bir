@@ -53,13 +53,13 @@ class Reports
                 'from' => $from, 'to' => $to, 'vars' => $vars));
             $sourceMode = 'database';
         }
-        // A combined schedule (1604-C Schedules 1 and 2) is written with the layouts of the schedules that have rows.
+        // A combined schedule (1604-C Schedules 1 and 2, the QAP and annual schedules of one return) is written with the layouts of the schedules that have rows.
         $spec = Specs::resolveFor($in['form'], $in['schedule'], $sawt, $from, $to, $ds['rows']);
         if (!empty($spec['composite'])) {
             $vars['parts'] = array_map(function ($p) { return $p['id']; }, $spec['parts']);
         }
         $period = array('from' => $from, 'to' => $to, 'label' => $label);
-        $dq = Checks::dataQuality($in['form'], $in['schedule'], $client, $agent, $ds['rows'], $spec, $period);
+        $dq = Checks::dataQuality($in['form'], $in['schedule'], $client, $agent, $ds['rows'], $spec, $period, $vars);
         $preview = $spec ? DatWriter::make($spec, array('agent' => $agent, 'period' => $period, 'rows' => $ds['rows'], 'vars' => $vars)) : null;
         if ($preview) {
             foreach ($preview['issues'] as $i) {
@@ -158,7 +158,7 @@ class Reports
         $variant = isset($ctx['vars']['sawt_form']) ? $ctx['vars']['sawt_form'] : null;
         // A combined file also replaces the separate Schedule 1 and Schedule 2 files made for the same period before.
         $codes = Specs::isCombined($ctx['sched']['form_code'], $ctx['sched']['schedule_code'])
-            ? array_merge(array(Specs::COMBINED_CODE), Specs::combinedParts($ctx['sched']['form_code'])) : array($ctx['sched']['schedule_code']);
+            ? array_merge(array(Specs::combinedCode($ctx['sched']['form_code'])), Specs::combinedParts($ctx['sched']['form_code'])) : array($ctx['sched']['schedule_code']);
         $prev = DB::all('SELECT id, status FROM dat_files WHERE client_id = ? AND form_code = ? AND schedule_code IN (' . DB::in($codes) . ') AND period_from = ? AND period_to = ?
             AND COALESCE(branch_id, 0) = ? AND COALESCE(variant_key, \'\') = ? AND superseded_by IS NULL AND origin = ? AND status <> ? ORDER BY id DESC',
             array_merge(array($client['id'], $ctx['sched']['form_code']), $codes, array($ctx['period']['from'], $ctx['period']['to'], (int)$branchId, (string)$variant, 'generated', 'superseded')));
@@ -258,7 +258,7 @@ class Reports
         $branch = $run['branch_id'] ? DB::row('SELECT * FROM branches WHERE id = ?', array($run['branch_id'])) : null;
         $ctx = array('client' => Ctx::client(), 'branch' => $branch, 'sched' => $sched, 'spec' => $spec, 'agent' => $snap['agent'], 'period' => $snap['period'],
             'vars' => $snap['vars'], 'dataset' => array('rows' => $snap['rows']), 'amended' => (int)$run['amended'], 'in' => $snap['in'], 'source_mode' => $run['source_mode']);
-        $ctx['dq'] = Checks::dataQuality($run['form_code'], $run['schedule_code'], $ctx['client'], $ctx['agent'], $snap['rows'], $spec, $snap['period']);
+        $ctx['dq'] = Checks::dataQuality($run['form_code'], $run['schedule_code'], $ctx['client'], $ctx['agent'], $snap['rows'], $spec, $snap['period'], $snap['vars']);
         $w = DatWriter::make($spec, array('agent' => $snap['agent'], 'period' => $snap['period'], 'rows' => $snap['rows'], 'vars' => $snap['vars']));
         foreach ($w['issues'] as $i) {
             $ctx['dq'][] = $i;

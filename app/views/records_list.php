@@ -89,9 +89,11 @@ if (input('export') === 'sawt' && $moduleKey === 'withheld_on_us') {
         flash('info', 'Choose a month first, then export it in the SAWT layout.');
         redirect(url($moduleKey, array_intersect_key($f, array_flip(array('branch', 'q', 'status')))));
     }
-    $lines = Imports::sawtLines($cid, $f['branch'] ?: null, $f['month']);
-    Audit::log('record.export', $t, null, 'Exported ' . count($lines) . ' SAWT lines for ' . $f['month']);
-    send_bytes(Imports::sawtWorkbook($client, null, $f['month'], $lines, false), 'SAWT-' . $client['tin'] . '-' . str_replace('-', '', $f['month']) . '.xlsx',
+    // 1702Q: income tax withheld on the client (EWT). 2550Q: VAT withheld on it (GVAT), with the form 2550Q in the title.
+    $sv = input('v') === '2550Q' ? '2550Q' : '1702Q';
+    $lines = Imports::sawtLines($cid, $f['branch'] ?: null, $f['month'], null, $sv === '2550Q' ? array('GVAT') : array('EWT'));
+    Audit::log('record.export', $t, null, 'Exported ' . count($lines) . ' ' . $sv . ' SAWT lines for ' . $f['month']);
+    send_bytes(Imports::sawtWorkbook($client, $sv === '2550Q' ? '2550Q' : null, $f['month'], $lines, false, $sv), 'SAWT-' . $sv . '-' . $client['tin'] . '-' . str_replace('-', '', $f['month']) . '.xlsx',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 if (input('export') === 'csv') {
@@ -202,7 +204,9 @@ if (Ctx::can('records.edit')) {
 }
 $actions .= '<a class="btn" href="' . e(url($moduleKey, array_merge($f, array('export' => 'csv')))) . '">' . View::icon('download') . 'CSV</a>';
 if ($moduleKey === 'withheld_on_us') {
-    $actions .= '<a class="btn" href="' . e(url($moduleKey, array_merge($f, array('export' => 'sawt')))) . '"' . ($f['month'] === '' ? ' title="Choose a month in the filters first"' : '') . '>' . View::icon('sheet') . 'SAWT layout</a>';
+    foreach (array('1702Q', '2550Q') as $sv) {
+        $actions .= '<a class="btn" href="' . e(url($moduleKey, array_merge($f, array('export' => 'sawt', 'v' => $sv)))) . '"' . ($f['month'] === '' ? ' title="Choose a month in the filters first"' : '') . '>' . View::icon('sheet') . 'SAWT ' . $sv . '</a>';
+    }
 }
 View::header($mod['title'], array('page' => $moduleKey));
 View::pageBar($mod['title'], View::clientContext(e($mod['help'])), $actions);

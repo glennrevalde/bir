@@ -153,6 +153,56 @@ class Specs
         return $n;
     }
 
+    /**
+     * Migration 6: the SAWT layout of the BIR Alphalist module v7.4 replaces the earlier generic layout and
+     * its 1702Q variant, which came from secondary sources. Files already generated keep their own layout.
+     */
+    public static function updateSawtLayouts()
+    {
+        require_once APP_PATH . '/specs/layouts.php';
+        $n = 0;
+        foreach (gsb_layouts() as $L) {
+            if ($L['form_code'] !== 'SAWT') {
+                continue;
+            }
+            $id = DB::val('SELECT id FROM layout_specs WHERE form_code = ? AND schedule_code = ? AND version_label = ?', array('SAWT', 'S1', $L['version_label']));
+            if (!$id) {
+                $id = self::insertLayout($L, null);
+                $n++;
+            }
+            $n += DB::q("UPDATE layout_specs SET status = 'retired', updated_at = ? WHERE form_code = 'SAWT' AND id <> ? AND status <> 'retired'
+                AND version_label IN ('Alphalist v7.x SAWT', 'Alphalist v7.x SAWT (1702Q shape)')", array(now(), $id))->rowCount();
+        }
+        self::forget();
+        return $n;
+    }
+
+    /**
+     * QAP, MAP, 1604-E and 1604-F in the format of the BIR Alphalist module v7.4: adds the module's layouts
+     * and retires the earlier secondary-source and analog layouts they replace. Files already generated
+     * keep their own layout. Layouts a user cloned or edited are left as they are.
+     */
+    public static function updateV74WithholdingLayouts()
+    {
+        require_once APP_PATH . '/specs/layouts.php';
+        $forms = array('1601EQ', '1601FQ', '1600VT', '1600PT', '1604E', '1604F');
+        $n = 0;
+        foreach (gsb_layouts() as $L) {
+            if (!in_array($L['form_code'], $forms, true)) {
+                continue;
+            }
+            $id = DB::val('SELECT id FROM layout_specs WHERE form_code = ? AND schedule_code = ? AND version_label = ?', array($L['form_code'], $L['schedule_code'], $L['version_label']));
+            if (!$id) {
+                $id = self::insertLayout($L, null);
+                $n++;
+            }
+            $n += DB::q("UPDATE layout_specs SET status = 'retired', updated_at = ? WHERE form_code = ? AND schedule_code = ? AND id <> ? AND status <> 'retired'
+                AND version_label IN ('Alphalist v7.x QAP', 'Alphalist v7.x MAP', 'Analog draft (unsourced)')", array(now(), $L['form_code'], $L['schedule_code'], $id))->rowCount();
+        }
+        self::forget();
+        return $n;
+    }
+
     /** Copy a layout into a new draft version for editing. */
     public static function cloneAsDraft($id, $label)
     {
@@ -180,19 +230,46 @@ class Specs
 
     /**
      * Forms whose schedules the BIR system keeps in one file. Their files are generated with the combined
-     * schedule code, holding each schedule's detail lines followed by that schedule's control line.
+     * schedule code, holding each schedule's detail lines followed by that schedule's control line. The
+     * BIR Alphalist module v7.4 writes the 1601-EQ, 1601-FQ, 1604-C, 1604-E and 1604-F this way.
      */
     const COMBINED_CODE = 'S1+S2';
 
+    /** form => array(combined code, schedules, label, note shown on the Generate page) */
+    public static function combinedForms()
+    {
+        return array(
+            '1604C' => array('S1+S2', array('S1', 'S2'), 'Schedules 1 and 2', 'The BIR system keeps Schedule 1 and Schedule 2 (minimum wage earners) in one 1604-C file, so both are written together.'),
+            '1601EQ' => array('S1+S2', array('S1', 'S2'), 'Schedules 1 and 2', 'The BIR module writes the month\'s Schedule 1 (expanded withholding) and Schedule 2 (payees exempt from withholding) in one 1601-EQ file.'),
+            '1601FQ' => array('S1-3', array('S1', 'S2', 'S3'), 'Schedules 1 to 3', 'The BIR module writes the month\'s Schedule 1 (final withholding), Schedule 2 (fringe benefits) and Schedule 3 (exempt payees) in one 1601-FQ file.'),
+            '1604E' => array('S3+S4', array('S3', 'S4'), 'Schedules 3 and 4', 'The BIR module writes Schedule 3 (expanded withholding) and Schedule 4 (payees exempt from withholding) in one 1604-E file.'),
+            '1604F' => array('S4-6', array('S4', 'S5', 'S6'), 'Schedules 4 to 6', 'The BIR module writes Schedule 4 (final withholding), Schedule 5 (fringe benefits) and Schedule 6 (exempt payees) in one 1604-F file.'),
+        );
+    }
+
     public static function combinedParts($form)
     {
-        $m = array('1604C' => array('S1', 'S2'));
-        return isset($m[$form]) ? $m[$form] : null;
+        $m = self::combinedForms();
+        return isset($m[$form]) ? $m[$form][1] : null;
+    }
+
+    /** The schedule code of a form's combined file (S1+S2, S1-3, S3+S4 or S4-6), or null. */
+    public static function combinedCode($form)
+    {
+        $m = self::combinedForms();
+        return isset($m[$form]) ? $m[$form][0] : null;
+    }
+
+    public static function combinedNote($form)
+    {
+        $m = self::combinedForms();
+        return isset($m[$form]) ? $m[$form][3] : '';
     }
 
     public static function isCombined($form, $schedule)
     {
-        return $schedule === self::COMBINED_CODE && self::combinedParts($form) !== null;
+        $code = self::combinedCode($form);
+        return $code !== null && $schedule === $code;
     }
 
     /**
@@ -323,10 +400,15 @@ class Specs
         return self::load((int)$key);
     }
 
-    /** "1604C S1+S2" reads as "1604C Schedules 1 and 2". */
+    /** "1604C S1+S2" reads as "1604C Schedules 1 and 2", "1601FQ S1-3" as "1601FQ Schedules 1 to 3". */
     public static function scheduleLabel($schedule)
     {
-        return $schedule === self::COMBINED_CODE ? 'Schedules 1 and 2' : (string)$schedule;
+        foreach (self::combinedForms() as $c) {
+            if ($schedule === $c[0]) {
+                return $c[2];
+            }
+        }
+        return (string)$schedule;
     }
 
     /**

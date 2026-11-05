@@ -37,25 +37,184 @@ function gsb_f($key, $label, $src, $type = 'text', $max = null, $req = 0, $quote
         'confidence' => $conf, 'notes' => $notes);
 }
 
-/** Withholding-style detail used by QAP / MAP style records (HQAP shape). */
-function gsb_qap_detail($recCode, $formLit, $conf, $rateNote)
+/**
+ * QAP (1601-EQ, 1601-FQ), MAP (1600-VT, 1600-PT), 1604-E and 1604-F as the BIR Alphalist Data Entry and
+ * Validation module v7.4 writes them (genfile of the forms mn1601e, mn1601f, mn1600, mn1600pt, mn1604e and
+ * mn1604f) and checks them (val1601e, val1601f, val1600, val1604e, val1604cf). One layout per schedule; the
+ * schedules of one return are written into one file (Specs::combinedForms), header once, then each
+ * schedule's detail lines followed by its control line.
+ *
+ * Common rules of the module: amounts and the rate with two decimals, never quoted; the rate is a percent
+ * (tax = income x rate / 100); a name is quoted only when it has one, the withholding agent's name in the
+ * QAP and MAP header always; branch codes are four digits; every line ends with CR LF.
+ */
+function gsb_v74_withholding_layouts()
 {
-    return array(
-        gsb_f('rec_type', 'Alphalist type code', 'lit:' . $recCode, 'raw', 2, 1, 'never', null, $conf),
-        gsb_f('form_type', 'Form type code', 'lit:' . $formLit, 'raw', 7, 1, 'never', null, $conf),
-        gsb_f('seq_no', 'Sequence number', 'seq', 'int', 8, 1, 'never', null, $conf),
-        gsb_f('payee_tin', 'Payee TIN', 'row.tin', 'digits', 9, 1, 'never', null, $conf),
-        gsb_f('payee_branch', 'Payee branch code', 'row.branch', 'digits', 4, 1, 'never', null, $conf),
-        gsb_f('registered_name', 'Registered name (non-individual)', 'row.registered_name', 'text', 50, 0, 'nonempty', 'name', $conf),
-        gsb_f('last_name', 'Last name (individual)', 'row.last_name', 'text', 30, 0, 'nonempty', 'name', $conf),
-        gsb_f('first_name', 'First name (individual)', 'row.first_name', 'text', 30, 0, 'nonempty', 'name', $conf),
-        gsb_f('middle_name', 'Middle name (individual)', 'row.middle_name', 'text', 30, 0, 'nonempty', 'name', $conf),
-        gsb_f('return_period', 'Return period', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, $conf),
-        gsb_f('atc', 'ATC', 'row.atc', 'code', 5, 1, 'never', null, $conf),
-        gsb_f('tax_rate', 'Tax rate', 'row.rate', 'rate', 6, 1, 'never', 'pct2', 'low', $rateNote),
-        gsb_f('income_payment', 'Amount of income payment', 'row.income', 'amount', 15, 1, 'never', '2dp', $conf),
-        gsb_f('tax_withheld', 'Amount of tax withheld', 'row.tax', 'amount', 15, 1, 'never', '2dp', $conf),
-    );
+    $c = 'official';
+    $src = function ($menu, $val) {
+        return 'BIR Alphalist Data Entry and Validation Module v7.4: the file writer of the data entry program (' . $menu . ', genfile) and the checks of the validation program ('
+            . $val . '). Records, field order and formats as the module writes them.';
+    };
+    $name4 = function ($q = 'nonempty', $reg = true) use ($c) {
+        $f = array();
+        if ($reg) {
+            $f[] = gsb_f('registered_name', 'Registered name (non-individual)', 'row.registered_name', 'text', 50, 0, $q, 'name', $c);
+        }
+        $f[] = gsb_f('last_name', 'Last name (individual)', 'row.last_name', 'text', 30, 0, $q, 'name', $c);
+        $f[] = gsb_f('first_name', 'First name (individual)', 'row.first_name', 'text', 30, 0, $q, 'name', $c);
+        $f[] = gsb_f('middle_name', 'Middle name (individual)', 'row.middle_name', 'text', 30, 0, $q, 'name', $c);
+        return $f;
+    };
+    $payee = function () use ($c) {
+        return array(
+            gsb_f('payee_tin', 'Payee TIN', 'row.tin', 'digits', 9, 0, 'never', null, $c),
+            gsb_f('payee_branch', 'Payee branch code (0000 when blank)', 'row.branch', 'digits', 4, 0, 'never', null, $c),
+        );
+    };
+    $amt = function ($key, $label, $src) use ($c) {
+        return gsb_f($key, $label, $src, 'amount', 15, 1, 'never', '2dp', $c);
+    };
+    $tot = function ($key, $label, $src) use ($c) {
+        return gsb_f($key, $label, $src, 'amount', 17, 1, 'never', '2dp', $c);
+    };
+    $rate = gsb_f('tax_rate', 'Tax rate (percent)', 'row.rate', 'rate', 6, 1, 'never', 'pct2', $c);
+    $atc = gsb_f('atc', 'ATC', 'row.atc', 'code', 5, 1, 'never', null, $c);
+    $status = gsb_f('status_code', 'Payee status code (A to H)', 'row.status_code', 'code', 1, 1, 'never', null, $c,
+        'A citizen, B resident alien, C non-resident alien engaged in business, D non-resident alien not engaged in business, E domestic corporation, F resident foreign corporation, G non-resident foreign corporation, H others. Taken from the payee: an individual is A and a corporation E, or D and G when the payee has a foreign address.');
+    $seq = gsb_f('seq_no', 'Sequence number', 'seq', 'int', 8, 1, 'never', null, $c);
+    $L = array();
+    $base = function ($form, $sched, $pattern, $menu, $val, $notes, $records) use ($src) {
+        return array(
+            'form_code' => $form, 'schedule_code' => $sched, 'variant_key' => null, 'version_label' => 'Alphalist v7.4 (BIR data entry module)',
+            'validator_version' => '7.4', 'effective_from' => '2018-01-01', 'status' => 'pending_verification', 'confidence' => 'official',
+            'filename_pattern' => $pattern, 'delimiter' => ',', 'line_ending' => 'CRLF', 'trailing_newline' => 1,
+            'encoding' => 'Windows-1252', 'column_header_row' => 0, 'source_ref' => $src($menu, $val), 'notes' => $notes, 'records' => $records,
+        );
+    };
+
+    // ---------------------------------------------------------------- QAP header (1601-EQ and 1601-FQ) and MAP header
+    $qapHead = function ($alpha, $form) use ($c) {
+        return array('record_code' => $alpha, 'role' => 'header', 'label' => 'Header', 'fields' => array(
+            gsb_f('alpha_type', 'Alphalist type code', 'lit:' . $alpha, 'raw', 4, 1, 'never', null, $c),
+            gsb_f('form_type', 'Form type code', 'lit:H' . $form, 'raw', 7, 1, 'never', null, $c),
+            gsb_f('tin_wa', 'TIN of withholding agent', 'agent.tin', 'digits', 9, 1, 'never', null, $c),
+            gsb_f('branch_wa', 'Branch code of withholding agent', 'agent.branch', 'digits', 4, 1, 'never', null, $c),
+            gsb_f('registered_name', 'Withholding agent name', 'agent.display_name', 'text', 50, 1, 'always', 'name', $c),
+            gsb_f('return_period', 'Return period (MM/YYYY)', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, $c),
+            gsb_f('rdo', 'RDO code of withholding agent', 'agent.rdo', 'digits', 3, 1, 'never', null, $c),
+        ));
+    };
+    $qapControl = function ($code, $form, $totals) use ($c) {
+        return array('record_code' => $code, 'role' => 'control', 'label' => 'Control totals', 'fields' => array_merge(array(
+            gsb_f('rec_type', 'Control code', 'lit:' . $code, 'raw', 4, 1, 'never', null, $c),
+            gsb_f('form_type', 'Form type code', 'lit:' . $form, 'raw', 7, 1, 'never', null, $c),
+            gsb_f('tin_wa', 'TIN of withholding agent', 'agent.tin', 'digits', 9, 1, 'never', null, $c),
+            gsb_f('branch_wa', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, $c),
+            gsb_f('return_period', 'Return period (MM/YYYY)', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, $c),
+        ), $totals));
+    };
+    $period = gsb_f('return_period', 'Return period (MM/YYYY)', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, $c);
+
+    // ---------------------------------------------------------------- 1601-EQ
+    $eq = '{TIN}{BRANCH}{MM}{YYYY}1601EQ.DAT';
+    $L[] = $base('1601EQ', 'S1', $eq, 'mn1601e', 'val1601e', 'One file per month of the quarter, holding Schedule 1 and Schedule 2. The validator rejects a line whose income or tax withheld is zero.', array(
+        $qapHead('HQAP', '1601EQ'),
+        array('record_code' => 'D1', 'role' => 'detail', 'label' => 'Schedule 1: payees subject to expanded withholding tax', 'fields' => array_merge(array(
+            gsb_f('rec_type', 'Schedule code', 'lit:D1', 'raw', 2, 1, 'never', null, $c), gsb_f('form_type', 'Form type code', 'lit:1601EQ', 'raw', 6, 1, 'never', null, $c), $seq),
+            $payee(), $name4(), array($period, $atc, $rate, $amt('income_payment', 'Amount of income payment', 'row.income'), $amt('tax_withheld', 'Amount of tax withheld', 'row.tax')))),
+        $qapControl('C1', '1601EQ', array($tot('total_income', 'Total income payment', 'sum.income'), $tot('total_tax', 'Total tax withheld', 'sum.tax'))),
+    ));
+    $L[] = $base('1601EQ', 'S2', $eq, 'mn1601e', 'val1601e', 'Payees whose income is exempt from withholding: income only, no rate and no tax.', array(
+        $qapHead('HQAP', '1601EQ'),
+        array('record_code' => 'D2', 'role' => 'detail', 'label' => 'Schedule 2: payees exempt from withholding tax', 'fields' => array_merge(array(
+            gsb_f('rec_type', 'Schedule code', 'lit:D2', 'raw', 2, 1, 'never', null, $c), gsb_f('form_type', 'Form type code', 'lit:1601EQ', 'raw', 6, 1, 'never', null, $c), $seq),
+            $payee(), $name4(), array($period, $atc, $amt('income_payment', 'Amount of income payment', 'row.income')))),
+        $qapControl('C2', '1601EQ', array($tot('total_income', 'Total income payment', 'sum.income'))),
+    ));
+
+    // ---------------------------------------------------------------- 1601-FQ: the sequence number follows the period
+    $fq = '{TIN}{BRANCH}{MM}{YYYY}1601FQ.DAT';
+    $fqHead = function ($code) use ($c) {
+        return array(gsb_f('rec_type', 'Schedule code', 'lit:' . $code, 'raw', 2, 1, 'never', null, $c), gsb_f('form_type', 'Form type code', 'lit:1601FQ', 'raw', 6, 1, 'never', null, $c));
+    };
+    $L[] = $base('1601FQ', 'S1', $fq, 'mn1601f', 'val1601f', 'One file per month of the quarter, holding Schedules 1 to 3. The sequence number comes after the return period.', array(
+        $qapHead('HQAP', '1601FQ'),
+        array('record_code' => 'D1', 'role' => 'detail', 'label' => 'Schedule 1: payees subject to final withholding tax', 'fields' => array_merge($fqHead('D1'), $payee(), $name4(),
+            array($period, $seq, $atc, $rate, $amt('income_payment', 'Amount of income payment', 'row.income'), $amt('tax_withheld', 'Amount of tax withheld', 'row.tax')))),
+        $qapControl('C1', '1601FQ', array($tot('total_income', 'Total income payment', 'sum.income'), $tot('total_tax', 'Total tax withheld', 'sum.tax'))),
+    ));
+    $L[] = $base('1601FQ', 'S2', $fq, 'mn1601f', 'val1601f', 'Fringe benefits: the income payment of a line is the grossed-up monetary value; the fringe benefit is that value less the tax.', array(
+        $qapHead('HQAP', '1601FQ'),
+        array('record_code' => 'D2', 'role' => 'detail', 'label' => 'Schedule 2: fringe benefits', 'fields' => array_merge($fqHead('D2'), $payee(), $name4('nonempty', false),
+            array($period, $seq, $atc, $amt('fringe_benefit', 'Amount of fringe benefit', 'row.fringe'), $amt('monetary_value', 'Grossed-up monetary value', 'row.monetary'),
+                $amt('tax_withheld', 'Amount of tax withheld', 'row.tax')))),
+        $qapControl('C2', '1601FQ', array($tot('total_fringe', 'Total fringe benefit', 'sum.fringe'), $tot('total_monetary', 'Total grossed-up monetary value', 'sum.monetary'),
+            $tot('total_tax', 'Total tax withheld', 'sum.tax'))),
+    ));
+    $L[] = $base('1601FQ', 'S3', $fq, 'mn1601f', 'val1601f', 'Payees exempt from final withholding: status code and income only. The v7.4 validator itself reports "Status Code is Invalid" on a Schedule 3 line numbered 10 or more.', array(
+        $qapHead('HQAP', '1601FQ'),
+        array('record_code' => 'D3', 'role' => 'detail', 'label' => 'Schedule 3: payees exempt from final withholding tax', 'fields' => array_merge($fqHead('D3'), $payee(), $name4(),
+            array($period, $seq, $status, $atc, $amt('income_payment', 'Amount of income payment', 'row.income')))),
+        $qapControl('C3', '1601FQ', array($tot('total_income', 'Total income payment', 'sum.income'))),
+    ));
+
+    // ---------------------------------------------------------------- MAP 1600-VT and 1600-PT
+    foreach (array('1600VT' => 'mn1600', '1600PT' => 'mn1600pt') as $mf => $menu) {
+        $L[] = $base($mf, 'S1', '{TIN}{BRANCH}{MM}{YYYY}' . $mf . '.DAT', $menu, 'val1600', 'Monthly. The detail line leaves the nature of income, after the ATC, empty.', array(
+            $qapHead('HMAP', $mf),
+            array('record_code' => 'DMAP', 'role' => 'detail', 'label' => 'Detail (payee and ATC)', 'fields' => array_merge(array(
+                gsb_f('alpha_type', 'Alphalist type code', 'lit:DMAP', 'raw', 4, 1, 'never', null, $c), gsb_f('form_type', 'Form type code', 'lit:D' . $mf, 'raw', 7, 1, 'never', null, $c), $seq),
+                $payee(), $name4(), array($period, $atc, gsb_f('reserved', 'Nature of income (left empty by the BIR module)', 'blank', 'raw', null, 0, 'never', null, $c), $rate,
+                    $amt('income_payment', 'Amount of income payment', 'row.income'), $amt('tax_withheld', 'Amount of tax withheld', 'row.tax')))),
+            array('record_code' => 'CMAP', 'role' => 'control', 'label' => 'Control totals', 'fields' => array(
+                gsb_f('alpha_type', 'Alphalist type code', 'lit:CMAP', 'raw', 4, 1, 'never', null, $c),
+                gsb_f('form_type', 'Form type code', 'lit:C' . $mf, 'raw', 7, 1, 'never', null, $c),
+                gsb_f('tin_wa', 'TIN of withholding agent', 'agent.tin', 'digits', 9, 1, 'never', null, $c),
+                gsb_f('branch_wa', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, $c),
+                $period, $tot('total_income', 'Total income payment', 'sum.income'), $tot('total_tax', 'Total tax withheld', 'sum.tax'))),
+        ));
+    }
+
+    // ---------------------------------------------------------------- 1604-E and 1604-F (annual)
+    $annualHead = function ($form) use ($c) {
+        return array('record_code' => 'H' . $form, 'role' => 'header', 'label' => 'Header', 'fields' => array(
+            gsb_f('form_type', 'Form type', 'lit:H' . $form, 'raw', 6, 1, 'never', null, $c),
+            gsb_f('tin_wa', 'Withholding agent TIN', 'agent.tin', 'digits', 9, 1, 'never', null, $c),
+            gsb_f('branch_wa', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, $c),
+            gsb_f('return_period', 'Return period (12/31/YYYY)', 'period.mm_dd_yyyy_end', 'raw', 10, 1, 'never', null, $c),
+        ));
+    };
+    $annualKey = function ($code, $form) use ($c) {
+        return array(
+            gsb_f('rec_type', 'Schedule code', 'lit:' . $code, 'raw', 2, 1, 'never', null, $c),
+            gsb_f('form_type', 'Form type', 'lit:' . $form, 'raw', 5, 1, 'never', null, $c),
+            gsb_f('tin_wa', 'Withholding agent TIN', 'agent.tin', 'digits', 9, 1, 'never', null, $c),
+            gsb_f('branch_wa', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, $c),
+            gsb_f('return_period', 'Return period (12/31/YYYY)', 'period.mm_dd_yyyy_end', 'raw', 10, 1, 'never', null, $c),
+        );
+    };
+    $annual = function ($form, $sched, $code, $label, $detail, $totals, $notes, $menu, $val) use ($base, $annualHead, $annualKey, $seq, $payee) {
+        return $base($form, $sched, '{TIN}{BRANCH}{MMDDYYYY}' . $form . '.DAT', $menu, $val, $notes, array(
+            $annualHead($form),
+            array('record_code' => 'D' . $code, 'role' => 'detail', 'label' => $label, 'fields' => array_merge($annualKey('D' . $code, $form), array($seq), $payee(), $detail)),
+            array('record_code' => 'C' . $code, 'role' => 'control', 'label' => 'Control totals', 'fields' => array_merge($annualKey('C' . $code, $form), $totals)),
+        ));
+    };
+    $inc = $amt('income_payment', 'Amount of income payment', 'row.income');
+    $tax = $amt('tax_withheld', 'Amount of tax withheld', 'row.tax');
+    $L[] = $annual('1604E', 'S3', '3', 'Schedule 3: payees subject to expanded withholding tax', array_merge($name4(), array($atc, $inc, $rate, $tax)),
+        array($tot('total_tax', 'Total tax withheld', 'sum.tax')), 'One file for the year holding Schedules 3 and 4. The Schedule 3 control line carries only the total tax withheld.', 'mn1604e', 'val1604e');
+    $L[] = $annual('1604E', 'S4', '4', 'Schedule 4: payees exempt from withholding tax', array_merge($name4(), array($atc, $inc)),
+        array($tot('total_income', 'Total income payment', 'sum.income')), 'Income only, no rate and no tax; the control line carries the total income.', 'mn1604e', 'val1604e');
+    $L[] = $annual('1604F', 'S4', '4', 'Schedule 4: payees subject to final withholding tax', array_merge($name4(), array($status, $atc, $inc, $rate, $tax)),
+        array($tot('total_income', 'Total income payment', 'sum.income'), $tot('total_tax', 'Total tax withheld', 'sum.tax')), 'One file for the year holding Schedules 4 to 6.', 'mn1604f', 'val1604cf (Validate 1604F)');
+    $L[] = $annual('1604F', 'S5', '5', 'Schedule 5: fringe benefits', array_merge($name4('nonempty', false), array($atc, $amt('fringe_benefit', 'Amount of fringe benefit', 'row.fringe'),
+        $amt('monetary_value', 'Grossed-up monetary value', 'row.monetary'), $tax)),
+        array($tot('total_fringe', 'Total fringe benefit', 'sum.fringe'), $tot('total_monetary', 'Total grossed-up monetary value', 'sum.monetary'), $tot('total_tax', 'Total tax withheld', 'sum.tax')),
+        'The income payment of a line is the grossed-up monetary value; the fringe benefit is that value less the tax.', 'mn1604f', 'val1604cf (Validate 1604F)');
+    $L[] = $annual('1604F', 'S6', '6', 'Schedule 6: payees exempt from final withholding tax', array_merge($name4(), array($status, $atc, $inc)),
+        array($tot('total_income', 'Total income payment', 'sum.income')), 'Status code and income only.', 'mn1604f', 'val1604cf (Validate 1604F)');
+    return $L;
 }
 
 function gsb_relief_agent_head($code, $conf)
@@ -206,110 +365,8 @@ function gsb_layouts()
         ),
     );
 
-    $rateNote = 'Sources disagree: percent with two decimals (1.00) vs fraction (0.01). Switch fmt to frac2 if the validator rejects pct2.';
-
-    // ------------------------------------------------------------------ QAP 1601-EQ Schedule 1
-    $L[] = array(
-        'form_code' => '1601EQ', 'schedule_code' => 'S1', 'variant_key' => null, 'version_label' => 'Alphalist v7.x QAP',
-        'validator_version' => '7.4', 'effective_from' => '2018-01-01', 'status' => 'pending_verification', 'confidence' => 'medium',
-        'filename_pattern' => '{TIN}{BRANCH}{MM}{YYYY}1601EQ.DAT', 'delimiter' => ',', 'line_ending' => 'CRLF', 'trailing_newline' => 1,
-        'encoding' => 'Windows-1252', 'column_header_row' => 0,
-        'source_ref' => 'Header shape mirrors the official MAP header (RMC 25-2024 Annex A, reproduced verbatim by Forvis Mazars). Detail/control order from one secondary generator. BIR job aid (RMC 7-2021 Annex C): QAP produces 3 files per quarter, one per month. Filename follows Annex B pattern TIN(9)+BC(4)+MMYYYY+form.',
-        'notes' => 'Generate one file per month of the quarter.',
-        'records' => array(
-            array('record_code' => 'HQAP', 'role' => 'header', 'label' => 'Header', 'fields' => array(
-                gsb_f('alpha_type', 'Alphalist type code', 'lit:HQAP', 'raw', 4, 1, 'never', null, 'medium'),
-                gsb_f('form_type', 'Form type code', 'lit:H1601EQ', 'raw', 7, 1, 'never', null, 'medium'),
-                gsb_f('tin_wa', 'TIN of withholding agent', 'agent.tin', 'digits', 9, 1, 'never', null, 'official'),
-                gsb_f('branch_wa', 'Branch code of withholding agent', 'agent.branch', 'digits', 4, 1, 'never', null, 'official'),
-                gsb_f('registered_name', 'Registered name', 'agent.display_name', 'text', 50, 1, 'always', 'name', 'medium'),
-                gsb_f('return_period', 'Return period', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, 'medium'),
-                gsb_f('rdo', 'RDO code of withholding agent', 'agent.rdo', 'digits', 3, 1, 'never', null, 'medium'),
-            )),
-            array('record_code' => 'D1', 'role' => 'detail', 'label' => 'Detail (payee and ATC)', 'fields' => gsb_qap_detail('D1', '1601EQ', 'low', $rateNote)),
-            array('record_code' => 'C1', 'role' => 'control', 'label' => 'Control totals', 'fields' => array(
-                gsb_f('rec_type', 'Control code', 'lit:C1', 'raw', 2, 1, 'never', null, 'low'),
-                gsb_f('form_type', 'Form type code', 'lit:1601EQ', 'raw', 6, 1, 'never', null, 'low'),
-                gsb_f('tin_wa', 'TIN of withholding agent', 'agent.tin', 'digits', 9, 1, 'never', null, 'low'),
-                gsb_f('branch_wa', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, 'low'),
-                gsb_f('return_period', 'Return period', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, 'low'),
-                gsb_f('total_income', 'Total income payment', 'sum.income', 'amount', 15, 1, 'never', '2dp', 'low'),
-                gsb_f('total_tax', 'Total tax withheld', 'sum.tax', 'amount', 15, 1, 'never', '2dp', 'low'),
-            )),
-        ),
-    );
-
-    // ------------------------------------------------------------------ Draft analog layouts (no source found)
-    $analogs = array(
-        array('1601EQ', 'S2', 'HQAP', 'H1601EQ', 'D2', '1601EQ', 'C2', '{TIN}{BRANCH}{MM}{YYYY}1601EQ.DAT', 'period.mm_yyyy'),
-        array('1601FQ', 'S1', 'HQAP', 'H1601FQ', 'D1', '1601FQ', 'C1', '{TIN}{BRANCH}{MM}{YYYY}1601FQ.DAT', 'period.mm_yyyy'),
-        array('1601FQ', 'S2', 'HQAP', 'H1601FQ', 'D2', '1601FQ', 'C2', '{TIN}{BRANCH}{MM}{YYYY}1601FQ.DAT', 'period.mm_yyyy'),
-        array('1601FQ', 'S3', 'HQAP', 'H1601FQ', 'D3', '1601FQ', 'C3', '{TIN}{BRANCH}{MM}{YYYY}1601FQ.DAT', 'period.mm_yyyy'),
-    );
-    foreach ($analogs as $a) {
-        $L[] = array(
-            'form_code' => $a[0], 'schedule_code' => $a[1], 'variant_key' => null, 'version_label' => 'Analog draft (unsourced)',
-            'validator_version' => '7.4', 'effective_from' => '2018-01-01', 'status' => 'draft', 'confidence' => 'analog',
-            'filename_pattern' => $a[7], 'delimiter' => ',', 'line_ending' => 'CRLF', 'trailing_newline' => 1,
-            'encoding' => 'Windows-1252', 'column_header_row' => 0,
-            'source_ref' => 'No published field table was obtainable at build time (RMC 25-2024 / RMC 15-2025 Annex A are image-only PDFs). Mirrors the 1601-EQ layout so the workflow can be exercised. Replace every field from Annex A before approval.',
-            'notes' => 'Research pending. Files from this layout are always labelled UNVALIDATED DRAFT.',
-            'records' => array(
-                array('record_code' => $a[2], 'role' => 'header', 'label' => 'Header', 'fields' => array(
-                    gsb_f('alpha_type', 'Alphalist type code', 'lit:' . $a[2], 'raw', 4, 1, 'never', null, 'analog'),
-                    gsb_f('form_type', 'Form type code', 'lit:' . $a[3], 'raw', 7, 1, 'never', null, 'analog'),
-                    gsb_f('tin_wa', 'TIN of withholding agent', 'agent.tin', 'digits', 9, 1, 'never', null, 'analog'),
-                    gsb_f('branch_wa', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, 'analog'),
-                    gsb_f('registered_name', 'Registered name', 'agent.display_name', 'text', 50, 1, 'always', 'name', 'analog'),
-                    gsb_f('return_period', 'Return period', $a[8], 'raw', 7, 1, 'never', null, 'analog'),
-                    gsb_f('rdo', 'RDO code', 'agent.rdo', 'digits', 3, 1, 'never', null, 'analog'),
-                )),
-                array('record_code' => $a[4], 'role' => 'detail', 'label' => 'Detail', 'fields' => gsb_qap_detail($a[4], $a[5], 'analog', $rateNote)),
-                array('record_code' => $a[6], 'role' => 'control', 'label' => 'Control totals', 'fields' => array(
-                    gsb_f('rec_type', 'Control code', 'lit:' . $a[6], 'raw', 2, 1, 'never', null, 'analog'),
-                    gsb_f('form_type', 'Form type code', 'lit:' . $a[5], 'raw', 6, 1, 'never', null, 'analog'),
-                    gsb_f('tin_wa', 'TIN of withholding agent', 'agent.tin', 'digits', 9, 1, 'never', null, 'analog'),
-                    gsb_f('branch_wa', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, 'analog'),
-                    gsb_f('return_period', 'Return period', $a[8], 'raw', 7, 1, 'never', null, 'analog'),
-                    gsb_f('total_income', 'Total income payment', 'sum.income', 'amount', 15, 1, 'never', '2dp', 'analog'),
-                    gsb_f('total_tax', 'Total tax withheld', 'sum.tax', 'amount', 15, 1, 'never', '2dp', 'analog'),
-                )),
-            ),
-        );
-    }
-
-    // ------------------------------------------------------------------ MAP 1600-VT / 1600-PT (header is official)
-    foreach (array('1600VT', '1600PT') as $mapForm) {
-        $L[] = array(
-            'form_code' => $mapForm, 'schedule_code' => 'S1', 'variant_key' => null, 'version_label' => 'Alphalist v7.x MAP',
-            'validator_version' => '7.4', 'effective_from' => '2018-01-01', 'status' => 'draft', 'confidence' => 'analog',
-            'filename_pattern' => '{TIN}{BRANCH}{MM}{YYYY}' . $mapForm . '.DAT', 'delimiter' => ',', 'line_ending' => 'CRLF', 'trailing_newline' => 1,
-            'encoding' => 'Windows-1252', 'column_header_row' => 0,
-            'source_ref' => 'Header record and filename: RMC 25-2024 Annex A/B (verbatim reproduction by Forvis Mazars) - official. Detail and control records: not found, mirror the QAP layout (analog).',
-            'notes' => 'Header is official; detail and control are drafts. Annex B misprints 1600VT as 1600VY.',
-            'records' => array(
-                array('record_code' => 'HMAP', 'role' => 'header', 'label' => 'Header (official)', 'fields' => array(
-                    gsb_f('alpha_type', 'ALPHA_TYPE', 'lit:HMAP', 'raw', 5, 1, 'never', null, 'official'),
-                    gsb_f('form_type', 'F_TYPE', 'lit:H' . $mapForm, 'raw', 7, 1, 'never', null, 'official'),
-                    gsb_f('tin_wa', 'TIN_WA', 'agent.tin', 'digits', 9, 1, 'never', null, 'official'),
-                    gsb_f('branch_wa', 'BRANCH CODE_WA', 'agent.branch', 'digits', 4, 1, 'never', null, 'official'),
-                    gsb_f('registered_name', 'REGISTERED_NAME', 'agent.display_name', 'text', 50, 1, 'always', 'name', 'official', 'Quoting not stated in the annex table.'),
-                    gsb_f('return_period', 'RETRN_PERIOD', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, 'official'),
-                    gsb_f('rdo', 'RDO_CODE_WA', 'agent.rdo', 'digits', 3, 1, 'never', null, 'official'),
-                )),
-                array('record_code' => 'D1', 'role' => 'detail', 'label' => 'Detail (draft)', 'fields' => gsb_qap_detail('D1', $mapForm, 'analog', $rateNote)),
-                array('record_code' => 'C1', 'role' => 'control', 'label' => 'Control totals (draft)', 'fields' => array(
-                    gsb_f('rec_type', 'Control code', 'lit:C1', 'raw', 2, 1, 'never', null, 'analog'),
-                    gsb_f('form_type', 'Form type code', 'lit:' . $mapForm, 'raw', 6, 1, 'never', null, 'analog'),
-                    gsb_f('tin_wa', 'TIN of withholding agent', 'agent.tin', 'digits', 9, 1, 'never', null, 'analog'),
-                    gsb_f('branch_wa', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, 'analog'),
-                    gsb_f('return_period', 'Return period', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, 'analog'),
-                    gsb_f('total_income', 'Total income payment', 'sum.income', 'amount', 15, 1, 'never', '2dp', 'analog'),
-                    gsb_f('total_tax', 'Total tax withheld', 'sum.tax', 'amount', 15, 1, 'never', '2dp', 'analog'),
-                )),
-            ),
-        );
-    }
+    // ------------------------------------------------------------------ QAP, MAP, 1604-E and 1604-F as the BIR Alphalist module v7.4 writes them
+    $L = array_merge($L, gsb_v74_withholding_layouts());
 
     // ------------------------------------------------------------------ 1604-C Schedule 1 (validated sample)
     $amt = function ($key, $label) {
@@ -495,131 +552,65 @@ function gsb_layouts()
         ),
     );
 
-    // ------------------------------------------------------------------ 1604-E and 1604-F annual schedules (draft analogs)
-    $annual = array(
-        array('1604E', 'S3', 'D3', 'C3'), array('1604E', 'S4', 'D4', 'C4'),
-        array('1604F', 'S4', 'D4', 'C4'), array('1604F', 'S5', 'D5', 'C5'), array('1604F', 'S6', 'D6', 'C6'),
-    );
-    foreach ($annual as $a) {
-        $form = $a[0];
-        $L[] = array(
-            'form_code' => $form, 'schedule_code' => $a[1], 'variant_key' => null, 'version_label' => 'Analog draft (unsourced)',
-            'validator_version' => '7.4', 'effective_from' => '2018-01-01', 'status' => 'draft', 'confidence' => 'analog',
-            'filename_pattern' => '{TIN}{BRANCH}{MMDDYYYY}' . $form . '.DAT', 'delimiter' => ',', 'line_ending' => 'CRLF', 'trailing_newline' => 1,
-            'encoding' => 'Windows-1252', 'column_header_row' => 0,
-            'source_ref' => 'Annex A/B of RMC 25-2024 lists these schedules but the PDF is image-only. Header mirrors the validated H1604C shape; detail mirrors QAP. Replace from Annex A before approval.',
-            'notes' => 'Research pending. Files are always labelled UNVALIDATED DRAFT.',
-            'records' => array(
-                array('record_code' => 'H' . $form, 'role' => 'header', 'label' => 'Header', 'fields' => array(
-                    gsb_f('form_type', 'Form type', 'lit:H' . $form, 'raw', 6, 1, 'never', null, 'analog'),
-                    gsb_f('tin_wa', 'Withholding agent TIN', 'agent.tin', 'digits', 9, 1, 'never', null, 'analog'),
-                    gsb_f('branch_wa', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, 'analog'),
-                    gsb_f('return_period', 'Period end', 'period.mm_dd_yyyy_end', 'raw', 10, 1, 'never', null, 'analog'),
-                )),
-                array('record_code' => $a[2], 'role' => 'detail', 'label' => 'Detail', 'fields' => array(
-                    gsb_f('rec_type', 'Schedule code', 'lit:' . $a[2], 'raw', 2, 1, 'never', null, 'analog'),
-                    gsb_f('form_type', 'Form type', 'lit:' . $form, 'raw', 5, 1, 'never', null, 'analog'),
-                    gsb_f('tin_wa', 'Withholding agent TIN', 'agent.tin', 'digits', 9, 1, 'never', null, 'analog'),
-                    gsb_f('branch_wa', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, 'analog'),
-                    gsb_f('return_period', 'Period end', 'period.mm_dd_yyyy_end', 'raw', 10, 1, 'never', null, 'analog'),
-                    gsb_f('seq_no', 'Sequence number', 'seq', 'int', 8, 1, 'never', null, 'analog'),
-                    gsb_f('payee_tin', 'Payee TIN', 'row.tin', 'digits', 9, 1, 'never', null, 'analog'),
-                    gsb_f('payee_branch', 'Payee branch code', 'row.branch', 'digits', 4, 1, 'never', null, 'analog'),
-                    gsb_f('registered_name', 'Registered name', 'row.registered_name', 'text', 50, 0, 'nonempty', 'name', 'analog'),
-                    gsb_f('last_name', 'Last name', 'row.last_name', 'text', 30, 0, 'nonempty', 'name', 'analog'),
-                    gsb_f('first_name', 'First name', 'row.first_name', 'text', 30, 0, 'nonempty', 'name', 'analog'),
-                    gsb_f('middle_name', 'Middle name', 'row.middle_name', 'text', 30, 0, 'nonempty', 'name', 'analog'),
-                    gsb_f('atc', 'ATC', 'row.atc', 'code', 5, 1, 'never', null, 'analog'),
-                    gsb_f('income_payment', 'Amount of income payment', 'row.income', 'amount', 15, 1, 'never', '2dp', 'analog'),
-                    gsb_f('tax_rate', 'Tax rate', 'row.rate', 'rate', 6, 1, 'never', 'pct2', 'analog'),
-                    gsb_f('tax_withheld', 'Amount of tax withheld', 'row.tax', 'amount', 15, 1, 'never', '2dp', 'analog'),
-                )),
-                array('record_code' => $a[3], 'role' => 'control', 'label' => 'Control totals', 'fields' => array(
-                    gsb_f('rec_type', 'Control code', 'lit:' . $a[3], 'raw', 2, 1, 'never', null, 'analog'),
-                    gsb_f('form_type', 'Form type', 'lit:' . $form, 'raw', 5, 1, 'never', null, 'analog'),
-                    gsb_f('tin_wa', 'Withholding agent TIN', 'agent.tin', 'digits', 9, 1, 'never', null, 'analog'),
-                    gsb_f('branch_wa', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, 'analog'),
-                    gsb_f('return_period', 'Period end', 'period.mm_dd_yyyy_end', 'raw', 10, 1, 'never', null, 'analog'),
-                    gsb_f('total_income', 'Total income payment', 'sum.income', 'amount', 17, 1, 'never', '2dp', 'analog'),
-                    gsb_f('total_tax', 'Total tax withheld', 'sum.tax', 'amount', 17, 1, 'never', '2dp', 'analog'),
-                )),
-            ),
-        );
-    }
-
-    // ------------------------------------------------------------------ SAWT (generic quoted variant)
-    $sawtHead = function ($quote, $conf) {
-        return array(
-            gsb_f('alpha_type', 'Alphalist type code', 'lit:HSAWT', 'raw', 5, 1, 'never', null, $conf),
-            gsb_f('form_type', 'Form type code', 'tpl:H{sawt_form}', 'raw', 7, 1, 'never', null, $conf),
-            gsb_f('tin', 'Taxpayer TIN', 'agent.tin', 'digits', 9, 1, 'never', null, $conf),
-            gsb_f('branch', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, $conf),
-            gsb_f('registered_name', 'Registered name', 'agent.registered_name', 'text', 50, 0, $quote, 'name', $conf),
-            gsb_f('last_name', 'Last name', 'agent.last_name', 'text', 30, 0, $quote, 'name', $conf),
-            gsb_f('first_name', 'First name', 'agent.first_name', 'text', 30, 0, $quote, 'name', $conf),
-            gsb_f('middle_name', 'Middle name', 'agent.middle_name', 'text', 30, 0, $quote, 'name', $conf),
-            gsb_f('return_period', 'Return period', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, $conf),
-            gsb_f('rdo', 'RDO code', 'agent.rdo', 'digits', 3, 1, 'never', null, $conf),
-        );
-    };
-    $sawtDetail = function ($quote, $amtFmt, $conf) {
-        return array(
-            gsb_f('alpha_type', 'Alphalist type code', 'lit:DSAWT', 'raw', 5, 1, 'never', null, $conf),
-            gsb_f('form_type', 'Form type code', 'tpl:D{sawt_form}', 'raw', 7, 1, 'never', null, $conf),
-            gsb_f('seq_no', 'Sequence number', 'seq', 'int', 8, 1, 'never', null, $conf),
-            gsb_f('payor_tin', 'Payor TIN', 'row.tin', 'digits', 9, 1, 'never', null, $conf),
-            gsb_f('payor_branch', 'Payor branch code', 'row.branch', 'digits', 4, 1, 'never', null, $conf),
-            gsb_f('registered_name', 'Payor registered name', 'row.registered_name', 'text', 50, 0, $quote, 'name', $conf),
-            gsb_f('last_name', 'Payor last name', 'row.last_name', 'text', 30, 0, $quote, 'name', $conf),
-            gsb_f('first_name', 'Payor first name', 'row.first_name', 'text', 30, 0, $quote, 'name', $conf),
-            gsb_f('middle_name', 'Payor middle name', 'row.middle_name', 'text', 30, 0, $quote, 'name', $conf),
-            gsb_f('return_period', 'Return period', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, $conf),
-            gsb_f('reserved', 'Reserved (empty)', 'blank', 'raw', null, 0, 'never', null, $conf, 'Empty position observed in the source generator.'),
-            gsb_f('atc', 'ATC', 'row.atc', 'code', 5, 1, 'never', null, $conf),
-            gsb_f('tax_rate', 'Tax rate', 'row.rate', 'rate', 6, 1, 'never', $amtFmt === 'trim' ? 'pct2' : 'pct2', 'low'),
-            gsb_f('income_payment', 'Income payment', 'row.income', 'amount', 15, 1, 'never', $amtFmt, $conf),
-            gsb_f('tax_withheld', 'Tax withheld', 'row.tax', 'amount', 15, 1, 'never', $amtFmt, $conf),
-        );
-    };
-    $sawtControl = function ($amtFmt, $conf) {
-        return array(
-            gsb_f('alpha_type', 'Alphalist type code', 'lit:CSAWT', 'raw', 5, 1, 'never', null, $conf),
-            gsb_f('form_type', 'Form type code', 'tpl:C{sawt_form}', 'raw', 7, 1, 'never', null, $conf),
-            gsb_f('tin', 'Taxpayer TIN', 'agent.tin', 'digits', 9, 1, 'never', null, $conf),
-            gsb_f('branch', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, $conf),
-            gsb_f('return_period', 'Return period', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, $conf),
-            gsb_f('total_income', 'Total income payment', 'sum.income', 'amount', 17, 1, 'never', $amtFmt, $conf),
-            gsb_f('total_tax', 'Total tax withheld', 'sum.tax', 'amount', 17, 1, 'never', $amtFmt, $conf),
-        );
-    };
+    // ------------------------------------------------------------------ SAWT, as the BIR Alphalist module v7.4 writes it
+    /*
+     * One layout for every return the SAWT is attached to (1700, 1701, 1701Q, 1702, 1702Q, 2550M, 2550Q,
+     * 2551Q, 2553): the form code in the second field is the only difference. Taken from the module's own
+     * writer (sawt form, cmdgenfile / schedsawt / testfieldsawt) and checked against its validator (val_sawt):
+     *   HSAWT,H<form>,TIN,BRANCH,"REGISTERED NAME","LAST","FIRST","MIDDLE",MM/YYYY,RDO
+     *   DSAWT,D<form>,SEQ,PAYOR TIN,BRANCH,"REGISTERED NAME","LAST","FIRST","MIDDLE",MM/YYYY,,ATC,RATE,INCOME,TAX
+     *   CSAWT,C<form>,TIN,BRANCH,MM/YYYY,TOTAL INCOME,TOTAL TAX
+     * The header quotes all four name fields (an empty one is ""); a detail line quotes a name only when it
+     * has one. The detail's eleventh field (nature of income) is left empty by the module. Amounts and the
+     * rate have two decimals. The validator allows no field after the RDO code, the tax withheld or the totals.
+     */
+    $sawtConf = 'official';
     $L[] = array(
-        'form_code' => 'SAWT', 'schedule_code' => 'S1', 'variant_key' => null, 'version_label' => 'Alphalist v7.x SAWT',
-        'validator_version' => '7.4', 'effective_from' => '2018-01-01', 'status' => 'pending_verification', 'confidence' => 'low',
+        'form_code' => 'SAWT', 'schedule_code' => 'S1', 'variant_key' => null, 'version_label' => 'Alphalist v7.4 SAWT (BIR data entry module)',
+        'validator_version' => '7.4', 'effective_from' => '2018-01-01', 'status' => 'pending_verification', 'confidence' => 'official',
         'filename_pattern' => '{TIN}{BRANCH}{MM}{YYYY}{SAWT_FORM}.DAT', 'delimiter' => ',', 'line_ending' => 'CRLF', 'trailing_newline' => 1,
         'encoding' => 'Windows-1252', 'column_header_row' => 0,
-        'source_ref' => 'Single secondary generator (github.com/AlmyrCPA/Haki-Bookkeeping-System), which notes this quoted shape for 1701/1701Q. No source found for 1700, 1702, 2550M/Q, 2551Q or 2553.',
-        'notes' => 'Used for every attached return except where a variant layout exists.',
+        'source_ref' => 'BIR Alphalist Data Entry and Validation Module v7.4: the SAWT file writer of the data entry program and the SAWT checks of the validation program (val_sawt). Standard file name TIN + branch + MMYYYY + form + .DAT, as the validator renames it.',
+        'notes' => 'Used for the SAWT of every attached return. Return period is the last month of the return period (MM/YYYY).',
         'records' => array(
-            array('record_code' => 'HSAWT', 'role' => 'header', 'label' => 'Header', 'fields' => $sawtHead('always', 'low')),
-            array('record_code' => 'DSAWT', 'role' => 'detail', 'label' => 'Detail (payor and ATC)', 'fields' => $sawtDetail('nonempty', '2dp', 'low')),
-            array('record_code' => 'CSAWT', 'role' => 'control', 'label' => 'Control totals', 'fields' => $sawtControl('2dp', 'low')),
-        ),
-    );
-    $h1702 = $sawtHead('never', 'low');
-    for ($i = 1; $i <= 5; $i++) { $h1702[] = gsb_f('trail' . $i, 'Trailing empty field ' . $i, 'blank', 'raw', null, 0, 'never', null, 'low'); }
-    $c1702 = $sawtControl('trim', 'low');
-    for ($i = 1; $i <= 8; $i++) { $c1702[] = gsb_f('trail' . $i, 'Trailing empty field ' . $i, 'blank', 'raw', null, 0, 'never', null, 'low'); }
-    $L[] = array(
-        'form_code' => 'SAWT', 'schedule_code' => 'S1', 'variant_key' => '1702Q', 'version_label' => 'Alphalist v7.x SAWT (1702Q shape)',
-        'validator_version' => '7.4', 'effective_from' => '2018-01-01', 'status' => 'pending_verification', 'confidence' => 'low',
-        'filename_pattern' => '{TIN}{BRANCH}{MM}{YYYY}{SAWT_FORM}.DAT', 'delimiter' => ',', 'line_ending' => 'CRLF', 'trailing_newline' => 1,
-        'encoding' => 'Windows-1252', 'column_header_row' => 0,
-        'source_ref' => 'Single secondary generator that describes this 1702Q shape as confirmed against validated files: names unquoted, amounts not padded, 5 trailing empty header fields and 8 trailing empty control fields. Unverified here.',
-        'notes' => 'Applied automatically when the attached return is 1702Q.',
-        'records' => array(
-            array('record_code' => 'HSAWT', 'role' => 'header', 'label' => 'Header', 'fields' => $h1702),
-            array('record_code' => 'DSAWT', 'role' => 'detail', 'label' => 'Detail (payor and ATC)', 'fields' => $sawtDetail('never', 'trim', 'low')),
-            array('record_code' => 'CSAWT', 'role' => 'control', 'label' => 'Control totals', 'fields' => $c1702),
+            array('record_code' => 'HSAWT', 'role' => 'header', 'label' => 'Header', 'fields' => array(
+                gsb_f('alpha_type', 'Alphalist type code', 'lit:HSAWT', 'raw', 5, 1, 'never', null, $sawtConf),
+                gsb_f('form_type', 'Form type code (H and the attached return)', 'tpl:H{sawt_form}', 'raw', 7, 1, 'never', null, $sawtConf),
+                gsb_f('tin', 'Taxpayer TIN (the payee)', 'agent.tin', 'digits', 9, 1, 'never', null, $sawtConf),
+                gsb_f('branch', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, $sawtConf),
+                gsb_f('registered_name', 'Registered name', 'agent.registered_name', 'text', 50, 0, 'always', 'name', $sawtConf),
+                gsb_f('last_name', 'Last name', 'agent.last_name', 'text', 30, 0, 'always', 'name', $sawtConf),
+                gsb_f('first_name', 'First name', 'agent.first_name', 'text', 30, 0, 'always', 'name', $sawtConf),
+                gsb_f('middle_name', 'Middle name', 'agent.middle_name', 'text', 30, 0, 'always', 'name', $sawtConf),
+                gsb_f('return_period', 'Return period (MM/YYYY)', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, $sawtConf),
+                gsb_f('rdo', 'RDO code (3 digits)', 'agent.rdo', 'digits', 3, 1, 'never', null, $sawtConf),
+            )),
+            array('record_code' => 'DSAWT', 'role' => 'detail', 'label' => 'Detail (payor and ATC)', 'fields' => array(
+                gsb_f('alpha_type', 'Alphalist type code', 'lit:DSAWT', 'raw', 5, 1, 'never', null, $sawtConf),
+                gsb_f('form_type', 'Form type code (D and the attached return)', 'tpl:D{sawt_form}', 'raw', 7, 1, 'never', null, $sawtConf),
+                gsb_f('seq_no', 'Sequence number', 'seq', 'int', 8, 1, 'never', null, $sawtConf),
+                gsb_f('payor_tin', 'Payor (withholding agent) TIN', 'row.tin', 'digits', 9, 1, 'never', null, $sawtConf),
+                gsb_f('payor_branch', 'Payor branch code', 'row.branch', 'digits', 4, 1, 'never', null, $sawtConf),
+                gsb_f('registered_name', 'Payor registered name', 'row.registered_name', 'text', 50, 0, 'nonempty', 'name', $sawtConf),
+                gsb_f('last_name', 'Payor last name', 'row.last_name', 'text', 30, 0, 'nonempty', 'name', $sawtConf),
+                gsb_f('first_name', 'Payor first name', 'row.first_name', 'text', 30, 0, 'nonempty', 'name', $sawtConf),
+                gsb_f('middle_name', 'Payor middle name', 'row.middle_name', 'text', 30, 0, 'nonempty', 'name', $sawtConf),
+                gsb_f('return_period', 'Return period (MM/YYYY)', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, $sawtConf),
+                gsb_f('reserved', 'Nature of income (left empty by the BIR module)', 'blank', 'raw', null, 0, 'never', null, $sawtConf),
+                gsb_f('atc', 'ATC', 'row.atc', 'code', 5, 1, 'never', null, $sawtConf),
+                gsb_f('tax_rate', 'Tax rate', 'row.rate', 'rate', 6, 1, 'never', 'pct2', $sawtConf),
+                gsb_f('income_payment', 'Amount of income payment', 'row.income', 'amount', 15, 1, 'never', '2dp', $sawtConf),
+                gsb_f('tax_withheld', 'Amount of tax withheld', 'row.tax', 'amount', 15, 1, 'never', '2dp', $sawtConf),
+            )),
+            array('record_code' => 'CSAWT', 'role' => 'control', 'label' => 'Control totals', 'fields' => array(
+                gsb_f('alpha_type', 'Alphalist type code', 'lit:CSAWT', 'raw', 5, 1, 'never', null, $sawtConf),
+                gsb_f('form_type', 'Form type code (C and the attached return)', 'tpl:C{sawt_form}', 'raw', 7, 1, 'never', null, $sawtConf),
+                gsb_f('tin', 'Taxpayer TIN (the payee)', 'agent.tin', 'digits', 9, 1, 'never', null, $sawtConf),
+                gsb_f('branch', 'Branch code', 'agent.branch', 'digits', 4, 1, 'never', null, $sawtConf),
+                gsb_f('return_period', 'Return period (MM/YYYY)', 'period.mm_yyyy', 'raw', 7, 1, 'never', null, $sawtConf),
+                gsb_f('total_income', 'Total income payment', 'sum.income', 'amount', 17, 1, 'never', '2dp', $sawtConf),
+                gsb_f('total_tax', 'Total tax withheld', 'sum.tax', 'amount', 17, 1, 'never', '2dp', $sawtConf),
+            )),
         ),
     );
 

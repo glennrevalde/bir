@@ -20,6 +20,23 @@ class Datasets
         );
     }
 
+    /**
+     * The taxes a SAWT lists depend on the return it is attached to: VAT withheld (WV codes) for the VAT
+     * returns, percentage tax withheld (WB codes) for the percentage tax returns, and income tax withheld
+     * (WC and WI codes) for the income tax returns.
+     */
+    public static function sawtKind($sawtForm)
+    {
+        $f = strtoupper((string)$sawtForm);
+        if (in_array($f, array('2550M', '2550Q'), true)) {
+            return 'GVAT';
+        }
+        if (in_array($f, array('2551Q', '2553'), true)) {
+            return 'GPT';
+        }
+        return 'EWT';
+    }
+
     public static function schedule($form, $schedule)
     {
         if (Specs::isCombined($form, $schedule)) {
@@ -29,9 +46,9 @@ class Datasets
             if (!$s) {
                 return null;
             }
-            $s['schedule_code'] = Specs::COMBINED_CODE;
-            $s['name'] = 'Schedules 1 and 2 in one file (all employees, minimum wage earners included)';
-            $s['dataset_key'] = 'comp_year:*';
+            $s['schedule_code'] = Specs::combinedCode($form);
+            $s['name'] = Specs::scheduleLabel($s['schedule_code']) . ' in one file' . ($form === '1604C' ? ' (all employees, minimum wage earners included)' : '');
+            $s['dataset_key'] = $form === '1604C' ? 'comp_year:*' : 'combined';
             return $s;
         }
         return DB::row('SELECT s.*, f.family, f.frequency, f.name AS form_name, f.output_format FROM report_schedules s JOIN form_types f ON f.code = s.form_code
@@ -42,10 +59,18 @@ class Datasets
     public static function generateSchedules($form)
     {
         if (Specs::combinedParts($form)) {
-            $s = self::schedule($form, Specs::COMBINED_CODE);
+            $s = self::schedule($form, Specs::combinedCode($form));
             return $s ? array($s) : array();
         }
         return DB::all('SELECT * FROM report_schedules WHERE form_code = ? ORDER BY sort_order', array($form));
+    }
+
+    /** The withholding placement (A, B, C) a schedule of a QAP or annual form reads, from its data source. */
+    public static function scheduleTag($form, $schedule)
+    {
+        $key = (string)DB::val('SELECT dataset_key FROM report_schedules WHERE form_code = ? AND schedule_code = ?', array($form, $schedule));
+        $p = explode(':', $key);
+        return isset($p[2]) && $p[2] !== '*' ? substr($p[2], 0, 1) : 'A';
     }
 
     /** Filer (withholding agent / taxpayer) context for headers and filenames. */
@@ -73,7 +98,7 @@ class Datasets
 
     private static function partyCols($alias = 'cp')
     {
-        return "$alias.id AS cp_id, $alias.tin, $alias.branch_code, $alias.entity_type, $alias.registered_name, $alias.last_name, $alias.first_name, $alias.middle_name, $alias.address1, $alias.address2";
+        return "$alias.id AS cp_id, $alias.tin, $alias.branch_code, $alias.entity_type, $alias.registered_name, $alias.last_name, $alias.first_name, $alias.middle_name, $alias.address1, $alias.address2, $alias.foreign_address";
     }
 
     private static function partyRow($r)
@@ -84,7 +109,21 @@ class Datasets
             'registered_name' => $ind ? '' : (string)$r['registered_name'],
             'last_name' => $ind ? (string)$r['last_name'] : '', 'first_name' => $ind ? (string)$r['first_name'] : '', 'middle_name' => $ind ? (string)$r['middle_name'] : '',
             'address1' => (string)$r['address1'], 'address2' => (string)$r['address2'], 'cp_id' => (int)$r['cp_id'],
+            'status_code' => self::statusCode($r),
         );
+    }
+
+    /**
+     * The payee status code of the 1601-FQ and 1604-F (A to H): A citizen, B resident alien, C and D
+     * non-resident aliens engaged and not engaged in business, E domestic corporation, F resident foreign
+     * corporation, G non-resident foreign corporation, H others. Taken from the payee: an individual is A
+     * and a corporation E, or D and G when the payee has a foreign address.
+     */
+    public static function statusCode($r)
+    {
+        $ind = isset($r['entity_type']) && $r['entity_type'] === 'individual';
+        $foreign = isset($r['foreign_address']) && trim((string)$r['foreign_address']) !== '';
+        return $ind ? ($foreign ? 'D' : 'A') : ($foreign ? 'G' : 'E');
     }
 
     /**
@@ -98,6 +137,22 @@ class Datasets
             throw new RuntimeException('Unknown form or schedule.');
         }
         $key = $sched['dataset_key'];
+        if ($key === 'combined') {
+            // One file for several schedules: each schedule's rows, tagged with the schedule they belong to.
+            $rows = array();
+            $count = 0;
+            $table = null;
+            foreach (Specs::combinedParts($p['form']) as $code) {
+                $ds = self::build(array_merge($p, array('schedule' => $code)));
+                foreach ($ds['rows'] as $r) {
+                    $r['schedule_code'] = $code;
+                    $rows[] = $r;
+                }
+                $count += $ds['source_count'];
+                $table = $ds['source_table'];
+            }
+            return array('rows' => $rows, 'source_table' => $table, 'source_count' => $count);
+        }
         $client = $p['client'];
         $from = substr($p['from'], 0, 7);
         $to = substr($p['to'], 0, 7);
@@ -114,7 +169,7 @@ class Datasets
             case 'wh_year':
                 return self::withholding($client['id'], $branchId, 'agent', $parts[1], $parts[2], $from, $to, null);
             case 'sawt':
-                return self::withholding($client['id'], $branchId, 'payee', 'EWT', '*', $from, $to, null);
+                return self::withholding($client['id'], $branchId, 'payee', self::sawtKind(isset($p['vars']['sawt_form']) ? $p['vars']['sawt_form'] : null), '*', $from, $to, null);
             case 'srs':
                 $atcs = isset($p['vars']['srs_atcs']) ? $p['vars']['srs_atcs'] : explode(',', sys_config('srs_atcs', 'WI158,WC158,WI160,WC160'));
                 return self::withholding($client['id'], $branchId, 'agent', 'EWT', '*', $from, $to, $atcs, true);
@@ -182,8 +237,10 @@ class Datasets
             WHERE t.client_id = ? AND t.status = ? AND t.direction = ? AND t.tax_kind = ? AND t.period_month >= ? AND t.period_month <= ?';
         $params = array($clientId, 'posted', $direction, $kind, $from, $to);
         if ($tag !== '*') {
-            $sql .= ' AND t.schedule_tag = ?';
-            $params[] = $tag;
+            // A+Y: more than one placement (the 1604-E Schedule 3 takes the QAP lines and the year totals).
+            $tags = explode('+', $tag);
+            $sql .= ' AND t.schedule_tag IN (' . DB::in($tags) . ')';
+            $params = array_merge($params, $tags);
         }
         if ($branchId) {
             $sql .= ' AND t.branch_id = ?';
@@ -217,6 +274,11 @@ class Datasets
             sort($m);
             $g['months'] = implode(' ', $m);
             unset($g['months_set']);
+            if ($kind === 'FWT') {
+                // Fringe benefits: the income payment is the grossed-up monetary value, and the benefit is that less the tax.
+                $g['monetary'] = $g['income'];
+                $g['fringe'] = $g['income'] - $g['tax'];
+            }
         }
         unset($g);
         return array('rows' => array_values($groups), 'source_table' => 'withholding_entries', 'source_count' => count($rows));
@@ -276,7 +338,7 @@ class Datasets
      * Rows for a period taken from stored DAT files (generated or uploaded) instead of the database.
      * $fileIds: list of dat_files ids chosen per month. Rows are re-aggregated per payee + ATC + rate.
      */
-    public static function fromDatFiles($fileIds, $atcFilter = null)
+    public static function fromDatFiles($fileIds, $atcFilter = null, $schedule = null)
     {
         $groups = array();
         $count = 0;
@@ -287,7 +349,11 @@ class Datasets
             }
             $spec = Specs::forFile($f);
             $parsed = DatReader::parse((string)Reports::storedBytes($f), $spec);
-            foreach ($parsed['rows'] as $r) {
+            foreach ($parsed['rows'] as $ri => $r) {
+                if ($schedule && !empty($spec['composite']) && $spec['parts'][$parsed['row_parts'][$ri]]['schedule_code'] !== $schedule) {
+                    continue;
+                }
+                $r += array('rate' => '0', 'tax' => 0, 'tin' => '', 'branch' => '0000', 'atc' => '');
                 $count++;
                 if ($atcFilter && !in_array(isset($r['atc']) ? $r['atc'] : '', $atcFilter, true)) {
                     continue;

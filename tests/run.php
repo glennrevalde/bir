@@ -13,6 +13,8 @@ if (PHP_SAPI !== 'cli') {
 }
 require dirname(__DIR__) . '/app/bootstrap.php';
 require __DIR__ . '/bir_v74_1604c.php';
+require __DIR__ . '/bir_v74_sawt.php';
+require __DIR__ . '/bir_v74_withholding.php';
 require dirname(__DIR__) . '/tools/seed_lib.php';
 
 $testDb = config('db.name') . '_test';
@@ -662,6 +664,74 @@ if (getenv('GSB_SAWT_SAMPLE') && is_file(getenv('GSB_SAWT_SAMPLE'))) {
         'the attached SAWT sample: 16 lines, income 4,453,882.74 and tax 89,077.65 equal its Grand Total, and every tax is 2% of the income', json_encode(array($rst, $ti, $tt, $bad)));
 }
 
+$fsBytes = file_get_contents(storage_path($fs['storage_path']));
+$fsLines = preg_split('/\r\n/', rtrim($fsBytes, "\r\n"));
+ok(preg_match('/^HSAWT,H1702Q,004267719,0000,"GUARDIAN ACES SECURITY AGENCY INC","","","",03\/2025,081$/', $fsLines[0]) && preg_match('/^DSAWT,D1702Q,\d+,\d{9},\d{4},/', $fsLines[1])
+    && end($fsLines) === 'CSAWT,C1702Q,004267719,0000,03/2025,2677093.87,53541.88', 'the SAWT records are written as the v7.4 data entry module writes them', $fsLines[0] . ' | ' . $fsLines[1] . ' | ' . end($fsLines));
+ok($fs['filename'] === '0042677190000032025' . '1702Q.DAT', 'the SAWT file name is TIN, branch, MMYYYY and the form', $fs['filename']);
+$fsV = bir_v74_sawt($fsBytes, '004267719', '0000', '1702Q', '03/2025');
+ok($fsV === array(), 'the 1702Q SAWT passes the ported v7.4 SAWT checks', json_encode($fsV));
+$fsBad = bir_v74_sawt(str_replace(',WC120,', ',WZ999,', $fsBytes), '004267719', '0000', '1702Q', '03/2025');
+$fsWrong = bir_v74_sawt($fsBytes, '004267719', '0000', '2550Q', '03/2025');
+ok(count($fsBad) === 1 && $fsBad[0][1] === 'ATC is invalid.' && $fsWrong && $fsWrong[0] === array(1, 'Invalid Form Type Code.'), 'the ported checks refuse an unknown ATC and the wrong attached return', json_encode(array($fsBad, $fsWrong)));
+
+// The 2550Q SAWT: VAT withheld on the client (ATC WV), from the 2550Q template.
+$tpl25 = Imports::template('withheld_on_us', true, array('client' => DB::row('SELECT * FROM client_entities WHERE id = ?', array($Gg['client'])), 'month' => '2025-09', 'variant' => '2550Q'));
+$tpl25Xml = zip_part($tpl25, 'xl/sharedStrings.xml') . zip_part($tpl25, 'xl/worksheets/sheet1.xml');
+ok(strpos($tpl25Xml, 'BIR FORM 2550Q') !== false && strpos($tpl25Xml, 'WV010') !== false && strpos($tpl25Xml, 'WC160') === false, 'the 2550Q SAWT template has the 2550Q title and VAT codes');
+list($vj, $vst, $vexact, $vdet, $vmeta) = $simport($tpl25);
+ok($vexact && $vmeta['form'] === '2550Q' && $vmeta['month'] === '2025-09' && $vst['errors'] === 0 && $vst['valid'] === $vst['total'] && $vst['total'] > 0, 'the 2550Q template imports without errors', json_encode($vst));
+Imports::commit($vj, 'all');
+$vk = DB::col("SELECT DISTINCT tax_kind FROM withholding_entries WHERE client_id = ? AND period_month = '2025-09'", array($Gg['client']));
+ok($vk === array('GVAT'), 'VAT withheld lines are saved as GVAT, taken from the ATC', json_encode($vk));
+$ctxV = Reports::context(array('form' => 'SAWT', 'schedule' => 'S1', 'branch_id' => $Gg['branch'], 'year' => 2025, 'part' => 3, 'sawt_form' => '2550Q', 'amended' => 0));
+$fv = DB::row('SELECT * FROM dat_files WHERE id = ?', array(Reports::generate($ctxV, true)));
+$fvBytes = file_get_contents(storage_path($fv['storage_path']));
+$fvV = bir_v74_sawt($fvBytes, '004267719', '0000', '2550Q', '09/2025');
+ok((int)$fv['record_count'] === $vst['valid'] && strpos($fvBytes, 'HSAWT,H2550Q,') === 0 && strpos($fvBytes, ',WV0') !== false && $fvV === array(),
+    'the 2550Q SAWT carries only the VAT withheld and passes the ported v7.4 checks', json_encode(array($fv['record_count'], $fvV)));
+$ctxE = Reports::context(array('form' => 'SAWT', 'schedule' => 'S1', 'branch_id' => $Gg['branch'], 'year' => 2025, 'part' => 3, 'sawt_form' => '1702Q', 'amended' => 0));
+throws(function () use ($ctxE) { Reports::generate($ctxE, true); }, 'the 1702Q SAWT of the same quarter leaves the VAT withheld out', 'no records');
+ok(count(Imports::sawtLines($Gg['client'], null, '2025-09', null, array('GVAT'))) === $vst['valid'] && !Imports::sawtLines($Gg['client'], null, '2025-09', null, array('EWT')),
+    'the SAWT layout export picks the lines of the return it is for');
+$v74 = Checks::v74Atcs();
+ok(isset($v74['WC160'], $v74['WV010'], $v74['WB030']) && !isset($v74['WZ999']) && count($v74) === 469, 'the v7.4 ATC table has the 469 codes its validator accepts, VAT and percentage tax included');
+
+// =====================================================================
+section('1604-E alphalist template (Schedule 3)');
+$etype = Imports::type('alphalist_1604e');
+$Ee = make_org('Eagle', '006112233', 'firm_owner', 'EAGLE WITHHOLDING AGENT CORP');
+login_as($Ee['user'], $Ee['org'], $Ee['client']);
+$eClient = DB::row('SELECT * FROM client_entities WHERE id = ?', array($Ee['client']));
+$eTpl = Imports::template('alphalist_1604e', true, array('client' => $eClient, 'month' => '2025-12'));
+$eXml = zip_part($eTpl, 'xl/sharedStrings.xml') . zip_part($eTpl, 'xl/worksheets/sheet1.xml');
+ok(strpos($eXml, 'BIR FORM 1604E - SCHEDULE 3') !== false && strpos($eXml, 'AS OF DECEMBER 31,2025') !== false && strpos($eXml, '006112233') !== false && strpos($eXml, 'Grand Total') !== false,
+    'the 1604-E template has the Schedule 3 title lines of the BIR printout with the client TIN');
+$eimport = function ($bytes, $opts = array()) use ($Ee, $etype) {
+    $rel = 'uploads/e1604-' . mt_rand() . '.xlsx';
+    file_put_contents(storage_path($rel), $bytes);
+    $job = DB::insert('import_jobs', array('organization_id' => $Ee['org'], 'client_id' => $Ee['client'], 'branch_id' => $Ee['branch'], 'import_type' => 'alphalist_1604e', 'original_filename' => 'e.xlsx',
+        'stored_path' => $rel, 'file_sha256' => hash('sha256', $bytes), 'sheet_name' => null, 'header_row' => 1, 'status' => 'uploaded', 'created_by' => $Ee['user'], 'created_at' => now()));
+    $rows = Imports::readRows(DB::row('SELECT * FROM import_jobs WHERE id = ?', array($job)), 80);
+    $det = Imports::detectHeader($etype, $rows);
+    $meta = Imports::reportMeta($rows, $det[0]);
+    list($map, $exact) = Imports::suggestMapping($etype, Imports::headersOf($rows, $det[1], $det[0]));
+    if (empty($opts['period_month']) && $meta['month']) {
+        $opts['period_month'] = $meta['month'];
+    }
+    DB::update('import_jobs', array('header_row' => $det[1], 'mapping_json' => json_encode($map), 'options_json' => json_encode($opts + array('header_from' => $det[0]))), 'id = ?', array($job));
+    Imports::prepare($job);
+    do { $st = Imports::stageChunk($job, 100); } while (!$st['done']);
+    return array($job, $st, $exact, $det, $meta);
+};
+list($ej1, $est1, $eex1, $edet1, $emeta1) = $eimport($eTpl);
+ok($eex1 && $emeta1['month'] === '2025-12' && (int)$emeta1['schedule'] === 3 && $emeta1['tin'] === '006112233' && $est1['errors'] === 0 && $est1['total'] > 0 && $est1['valid'] === $est1['total'],
+    'the 1604-E template imports back: header found, as of December 2025, Schedule 3, no errors', json_encode(array($emeta1, $est1)));
+Imports::commit($ej1, 'all');
+$er = DB::all('SELECT * FROM withholding_entries WHERE client_id = ? ORDER BY id', array($Ee['client']));
+ok(count($er) === $est1['valid'] && $er[0]['direction'] === 'agent' && $er[0]['tax_kind'] === 'EWT' && $er[0]['period_month'] === '2025-12' && $er[0]['payment_date'] === '2025-12-31',
+    'its lines are saved as taxes we withheld on December 31, 2025', json_encode($er[0]));
+
 // =====================================================================
 section('Sales in the VAT sales workbook format');
 $Ss = make_org('Salinas', '555000111', 'firm_owner', 'VAT SALES TEST CORP');
@@ -772,7 +842,7 @@ $wx = zip_part($wtpl, 'xl/worksheets/sheet1.xml');
 $wr = new XlsxReader(tmp_file($wtpl));
 ok(strpos($wx, "<formula1>&apos;ATC codes&apos;!\$A\$2:\$A\$") !== false && strpos($wx, 'sqref="K2:K20000"') !== false && $wr->sheetNames()[1] === 'ATC codes',
     'the ATC column is a dropdown of the tax codes saved in the system, listed on the sheet ATC codes');
-ok(strpos($wx, '<formula1>&quot;1,2&quot;</formula1>') !== false && strpos($wx, 'sqref="Q2:Q20000"') !== false, 'SCHEDULE is a dropdown of 1 and 2');
+ok(strpos($wx, '<formula1>&quot;1,2,3&quot;</formula1>') !== false && strpos($wx, 'sqref="Q2:Q20000"') !== false, 'SCHEDULE is a dropdown of 1, 2 and 3');
 $wm = Records::module('withholding');
 $visible = array_values(array_filter(array_map(function ($f) { return empty($f['hidden']) ? $f['key'] : null; }, $wm['fields'])));
 ok(!in_array('reference_no', $visible, true) && !in_array('rate_exception_note', $visible, true) && strpos($wm['fields'][array_search('schedule_tag', array_column($wm['fields'], 'key'))]['options']['A'], '1:') === 0,
@@ -865,6 +935,103 @@ ok($ntFile['status'] === 'pending_bir' && !$ntErr, 'the QAP is written and passe
 ok(strpos(json_encode($ntIssues), 'CONSINGSAY CORPORATION) has no TIN') !== false && strpos(json_encode($ntIssues), 'Payee TIN is') === false, 'Level 1 notes the missing TIN as a warning; Level 2 does not call it an error');
 $ntBytes = file_get_contents(storage_path($ntFile['storage_path']));
 ok((bool)preg_match('/^D1,1601EQ,[^\r\n]*,,(""|),?"?CONSINGSAY CORPORATION/m', $ntBytes) || strpos($ntBytes, '"CONSINGSAY CORPORATION"') !== false, 'the payee line is written', substr($ntBytes, 0, 400));
+
+// =====================================================================
+section('QAP, MAP, 1604-E and 1604-F as the BIR Alphalist module v7.4 writes them');
+DB::q('UPDATE tax_codes SET status = ?', array('approved'));
+$Vq = make_org('Vqap', '007100200', 'firm_owner', 'VALIDATOR QAP TEST CORP');
+login_as($Vq['user'], $Vq['org'], $Vq['client']);
+$vcp = function ($tin, $reg, $last = null, $first = null, $foreign = null) use ($Vq) {
+    return DB::insert('counterparties', array('organization_id' => $Vq['org'], 'client_id' => $Vq['client'], 'tin' => $tin, 'branch_code' => '0000',
+        'entity_type' => $reg ? 'non_individual' : 'individual', 'registered_name' => $reg, 'last_name' => $last, 'first_name' => $first, 'middle_name' => $last ? 'CRUZ' : null,
+        'foreign_address' => $foreign, 'is_payee' => 1, 'created_at' => now()));
+};
+$vA = $vcp('300111222', 'ALPHA SERVICES CORP');
+$vB = $vcp('300111333', null, 'REYES', 'MARIA');
+$vC = $vcp('300111444', 'EXEMPT COOPERATIVE');
+$vD = $vcp('', 'OVERSEAS LICENSOR LTD', null, null, '1 MARKET ST, SINGAPORE');
+$vE = $vcp('300111555', null, 'SANTOS', 'PEDRO');
+$vwh = function ($cp, $kind, $atc, $month, $income, $rate, $tag) use ($Vq) {
+    static $k = 0;
+    $k++;
+    DB::insert('withholding_entries', array('organization_id' => $Vq['org'], 'client_id' => $Vq['client'], 'branch_id' => $Vq['branch'], 'counterparty_id' => $cp, 'direction' => 'agent',
+        'tax_kind' => $kind, 'atc_code' => $atc, 'payment_date' => $month . '-15', 'period_month' => $month, 'income_amount' => $income, 'tax_rate' => $rate,
+        'tax_withheld' => Money::toPlain(Money::applyRate(Money::fromDb($income), Money::rateUnits($rate))), 'schedule_tag' => $tag, 'status' => 'posted', 'source' => 'manual',
+        'row_hash' => sha1('v74|' . $k), 'created_at' => now()));
+};
+$vwh($vA, 'EWT', 'WC160', '2026-03', '50000.00', '2.0000', 'A');
+$vwh($vB, 'EWT', 'WI010', '2026-03', '30000.00', '5.0000', 'A');
+$vwh($vC, 'EWT', 'WC158', '2026-03', '80000.00', '0.0000', 'B');
+$vwh($vD, 'FWT', 'WC250', '2026-03', '100000.00', '20.0000', 'A');
+$vwh($vE, 'FWT', 'WF360', '2026-03', '20000.00', '35.0000', 'B');
+$vwh($vD, 'FWT', 'WC230', '2026-03', '40000.00', '0.0000', 'C');
+$vwh($vA, 'GVAT', 'WV020', '2026-03', '60000.00', '5.0000', 'A');
+$vwh($vA, 'GPT', 'WB080', '2026-03', '45000.00', '3.0000', 'A');
+$vgen = function ($form, $schedule, $year, $part) use ($Vq) {
+    $ctx = Reports::context(array('form' => $form, 'schedule' => $schedule, 'branch_id' => $Vq['branch'], 'year' => $year, 'part' => $part, 'sawt_form' => null, 'amended' => 0));
+    $f = DB::row('SELECT * FROM dat_files WHERE id = ?', array(Reports::generate($ctx, true)));
+    return array($f, (string)Reports::storedBytes($f), $ctx);
+};
+ok(Datasets::generateSchedules('1601EQ')[0]['schedule_code'] === 'S1+S2' && Datasets::generateSchedules('1604F')[0]['schedule_code'] === 'S4-6' && Specs::scheduleLabel('S1-3') === 'Schedules 1 to 3',
+    'each QAP and annual form is generated as one file for all its schedules');
+list($qf, $qb, $qctx) = $vgen('1601EQ', 'S1+S2', 2026, 3);
+$ql = explode("\r\n", rtrim($qb, "\r\n"));
+ok($qf['filename'] === '00710020000000320261601EQ.DAT' && $ql[0] === 'HQAP,H1601EQ,007100200,0000,"VALIDATOR QAP TEST CORP",03/2026,081'
+    && $ql[1] === 'D1,1601EQ,1,300111222,0000,"ALPHA SERVICES CORP",,,,03/2026,WC160,2.00,50000.00,1000.00'
+    && $ql[3] === 'C1,1601EQ,007100200,0000,03/2026,80000.00,2500.00'
+    && $ql[4] === 'D2,1601EQ,1,300111444,0000,"EXEMPT COOPERATIVE",,,,03/2026,WC158,80000.00' && $ql[5] === 'C2,1601EQ,007100200,0000,03/2026,80000.00' && count($ql) === 6,
+    'the 1601-EQ holds the header once, Schedule 1 with rate and tax and its C1, then Schedule 2 with income only and its C2', implode(' | ', $ql));
+$qv = bir_v74_withholding($qb, '1601EQ', '007100200', '0000', '03/2026');
+ok($qv === array(), 'the 1601-EQ passes the ported v7.4 checks', json_encode($qv));
+list($ff, $fb) = $vgen('1601FQ', 'S1-3', 2026, 3);
+$fl = explode("\r\n", rtrim($fb, "\r\n"));
+ok($fl[1] === 'D1,1601FQ,,0000,"OVERSEAS LICENSOR LTD",,,,03/2026,1,WC250,20.00,100000.00,20000.00'
+    && $fl[3] === 'D2,1601FQ,300111555,0000,"SANTOS","PEDRO","CRUZ",03/2026,1,WF360,13000.00,20000.00,7000.00' && $fl[4] === 'C2,1601FQ,007100200,0000,03/2026,13000.00,20000.00,7000.00'
+    && $fl[5] === 'D3,1601FQ,,0000,"OVERSEAS LICENSOR LTD",,,,03/2026,1,G,WC230,40000.00' && $fl[6] === 'C3,1601FQ,007100200,0000,03/2026,40000.00',
+    'the 1601-FQ puts the sequence after the period, the fringe benefit and grossed-up value in Schedule 2 and the status code in Schedule 3', implode(' | ', $fl));
+$fv = bir_v74_withholding($fb, '1601FQ', '007100200', '0000', '03/2026');
+ok($fv === array(), 'the 1601-FQ passes the ported v7.4 checks', json_encode($fv));
+foreach (array('1600VT' => 'WV020,,5.00,60000.00,3000.00', '1600PT' => 'WB080,,3.00,45000.00,1350.00') as $mf => $tail) {
+    list($mfile, $mb) = $vgen($mf, 'S1', 2026, 3);
+    $ml = explode("\r\n", rtrim($mb, "\r\n"));
+    $mv = bir_v74_withholding($mb, $mf, '007100200', '0000', '03/2026');
+    ok($ml[0] === 'HMAP,H' . $mf . ',007100200,0000,"VALIDATOR QAP TEST CORP",03/2026,081' && strpos($ml[1], 'DMAP,D' . $mf . ',1,300111222,0000,"ALPHA SERVICES CORP",,,,03/2026,' . $tail) === 0
+        && strpos($ml[2], 'CMAP,C' . $mf . ',007100200,0000,03/2026,') === 0 && $mv === array(), 'the ' . $mf . ' has DMAP and CMAP lines with the empty nature of income and passes the ported v7.4 checks', json_encode(array($ml, $mv)));
+}
+list($ef, $eb) = $vgen('1604E', 'S3+S4', 2026, 1);
+$el = explode("\r\n", rtrim($eb, "\r\n"));
+ok($ef['filename'] === '007100200000012312026' . '1604E.DAT' && $el[0] === 'H1604E,007100200,0000,12/31/2026'
+    && $el[1] === 'D3,1604E,007100200,0000,12/31/2026,1,300111222,0000,"ALPHA SERVICES CORP",,,,WC160,50000.00,2.00,1000.00'
+    && $el[3] === 'C3,1604E,007100200,0000,12/31/2026,2500.00' && $el[4] === 'D4,1604E,007100200,0000,12/31/2026,1,300111444,0000,"EXEMPT COOPERATIVE",,,,WC158,80000.00'
+    && $el[5] === 'C4,1604E,007100200,0000,12/31/2026,80000.00',
+    'the 1604-E holds Schedule 3 (the QAP Schedule 1 payees, control with the tax only) and Schedule 4 (exempt payees, control with the income)', implode(' | ', $el));
+$ev = bir_v74_withholding($eb, '1604E', '007100200', '0000', '12/31/2026');
+ok($ev === array(), 'the 1604-E passes the ported v7.4 checks', json_encode($ev));
+list($Ff, $Fb) = $vgen('1604F', 'S4-6', 2026, 1);
+$Fl = explode("\r\n", rtrim($Fb, "\r\n"));
+$Fv = bir_v74_withholding($Fb, '1604F', '007100200', '0000', '12/31/2026');
+ok($Fl[1] === 'D4,1604F,007100200,0000,12/31/2026,1,,0000,"OVERSEAS LICENSOR LTD",,,,G,WC250,100000.00,20.00,20000.00' && $Fl[2] === 'C4,1604F,007100200,0000,12/31/2026,100000.00,20000.00'
+    && $Fl[3] === 'D5,1604F,007100200,0000,12/31/2026,1,300111555,0000,"SANTOS","PEDRO","CRUZ",WF360,13000.00,20000.00,7000.00' && $Fv === array(),
+    'the 1604-F carries the status code, the fringe benefit schedule and passes the ported v7.4 checks', json_encode(array($Fl, $Fv)));
+$Fp = DatReader::parse($Fb, Specs::forFile($Ff));
+ok(!array_filter($Fp['issues'], function ($i) { return $i['severity'] === 'error'; }) && count($Fp['rows']) === 3 && $Fp['row_parts'] === array(0, 1, 2), 'the combined 1604-F reads back with each line in its schedule');
+// Old per-schedule layouts are retired; files made with the earlier layouts would fail the module.
+ok(!DB::val("SELECT COUNT(*) FROM layout_specs WHERE form_code IN ('1601EQ','1601FQ','1600VT','1600PT','1604E','1604F') AND status <> 'retired' AND version_label <> 'Alphalist v7.4 (BIR data entry module)'"),
+    'only the v7.4 layouts are in use for the QAP, MAP, 1604-E and 1604-F');
+ok(count(bir_v74_withholding(str_replace('D2,1601EQ,1,300111444,0000,"EXEMPT COOPERATIVE",,,,03/2026,WC158,80000.00', 'D2,1601EQ,1,300111444,0000,"EXEMPT COOPERATIVE",,,,03/2026,WC158,0.00,80000.00,0.00', $qb), '1601EQ', '007100200', '0000', '03/2026')) >= 1,
+    'the ported checks refuse a Schedule 2 line with rate and tax columns, as the earlier layout wrote it');
+// Level 1 mirrors the validator: zero tax in 1601-EQ Schedule 1 and a tax that is not income x rate are errors.
+$z = Checks::v74Withholding('1601EQ', 'S1', array('income' => 1000000, 'rate' => '2.0000', 'tax' => 0, 'atc' => 'WC160', 'last_name' => '', 'first_name' => '', 'middle_name' => ''));
+$m = Checks::v74Withholding('1600VT', 'S1', array('income' => 1000000, 'rate' => '5.0000', 'tax' => 40000, 'atc' => 'WV020', 'last_name' => '', 'first_name' => '', 'middle_name' => ''));
+ok(in_array('TAX_ZERO', array_map(function ($i) { return $i[1]; }, $z), true) && $m && $m[0][1] === 'TAX_V74' && $m[0][0] === 'error', 'data quality reports what the v7.4 validator refuses', json_encode(array($z, $m)));
+// The 1604-E alphalist template's year totals go to the 1604-E Schedule 3 and not to the December QAP.
+ok(Imports::tag1604eS3() === 'Y', 'lines from a 1604-E alphalist are kept as year totals');
+$vwh($vA, 'EWT', 'WC160', '2026-12', '10000.00', '2.0000', 'Y');
+$vwh($vB, 'EWT', 'WI010', '2026-12', '1000.00', '5.0000', 'A');
+list(, $eb2) = $vgen('1604E', 'S3+S4', 2026, 1);
+list(, $qb12) = $vgen('1601EQ', 'S1+S2', 2026, 12);
+ok(strpos($eb2, 'WC160,60000.00,2.00,1200.00') !== false && strpos($qb12, 'WC160') === false && strpos($qb12, 'WI010,5.00,1000.00,50.00') !== false,
+    'year totals appear in the 1604-E Schedule 3 and stay out of the December 1601-EQ');
 
 // =====================================================================
 section('1604-C: Schedules 1 and 2 in one file');

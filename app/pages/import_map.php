@@ -88,19 +88,23 @@ if (is_post()) {
     }
     $problems = array_merge($metaProblems, Imports::mappingProblems($type, $map));
     $opts = array('date_format' => input('date_format') === 'dmy' ? 'dmy' : 'auto', 'header_from' => $from);
-    $dateKey = $type['key'] === 'withheld_on_us' ? 'payment_date' : 'invoice_date';
+    $dateKey = in_array($type['key'], array('withheld_on_us', 'alphalist_1604e'), true) ? 'payment_date' : 'invoice_date';
+    $is1604e = $type['key'] === 'alphalist_1604e';
     if (!empty($type['needs_month'])) {
         $pm = Records::parseMonth((string)input('period_month'));
         if ($pm) {
             $opts['period_month'] = $pm;
         } elseif (!isset($map[$dateKey]) || $map[$dateKey] === null) {
             $problems[] = $isReport
-                ? 'Choose the month. The file has no line FOR THE MONTH OF, and no date column is mapped.'
+                ? ($is1604e ? 'Choose December of the year. The file has no line AS OF DECEMBER 31.' : 'Choose the month. The file has no line FOR THE MONTH OF, and no date column is mapped.')
                 : 'Choose the purchase month. The sheet has no date column, so every row is filed under this month.';
         }
     }
     if ($isReport) {
-        $opts['report'] = array('form' => $meta['form'], 'month' => $meta['month'], 'tin' => $meta['tin'], 'branch' => $meta['branch'], 'name' => $meta['name']);
+        $opts['report'] = array('form' => $meta['form'], 'schedule' => $meta['schedule'], 'month' => $meta['month'], 'tin' => $meta['tin'], 'branch' => $meta['branch'], 'name' => $meta['name']);
+        if ($is1604e && $meta['schedule'] && $meta['schedule'] !== 3) {
+            $problems[] = 'This is the 1604-E Schedule ' . (int)$meta['schedule'] . '. The 1604-E template reads Schedule 3, the payees subject to expanded withholding tax.';
+        }
         if ($meta['month'] && !empty($opts['period_month']) && $opts['period_month'] !== $meta['month']) {
             $opts['month_differs'] = true;
         }
@@ -133,7 +137,7 @@ foreach ($headers as $i => $h) {
 View::header('Map columns', array('page' => 'import_map'));
 View::pageBar('Map columns', View::clientContext(e($job['original_filename']) . ', ' . e($type['label'])), '<a class="btn btn-quiet" href="' . e(url('imports')) . '">Back to imports</a>');
 ?>
-<?php if ($exact) { ?><div class="notice notice-success"><?= $isReport ? 'This file is in the SAWT layout. All nine columns are mapped; check the title lines and the preview, then continue.' : 'This file matches the ' . e($type['code']) . ' template. All columns are mapped; check the preview and continue.' ?></div><?php } ?>
+<?php if ($exact) { ?><div class="notice notice-success"><?= $isReport ? ($type['key'] === 'alphalist_1604e' ? 'This file is in the layout of the 1604-E Schedule 3 printout. All eight columns are mapped; check the title lines and the preview, then continue.' : 'This file is in the SAWT layout. All nine columns are mapped; check the title lines and the preview, then continue.') : 'This file matches the ' . e($type['code']) . ' template. All columns are mapped; check the preview and continue.' ?></div><?php } ?>
 <?php foreach (is_post() ? $problems : $metaProblems as $p) { ?><div class="notice notice-error"><?= e($p) ?></div><?php } ?>
 <?php foreach ($metaNotes as $p) { ?><div class="notice notice-warning"><?= e($p) ?></div><?php } ?>
 <?php
@@ -161,10 +165,10 @@ if ($headers && !is_post() && ($missingReq || $unused)) { ?>
 <div class="sheet report-meta">
   <div class="sheet-head"><div><h2>Title lines</h2><p>Read from the lines above the header and checked against <?= e(Ctx::clientName($client)) ?>.</p></div></div>
   <div class="sheet-body"><dl class="kv kv-cols">
-    <dt>BIR form</dt><dd><?= $meta['form'] ? e($meta['form']) : '<span class="muted">Not found</span>' ?></dd>
-    <dt>Month</dt><dd><?= $meta['month'] ? e(month_label($meta['month'])) : '<span class="muted">Not found; choose it below</span>' ?></dd>
+    <dt>BIR form</dt><dd><?= $meta['form'] ? e($meta['form']) . ($meta['schedule'] ? ', Schedule ' . (int)$meta['schedule'] : '') : '<span class="muted">Not found</span>' ?></dd>
+    <dt><?= $type['key'] === 'alphalist_1604e' ? 'As of' : 'Month' ?></dt><dd><?= $meta['month'] ? e($type['key'] === 'alphalist_1604e' ? fmt_date(last_day($meta['month']), 'F j, Y') : month_label($meta['month'])) : '<span class="muted">Not found; choose it below</span>' ?></dd>
     <dt>TIN</dt><dd><?= $meta['tin'] ? e(Tin::display($meta['tin'], $meta['branch'])) . ($meta['tin'] === $client['tin'] ? ' <span class="ok-text">matches the client</span>' : ' <span class="warn-text">another taxpayer</span>') : '<span class="muted">Not found</span>' ?></dd>
-    <dt>Payee's name</dt><dd><?= $meta['name'] ? e($meta['name']) : '<span class="muted">Not found</span>' ?></dd>
+    <dt><?= $type['key'] === 'alphalist_1604e' ? 'Withholding agent' : 'Payee\'s name' ?></dt><dd><?= $meta['name'] ? e($meta['name']) : '<span class="muted">Not found</span>' ?></dd>
     <dt>Header</dt><dd>Rows <?= (int)$from ?> to <?= (int)$job['header_row'] ?><?= $skipped ? ', with ' . (int)$skipped . ' report lines (numbering, dashes, totals) left out' : '' ?></dd>
   </dl></div>
 </div>

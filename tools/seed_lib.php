@@ -36,7 +36,7 @@ function gsb_seed_reference($superEmail = 'admin@gsmart.local', $superPassword =
     }
     foreach ($R['tax_codes'] as $t) {
         DB::insert('tax_codes', array('atc_code' => $t[0], 'tax_kind' => $t[1], 'payee_type' => $t[2], 'description' => $t[3], 'rate' => $t[4],
-            'effective_from' => '2018-01-01', 'effective_to' => null, 'version_tag' => '1601EQ-2019-AnnexA', 'source_ref' => $t[5], 'status' => 'pending_review',
+            'effective_from' => '2018-01-01', 'effective_to' => null, 'version_tag' => strpos($t[5], 'v7.4, ATC table') !== false ? 'BIR-v7.4-ATC' : '1601EQ-2019-AnnexA', 'source_ref' => $t[5], 'status' => 'pending_review',
             'notes' => 'Seeded at install. Approve after checking the ATC table of the installed validator.', 'created_at' => now()));
     }
     foreach ($R['config'] as $k => $v) {

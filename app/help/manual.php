@@ -382,13 +382,13 @@ H
 <ol class="steps">
 <li><b>Payor.</b> Type the payor's TIN with its branch code, for example 000-438-366-0000. A payor already in the directory fills in; a new one is added when you save. A corporation goes under <b>Corporation, registered name</b> (3); a person under <b>Individual</b> (4) as last, first and middle name.</li>
 <li><b>Month.</b> Choose the branch and the <b>month of income payment</b>. The date of payment and the 2307 reference are optional; a date must fall inside the month.</li>
-<li><b>ATC code</b> (5). Only codes that fit the client are listed: WC codes for a non-individual client, WI codes for an individual. The nature of payment fills in from the ATC; you may type your own.</li>
+<li><b>ATC code</b> (5). Only codes that fit the client are listed: WC codes for a non-individual client, WI codes for an individual, and the WV codes for VAT withheld and WB codes for percentage tax withheld. The nature of payment fills in from the ATC; you may type your own. A WV line goes to the SAWT of the 2550Q, a WB line to the SAWT of the 2551Q, and the others to the SAWT of the income tax return.</li>
 <li><b>Amount of income payment</b> (6). The <b>tax rate</b> (7) comes from the ATC and the <b>tax withheld</b> (8) works out as income x rate, rounded to the centavo.</li>
 <li>Click <b>Save line</b>, or <b>Save and add another</b>.</li>
 </ol>
 <div class="mnote"><b>Amounts as certified.</b> The payor decides what it withheld. If the 2307 shows a different rate or tax, type it in: it is kept, with a warning to check it against the certificate. Use <i>Note on the rate or tax</i> to say why.</div>
 <ul>
-<li>Filter the list by month, then click <b>SAWT layout</b> to download that month as a SAWT printout: title lines with the client's TIN and name, the header (1) to (8), one line per payor and ATC, and the Grand Total. It can be imported back.</li>
+<li>Filter the list by month, then click <b>SAWT 1702Q</b> or <b>SAWT 2550Q</b> to download that month as a SAWT printout: title lines with the form, the client's TIN and name, the header (1) to (8), one line per payor and ATC, and the Grand Total. The 1702Q printout holds the income tax withheld, the 2550Q printout the VAT withheld. Either can be imported back.</li>
 <li><b>CSV</b> exports the same columns, one row per saved line.</li>
 <li>To bring in a SAWT you already have, see <a href="{sec:imports}">Import a spreadsheet</a>.</li>
 </ul>
@@ -474,7 +474,8 @@ $ch[] = array('title' => 'Importing spreadsheets', 'sections' => array(
 <ul>
 <li><b>Sales</b> is the VAT sales workbook: one sheet with its 17 columns and widths, from CUSTOMER TIN to OUTPUT VAT. Fill in GROSS TAXABLE or TAXABLE SALES; leave the other, and OUTPUT VAT, blank to have them worked out at the VAT RATE (12 when blank).</li>
 <li><b>Purchases</b> is the R_Purchases workbook: one sheet named R_Purchases with its 16 columns, and the formulas for taxableNetofVat, inputVat and totalPurchases on every row, with vatRate 12. totalPurchases includes the input VAT. A workbook made with the earlier formula, which left the VAT out of the total, still imports, with a note.</li>
-<li><b>Taxes withheld on us</b> is the SAWT printout. Its title lines carry the active client's form (1702Q or 1701Q), last month, TIN and name; under the header (1) to (8) are 30 open lines whose tax works itself out from the income and rate, then the Grand Total. Insert rows between the two lines of dashes for more payors.</li>
+<li><b>Taxes withheld on us 1702Q (SAWT)</b> and <b>Taxes withheld on us 2550Q (SAWT)</b> are the SAWT printout of the BIR Alphalist module v7.4. Their title lines carry the form, last month, the active client's TIN and name; under the header (1) to (8) are 30 open lines whose tax works itself out from the income and rate, then the Grand Total. Insert rows between the two lines of dashes for more payors. Use the 1702Q template for income tax withheld on the client (WC and WI codes) and the 2550Q template for VAT withheld (WV codes). Both upload as Taxes withheld on us.</li>
+<li><b>Annual alphalist 1604-E (Schedule 3)</b> is the Schedule 3 printout of the module: BIR FORM 1604E - SCHEDULE 3, AS OF DECEMBER 31 and the year, the TIN and withholding agent's name, then SEQ NO, TIN, registered name, name of payee, ATC, income, rate and tax withheld. One line per payee and ATC with the year's totals. Its lines are saved as taxes we withheld on December 31 of the year, so use it only for a year whose payments are not already recorded month by month.</li>
 <li>The other templates have one header row and one record per row.</li>
 </ul>
 <p>Download <b>Blank</b> for real work and <b>With sample rows</b> to see the expected format. TIN columns are already formatted as text so leading zeros survive.</p>
@@ -485,14 +486,14 @@ H
 <figure><img src="{img:imports}" alt="Import a spreadsheet"><figcaption>Uploading a workbook. Recent imports are listed on the left.</figcaption></figure>
 <ol class="steps">
 <li>Choose <b>The file contains</b> (for example Taxes we withheld) and the <b>Default branch</b> for rows that do not name one.</li>
-<li>For <b>Purchases</b>, choose the <b>purchase month</b>: the R_Purchases sheet has no date column. For <b>Taxes withheld on us (SAWT)</b> the month is optional: leave it blank to read it from the line FOR THE MONTH OF.</li>
+<li>For <b>Purchases</b>, choose the <b>purchase month</b>: the R_Purchases sheet has no date column. For <b>Taxes withheld on us (SAWT)</b> the month is optional: leave it blank to read it from the line FOR THE MONTH OF. For the <b>1604-E alphalist</b> the year is read from the line AS OF DECEMBER 31.</li>
 <li>Choose your .xlsx or .csv file and click <b>Upload and map columns</b>. Large files upload in pieces and resume if the connection drops.</li>
-<li>Map the columns (see <a href="{sec:import_map}">Map columns</a>). A G-SMaRT template, an R_Purchases workbook and a SAWT printout map themselves.</li>
+<li>Map the columns (see <a href="{sec:import_map}">Map columns</a>). A G-SMaRT template, an R_Purchases workbook, a SAWT printout and a 1604-E Schedule 3 printout map themselves.</li>
 <li>Click <b>Stage and check rows</b>. Rows are checked in batches; nothing touches your records yet.</li>
 <li>Review the results and commit (see <a href="{sec:import_review}">Review an import</a>).</li>
 </ol>
 <h3>Importing taxes we withheld</h3>
-<p>Pick each ATC from the dropdown in the template; it lists the codes saved under <a href="{sec:atc}">Tax codes</a> (add a missing code there first, one by one or from Excel). SCHEDULE is 1 or 2, and 3 only for final tax (1601-FQ Schedule 3); blank means 1. TAX RATE may be a percent (0.5) or a decimal (0.005): when it is below 1, the tax withheld or the ATC's own rate decides which was meant. A TAX WITHHELD that is not income x rate is refused, so a typing error is caught; a rate other than the ATC's is kept with a warning. Files in the earlier layout, with REFERENCE NO and RATE EXCEPTION NOTE, still import.</p>
+<p>Pick each ATC from the dropdown in the template; it lists the codes saved under <a href="{sec:atc}">Tax codes</a> (add a missing code there first, one by one or from Excel). SCHEDULE is the schedule of the QAP the line belongs to: 1 for payees subject to withholding (blank means 1); 2 for payees exempt from expanded withholding (1601-EQ Schedule 2, 1604-E Schedule 4), or for fringe benefits under final tax (1601-FQ Schedule 2, entered with the grossed-up monetary value as the income); 3 for payees exempt from final tax (1601-FQ Schedule 3). TAX RATE may be a percent (0.5) or a decimal (0.005): when it is below 1, the tax withheld or the ATC's own rate decides which was meant. A TAX WITHHELD that is not income x rate is refused, so a typing error is caught; a rate other than the ATC's is kept with a warning. Files in the earlier layout, with REFERENCE NO and RATE EXCEPTION NOTE, still import.</p>
 <h3>Importing sales</h3>
 <p>A workbook in the VAT sales format maps itself, and so does one in the earlier layout with ADDRESS 1 and ADDRESS 2. For each row the system:</p>
 <ul>
@@ -512,6 +513,8 @@ H
 <li>splits an INDIVIDUAL written as LAST NAME, FIRST NAME, MIDDLE NAME;</li>
 <li>keeps the income and tax as certified, and compares the Grand Total with the lines on the review page.</li>
 </ul>
+<h3>Importing a 1604-E alphalist</h3>
+<p>Upload the Schedule 3 printout with its title lines (BIR FORM 1604E - SCHEDULE 3, AS OF DECEMBER 31, TIN and WITHHOLDING AGENT'S NAME). The TIN must be the active client's, and a printout of another schedule is refused. Each line is saved as tax we withheld, dated December 31 of the year, as a year total for the 1604-E Schedule 3: it goes into the 1604-E and stays out of the December QAP. The tax is kept as the file shows it, with a warning where it is not income x rate. The review page shows the total income and tax and the file's Grand Total.</p>
 <div class="mwarn"><b>TINs stored as numbers.</b> Excel drops leading zeros and may show long numbers as 1.23E+08. Rows whose TIN looks damaged this way are rejected. Format TIN columns as Text before typing.</div>
 <p>Legacy .xls files are not read. Open them in Excel and save as .xlsx first.</p>
 H
@@ -555,7 +558,7 @@ $ch[] = array('title' => 'Generating BIR files', 'sections' => array(
 'generate' => $S('Generate a file', 'generate', 'Preview the rows and checks, then write the DAT file.', <<<'H'
 <figure><img src="{img:generate}" alt="Generate a file"><figcaption>Previewing September's QAP: rows, totals, data quality and a byte preview.</figcaption></figure>
 <ol class="steps">
-<li>Choose the <b>Form</b>, the <b>Schedule</b> and the <b>Branch</b>. For the 1604-C the schedule is fixed to <i>Schedules 1 and 2 in one file</i>.</li>
+<li>Choose the <b>Form</b>, the <b>Schedule</b> and the <b>Branch</b>. For the QAP, the 1604-C, the 1604-E and the 1604-F the schedule is fixed to all schedules in one file, for example <i>Schedules 1 and 2 in one file</i>.</li>
 <li>Choose the <b>Year</b> and the period: month, quarter, half or year, depending on the form. For SAWT, also choose the return it goes with (for example 1701Q).</li>
 <li>Tick <b>Amended return</b> if this replaces a file already filed.</li>
 <li>Click <b>Preview rows and checks</b>. The system builds the rows from saved records and runs the data quality checks. Nothing is stored yet.</li>
@@ -564,12 +567,14 @@ $ch[] = array('title' => 'Generating BIR files', 'sections' => array(
 </ol>
 <h3>Which period to choose</h3>
 <ul>
-<li><b>QAP</b> (1601-EQ, 1601-FQ): one file per month of the quarter.</li>
+<li><b>QAP</b> (1601-EQ, 1601-FQ): one file per month of the quarter, holding all the month's schedules: the 1601-EQ Schedule 1 (expanded withholding) and Schedule 2 (exempt payees, income only); the 1601-FQ Schedule 1 (final tax), Schedule 2 (fringe benefits) and Schedule 3 (exempt payees, with the payee status code).</li>
 <li><b>SLS, SLP, SLI</b>: one file per month, covering all branches of the TIN.</li>
-<li><b>MAP</b> (1600-VT, 1600-PT): monthly.</li>
-<li><b>1604-C, 1604-E, 1604-F</b>: the year. The 1604-C is one file holding Schedule 1 and Schedule 2 (minimum wage earners), as the BIR system expects; the schedule is not chosen separately.</li>
-<li><b>SAWT</b>: the period of the return it is attached to.</li>
+<li><b>MAP</b> (1600-VT, 1600-PT): monthly, with the DMAP and CMAP lines of the BIR module.</li>
+<li><b>1604-C, 1604-E, 1604-F</b>: the year. Each is one file holding all its schedules, as the BIR system expects: the 1604-C Schedules 1 and 2 (minimum wage earners), the 1604-E Schedules 3 (expanded withholding) and 4 (exempt payees), the 1604-F Schedules 4 (final tax), 5 (fringe benefits) and 6 (exempt payees). The schedule is not chosen separately; a schedule without records is left out.</li>
+<li><b>SAWT</b>: the period of the return it is attached to. For 1702Q choose the quarter; the file carries the income tax withheld on the client. For 2550Q it carries the VAT withheld. The file is named TIN, branch, last month and year, and the form, for example 00426771900000320251702Q.DAT, as the v7.4 validator names it.</li>
 </ul>
+<h3>The format of the files</h3>
+<p>The QAP, MAP, 1604-C, 1604-E, 1604-F and SAWT files follow the file writer of the BIR Alphalist Data Entry and Validation Module v7.4, line for line, and the data quality checks report what its validator refuses: a zero income, a zero tax in the 1601-EQ Schedule 1 and the 1604-E Schedule 3, a tax that is not income x rate in whole pesos, a rate over 99%, an ATC missing from the module's ATC table and the TINs 111-111-111 and 999-999-999. The 1601-FQ and 1604-F payee status code is A for an individual and E for a corporation, or D and G for a payee with a foreign address. A fringe benefit line is entered with the grossed-up monetary value as the income; the file writes the benefit as that value less the tax.</p>
 <h3>Errors and warnings</h3>
 <p>Errors block a submission-ready file. Warnings are shown to reviewers but do not block. If you need to inspect a file despite errors, <b>Generate diagnostic draft</b> creates one labelled unvalidated. It can never become submission-ready.</p>
 H
@@ -621,10 +626,10 @@ H
 H
 ),
 
-'consolidate' => $S('SRS and annual builder', 'consolidate', 'Build the 1604-E Schedule 4 and the SRS from monthly sources.', <<<'H'
+'consolidate' => $S('SRS and annual builder', 'consolidate', 'Build the 1604-E Schedule 3 and the SRS from monthly sources.', <<<'H'
 <figure><img src="{img:consolidate}" alt="SRS and annual builder"><figcaption>Choosing a source for each month. Missing months are flagged.</figcaption></figure>
 <ol class="steps">
-<li>Choose what to build, the branch and the year, and click <b>Load months</b>.</li>
+<li>Choose what to build, the branch and the year, and click <b>Load months</b>. The 1604-E Schedule 3 adds up the year's QAP Schedule 1 lines (payees subject to expanded withholding), from saved records or from the Schedule 1 lines of stored 1601-EQ files.</li>
 <li>For each month choose <b>Saved records</b> or a stored QAP file. The grid flags missing months, months with more than one file, branch mismatches and amended files.</li>
 <li>Click <b>Preview consolidated rows</b>, check the totals, then <b>Generate consolidated file</b>.</li>
 </ol>

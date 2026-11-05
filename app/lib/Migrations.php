@@ -6,7 +6,7 @@
  */
 class Migrations
 {
-    const CURRENT = 5;
+    const CURRENT = 7;
 
     public static function run()
     {
@@ -48,9 +48,53 @@ class Migrations
                 Specs::update1604cLayouts();
                 set_sys_config('schema_version', '5');
             }
+            if ($v < 6) {
+                // 2026-11-05: SAWT as the BIR Alphalist module v7.4 writes it, for 1702Q, 2550Q and every other
+                // attached return; the VAT and percentage tax withholding codes the 2550Q and 2551Q SAWT need.
+                Specs::updateSawtLayouts();
+                self::addTaxCodes(array('GVAT', 'GPT'));
+                set_sys_config('schema_version', '6');
+            }
+            if ($v < 7) {
+                // 2026-11-05: QAP (1601-EQ, 1601-FQ), MAP (1600-VT, 1600-PT), 1604-E and 1604-F as the BIR Alphalist
+                // module v7.4 writes them, the schedules of a return in one file. The 1604-E Schedule 3 is the
+                // expanded withholding of the year's QAP Schedule 1, and Schedule 4 the payees exempt from it.
+                Specs::updateV74WithholdingLayouts();
+                self::updateSchedules();
+                self::addTaxCodes(array('FWT'));
+                set_sys_config('schema_version', '7');
+            }
         } catch (Exception $e) {
             // Without ALTER rights the update waits for database/migrations/; check.php reports it.
             error_log('[GSB] Schema update to version ' . self::CURRENT . ' failed: ' . $e->getMessage());
         }
+    }
+
+    /** Bring the names and data sources of the report schedules in line with the reference data. */
+    public static function updateSchedules()
+    {
+        require_once APP_PATH . '/specs/reference.php';
+        $R = gsb_reference();
+        foreach ($R['schedules'] as $s) {
+            DB::q('UPDATE report_schedules SET name = ?, dataset_key = ? WHERE form_code = ? AND schedule_code = ?', array($s[2], $s[3], $s[0], $s[1]));
+        }
+    }
+
+    /** Seed tax codes of the given kinds that an installation does not have yet (pending review, like at install). */
+    public static function addTaxCodes($kinds)
+    {
+        require_once APP_PATH . '/specs/reference.php';
+        $R = gsb_reference();
+        $n = 0;
+        foreach ($R['tax_codes'] as $t) {
+            if (!in_array($t[1], $kinds, true) || DB::val('SELECT id FROM tax_codes WHERE atc_code = ? AND tax_kind = ?', array($t[0], $t[1]))) {
+                continue;
+            }
+            DB::insert('tax_codes', array('atc_code' => $t[0], 'tax_kind' => $t[1], 'payee_type' => $t[2], 'description' => $t[3], 'rate' => $t[4],
+                'effective_from' => '2018-01-01', 'effective_to' => null, 'version_tag' => 'BIR-v7.4-ATC', 'source_ref' => $t[5], 'status' => 'pending_review',
+                'notes' => 'Added from the ATC table of the BIR Alphalist module v7.4. Approve after checking the ATC table of the installed validator.', 'created_at' => now()));
+            $n++;
+        }
+        return $n;
     }
 }

@@ -1,9 +1,9 @@
 <?php
 Ctx::requirePerm('reports.generate');
 $client = Ctx::requireClient();
-$targets = array('1604E_S4' => '1604-E Schedule 4 (twelve months of QAP, placement A)', 'SRS' => 'SRS: Semestral List of Regular Suppliers (six months)');
-$target = isset($targets[input('target')]) ? input('target') : '1604E_S4';
-$year = input_int('year', (int)date('Y') - ($target === '1604E_S4' ? 1 : 0));
+$targets = array('1604E_S3' => '1604-E Schedule 3 (twelve months of QAP Schedule 1)', 'SRS' => 'SRS: Semestral List of Regular Suppliers (six months)');
+$target = isset($targets[input('target')]) ? input('target') : '1604E_S3';
+$year = input_int('year', (int)date('Y') - ($target === '1604E_S3' ? 1 : 0));
 $sem = input_int('sem', 1) === 2 ? 2 : 1;
 $ho = Ctx::headOffice();
 $branch = Ctx::branchAllowed(input_int('branch_id', $ho ? (int)$ho['id'] : 0));
@@ -32,6 +32,9 @@ foreach ($months as $m) {
     $db = DB::row($sql, $p);
     $files = DB::all('SELECT d.*, s.status AS spec_status FROM dat_files d LEFT JOIN layout_specs s ON s.id = d.spec_id WHERE d.client_id = ? AND d.form_code = ? AND d.schedule_code = ?
         AND d.period_to = ? AND d.status <> ? AND (d.branch_id = ? OR d.branch_id IS NULL) ORDER BY d.id DESC', array($client['id'], '1601EQ', 'S1', last_day($m), 'superseded', $branch['id']));
+    // A 1601-EQ written as the BIR module writes it holds Schedules 1 and 2; only its Schedule 1 lines are used.
+    $files = array_merge($files, DB::all('SELECT d.*, s.status AS spec_status FROM dat_files d LEFT JOIN layout_specs s ON s.id = d.spec_id WHERE d.client_id = ? AND d.form_code = ? AND d.schedule_code = ?
+        AND d.period_to = ? AND d.status <> ? AND (d.branch_id = ? OR d.branch_id IS NULL) ORDER BY d.id DESC', array($client['id'], '1601EQ', Specs::combinedCode('1601EQ'), last_day($m), 'superseded', $branch['id'])));
     $flags = array();
     if ((int)$db['n'] === 0 && !$files) {
         $flags[] = array('bad', 'Missing: no records and no QAP file');
@@ -64,7 +67,7 @@ $build = function () use ($grid, $client, $branch, $atcFilter) {
             $ds = Datasets::withholding($client['id'], $branch['id'], 'agent', 'EWT', 'A', $m, $m, $atcFilter);
             $modes['database'] = 1;
         } else {
-            $ds = Datasets::fromDatFiles(array((int)$g['choice']), $atcFilter);
+            $ds = Datasets::fromDatFiles(array((int)$g['choice']), $atcFilter, 'S1');
             foreach ($ds['rows'] as &$r) {
                 $r['months'] = $m;
             }
@@ -103,7 +106,7 @@ $build = function () use ($grid, $client, $branch, $atcFilter) {
 };
 $in = $target === 'SRS'
     ? array('form' => 'SRS', 'schedule' => 'S1', 'branch_id' => $branch['id'], 'year' => $year, 'part' => $sem, 'sawt_form' => null, 'amended' => 0, 'srs_atcs' => $srsAtcs)
-    : array('form' => '1604E', 'schedule' => 'S4', 'branch_id' => $branch['id'], 'year' => $year, 'part' => 1, 'sawt_form' => null, 'amended' => 0);
+    : array('form' => '1604E', 'schedule' => 'S3', 'branch_id' => $branch['id'], 'year' => $year, 'part' => 1, 'sawt_form' => null, 'amended' => 0);
 
 if (is_post()) {
     try {

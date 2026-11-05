@@ -174,7 +174,7 @@ function gsb_seed_demo()
 
     // ---------------------------------------------------------------- files and certificates for client 1
     foreach (quarter_months(2026, 1) as $mm) {
-        $ctx = Reports::context(array('form' => '1601EQ', 'schedule' => 'S1', 'branch_id' => $b0, 'year' => 2026, 'part' => (int)substr($mm, 5, 2), 'sawt_form' => null, 'amended' => 0));
+        $ctx = Reports::context(array('form' => '1601EQ', 'schedule' => Specs::combinedCode('1601EQ'), 'branch_id' => $b0, 'year' => 2026, 'part' => (int)substr($mm, 5, 2), 'sawt_form' => null, 'amended' => 0));
         Reports::generate($ctx, true, 'Demo file');
     }
     $ctx = Reports::context(array('form' => 'SLS', 'schedule' => 'S1', 'branch_id' => $b0, 'year' => 2026, 'part' => 1, 'sawt_form' => null, 'amended' => 0));
@@ -351,9 +351,9 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
         gsb_demo_employee($orgId, $c1, $i % 2 ? $b1 : $b0, $users['preparer'], 'E-' . (104 + $i), $e);
     }
     foreach (array(4, 5, 6, 7, 8, 9) as $m) {
-        gsb_demo_gen('1601EQ', 'S1', $b0, 2026, $m);
+        gsb_demo_gen('1601EQ', Specs::combinedCode('1601EQ'), $b0, 2026, $m);
     }
-    gsb_demo_gen('1601EQ', 'S1', $b1, 2026, 9);
+    gsb_demo_gen('1601EQ', Specs::combinedCode('1601EQ'), $b1, 2026, 9);
     foreach (array(6, 7, 8, 9) as $m) {
         gsb_demo_gen('SLS', 'S1', $b0, 2026, $m);
         gsb_demo_gen('SLP', 'S1', $b0, 2026, $m);
@@ -526,6 +526,38 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
     gsb_demo_login($users['preparer'], $orgId, $c1);
     Imports::commit($sjob, 'all');
     gsb_demo_gen('SAWT', 'S1', $b0, 2026, 3, '1702Q');
+    // The same quarter's VAT withheld by government customers, from the 2550Q SAWT printout (WV codes, kind GVAT).
+    gsb_demo_login($users['encoder'], $orgId, $c1);
+    $vatLines = array();
+    foreach (array(
+                 array('000-860-123-0000', 'PROVINCIAL GOVERNMENT OF CEBU', '', 'WV010', 120535.71, 5),
+                 array('000-860-456-0000', 'CEBU CITY WATER DISTRICT', '', 'WV020', 48214.29, 5),
+             ) as $l) {
+        $tc = Records::taxCode($l[3], 'GVAT', '2026-09-30');
+        $vatLines[] = array('tin' => $l[0], 'company' => $l[1], 'individual' => $l[2], 'atc' => $l[3], 'nature' => $tc ? $tc['description'] : '', 'income' => $l[4], 'rate' => $l[5],
+            'tax' => Money::toPlain(Money::applyRate((int)round($l[4] * 100), $l[5] * 10000)));
+    }
+    $vxlsx = Imports::sawtWorkbook(DB::row('SELECT * FROM client_entities WHERE id = ?', array($c1)), '2550Q', '2026-09', $vatLines, false, '2550Q');
+    $vrel = 'uploads/demo/kalamansi-sawt-2550q-sep-2026.xlsx';
+    file_put_contents(storage_path($vrel), $vxlsx);
+    $vjob = DB::insert('import_jobs', array('organization_id' => $orgId, 'client_id' => $c1, 'branch_id' => $b0, 'import_type' => 'withheld_on_us', 'original_filename' => 'SAWT 2550Q September 2026.xlsx',
+        'stored_path' => $vrel, 'file_sha256' => hash('sha256', $vxlsx), 'sheet_name' => 'Sheet1', 'header_row' => 1, 'status' => 'uploaded', 'created_by' => $users['encoder'], 'created_at' => now()));
+    $vrows = Imports::readRows(DB::row('SELECT * FROM import_jobs WHERE id = ?', array($vjob)), 80);
+    list($vfrom, $vto) = Imports::detectHeader($stype, $vrows);
+    $vmeta = Imports::reportMeta($vrows, $vfrom);
+    list($vmap) = Imports::suggestMapping($stype, Imports::headersOf($vrows, $vto, $vfrom));
+    DB::update('import_jobs', array('header_row' => $vto, 'mapping_json' => json_encode($vmap), 'options_json' => json_encode(array('date_format' => 'auto', 'header_from' => $vfrom,
+        'period_month' => $vmeta['month'], 'report' => array('form' => $vmeta['form'], 'month' => $vmeta['month'], 'tin' => $vmeta['tin'], 'branch' => $vmeta['branch'], 'name' => $vmeta['name'])))), 'id = ?', array($vjob));
+    Imports::prepare($vjob);
+    do {
+        $st = Imports::stageChunk($vjob, 200);
+    } while (!$st['done']);
+    if ($st['valid'] !== count($vatLines)) {
+        throw new RuntimeException('Demo 2550Q SAWT import staged ' . $st['valid'] . ' of ' . count($vatLines) . ' lines.');
+    }
+    gsb_demo_login($users['preparer'], $orgId, $c1);
+    Imports::commit($vjob, 'all');
+    gsb_demo_gen('SAWT', 'S1', $b0, 2026, 3, '2550Q');
     gsb_demo_login($users['preparer'], $orgId, $c3);
 
     // July to September sales encoded directly; purchases and withholding all year
@@ -550,7 +582,7 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
         }
     }
     foreach (array(4, 5, 6, 7, 8, 9) as $m) {
-        gsb_demo_gen('1601EQ', 'S1', $b3, 2026, $m);
+        gsb_demo_gen('1601EQ', Specs::combinedCode('1601EQ'), $b3, 2026, $m);
     }
     foreach (array(6, 9) as $m) {
         gsb_demo_gen('SLS', 'S1', $b3, 2026, $m);
@@ -713,9 +745,9 @@ function gsb_seed_demo_more($orgId, $users, $c1, $b0, $b1, $sup, $cus)
     }
     gsb_demo_wh($c6, $b6, $vend['audit'], 'WC010', '2026-04-20', '350000.00', 'Annual audit fee', 'PD-202604-AUD');
     gsb_demo_gen('1604C', Specs::COMBINED_CODE, $b6, 2025, 1);
-    gsb_demo_gen('1604E', 'S4', $b6, 2025, 1);
+    gsb_demo_gen('1604E', Specs::combinedCode('1604E'), $b6, 2025, 1);
     foreach (array(7, 8, 9) as $m) {
-        gsb_demo_gen('1601EQ', 'S1', $b6, 2026, $m);
+        gsb_demo_gen('1601EQ', Specs::combinedCode('1601EQ'), $b6, 2026, $m);
     }
     foreach (array(7, 8, 9) as $m) {
         gsb_demo_gen('SLS', 'S1', $b6, 2026, $m);

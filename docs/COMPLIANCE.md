@@ -20,19 +20,19 @@ Status `draft` means unsourced or analog. `pending_verification` means sourced b
 | SLS | Sales | pending verification | medium | Two independent RELIEF generators agree on field order; quoting follows RELIEF v2.3 |
 | SLP | Purchases | pending verification | medium | Same sources as SLS |
 | SLI | Importations | pending verification | low | One secondary source |
-| 1601-EQ | Schedule 1 | pending verification | medium | Header shape from the official MAP header (RMC 25-2024 Annex A); detail and control from one secondary generator; filename per Annex B |
-| 1601-EQ | Schedule 2 | draft | analog | No published field table found; mirrors Schedule 1 |
-| 1601-FQ | Schedules 1 to 3 | draft | analog | No published field table found; mirrors 1601-EQ |
-| 1600-VT, 1600-PT | Schedule 1 | draft | official header, analog detail | Header and filename from RMC 25-2024 Annex A/B; detail mirrors QAP |
+| 1601-EQ | Schedules 1 and 2 | pending verification | official | Written as the BIR Alphalist Data Entry and Validation module v7.4 writes them (mn1601e) and checked against its validator (val1601e): HQAP header, D1 with rate and tax and its C1, D2 with income only and its C2, all in one file per month |
+| 1601-FQ | Schedules 1 to 3 | pending verification | official | Module writer mn1601f, validator val1601f: sequence after the period; Schedule 2 fringe benefit, grossed-up monetary value and tax; Schedule 3 payee status code A to H and income; one file per month |
+| 1600-VT, 1600-PT | Schedule 1 | pending verification | official | Module writers mn1600 and mn1600pt, validator val1600: HMAP header, DMAP lines with an empty nature-of-income column after the ATC, CMAP control |
 | 1604-C | Schedule 1 | pending verification | validated | Reproduces byte for byte a v7.4 TY2025 sample whose validator report reads "No Errors Encountered" (see `tests/fixtures/README.md`) |
 | 1604-C | Schedule 2 (MWE) | pending verification | official | 59-field D2 and 45-field C2 lines as written by the BIR Alphalist Data Entry and Validation module v7.4 (sched2dets) and checked by its validator; replaces the earlier unsourced draft, which is retired |
-| 1604-E | Schedules 3 and 4 | draft | analog | Annex lists the schedules but the published PDF is image-only |
-| 1604-F | Schedules 4 to 6 | draft | analog | Same as 1604-E |
-| SAWT | generic | pending verification | low | One secondary generator (quoted shape noted for 1701/1701Q) |
-| SAWT | 1702-Q variant | pending verification | low | One secondary generator describing an unquoted, untrimmed 1702-Q shape |
+| 1604-E | Schedules 3 and 4 | pending verification | official | Module writer mn1604e, validator val1604e: H1604E header with 12/31/YYYY; D3 with income, rate and tax and a C3 with the tax total; D4 with income only and a C4 with the income total; one file |
+| 1604-F | Schedules 4 to 6 | pending verification | official | Module writer mn1604f, validator val1604cf: D4 with the payee status code, rate and tax; D5 fringe benefits; D6 exempt payees with status code; one file |
+| SAWT | every attached return | pending verification | official | Module writer (sawt form) and validator (val_sawt): HSAWT/DSAWT/CSAWT with the attached return in the form code (H1702Q, D2550Q, ...). Replaces the two earlier secondary-source SAWT layouts, which are retired |
 | SRS | Semestral | draft | analog | RR 14-2008 / RMC 5-2009; a secondary source reports RMC 122-2019 ended SRS submission. Confirm before use |
 
-The 1604-C is generated as one file holding both schedules, because the BIR system does not separate them: the H1604C header once, the D1 lines and their C1 control, then the D2 lines and their C2 control. Each schedule numbers its lines from 1 and its control line totals only its own lines. A year without minimum wage earners gives exactly the validated Schedule 1 bytes. A validator pass on a combined file approves both layouts. The Level 1 checks follow the formulas of the v7.4 validator for both schedules: totals, net taxable equal to taxable compensation, tax due on the graduated rates, tax due equal to the actual amount withheld, the 90,000.00 ceiling on non-taxable 13th month pay and the accepted region codes. The test suite runs generated files through a port of those checks.
+The QAP (1601-EQ, 1601-FQ), 1604-C, 1604-E and 1604-F are each generated as one file holding all their schedules, as the BIR module writes them; a schedule without records is left out. The 1604-C is generated as one file holding both schedules, because the BIR system does not separate them: the H1604C header once, the D1 lines and their C1 control, then the D2 lines and their C2 control. Each schedule numbers its lines from 1 and its control line totals only its own lines. A year without minimum wage earners gives exactly the validated Schedule 1 bytes. A validator pass on a combined file approves both layouts. The Level 1 checks follow the formulas of the v7.4 validator for both schedules: totals, net taxable equal to taxable compensation, tax due on the graduated rates, tax due equal to the actual amount withheld, the 90,000.00 ceiling on non-taxable 13th month pay and the accepted region codes. The test suite runs generated files through a port of those checks, and the QAP, MAP, 1604-E, 1604-F and SAWT files through ports of the module's other validators (`tests/bir_v74_withholding.php`, `tests/bir_v74_sawt.php`).
+
+The 1604-E Schedule 3 reads the year's QAP Schedule 1 lines (placement A) and year totals entered from a 1604-E alphalist (placement Y, which the monthly QAP leaves out); Schedule 4 reads the payees exempt from withholding (placement B, the 1601-EQ Schedule 2). Earlier versions read Schedule 3 and 4 the other way round. The 1601-FQ and 1604-F payee status code is derived from the payee (individual A, corporation E, or D and G with a foreign address). A fringe benefit line is stored with the grossed-up monetary value as its income; the benefit written to the file is that value less the tax.
 
 Each layout page (Admin, File layouts) shows these notes per field, lets you clone a layout into a new draft version with its own effective dates, edit it, and send it for approval.
 
@@ -46,7 +46,7 @@ Each layout page (Admin, File layouts) shows these notes per field, lets you clo
 
 ## ATC registry
 
-Eighteen expanded withholding ATCs are seeded from the 1601-EQ January 2019 ATC annex, all as `pending_review`. Check each against the ATC table installed with your validator patch, correct anything that differs, and approve. Rates are versioned by effective date. Records with an unapproved ATC can be saved and generated, but the file stays an `unvalidated_draft`.
+Eighteen expanded withholding ATCs are seeded from the 1601-EQ January 2019 ATC annex, and the VAT (WV), percentage tax (WB), final tax and fringe benefit (WF type) codes from the ATC table of the BIR Alphalist module v7.4, all as `pending_review`. Level 1 also reports an ATC that is not in the module's own ATC table (`app/specs/bir_v74_atc.php`, 469 codes), which its validator refuses. Check each against the ATC table installed with your validator patch, correct anything that differs, and approve. Rates are versioned by effective date. Records with an unapproved ATC can be saved and generated, but the file stays an `unvalidated_draft`.
 
 ## Certificates
 
@@ -56,9 +56,7 @@ Eighteen expanded withholding ATCs are seeded from the 1601-EQ January 2019 ATC 
 
 These items could not be confirmed from a published BIR source at build time and are labelled in the app:
 
-- DAT field tables for 1601-FQ, 1604-E, 1604-F, 1604-C Schedule 2 and QAP Schedule 2 (published annexes are image-only)
-- Detail and control records for the MAP (1600-VT, 1600-PT)
-- SAWT shapes for forms other than 1701/1701-Q and 1702-Q
+- Whether the BIR's own systems share two quirks of the v7.4 validator: a 1601-FQ Schedule 3 line numbered 10 or more is reported as "Status Code is Invalid", and the 1601-FQ and 1604-F control totals are never compared
 - Current applicability of SRS submission
 - Filing deadline rules: none are pre-filled. Add them under Admin, RDO codes and deadlines, each with its BIR source
 - RDO code list: load the current list from the BIR website (two-column CSV)
@@ -68,6 +66,7 @@ These items could not be confirmed from a published BIR source at build time and
 Official issuances (as cited in the layout registry):
 
 - RMC 25-2024 Annexes A and B (MAP header record and file naming), RMC 15-2025 (Alphalist module v7.4)
+- BIR Alphalist Data Entry and Validation Module v7.4 itself: its file writers and validators (QAP, MAP, 1604-C, 1604-E, 1604-F, SAWT), its ATC table and its certificate templates
 - RMC 7-2021 Annex C (QAP job aid: one file per month of the quarter)
 - RMC 160-2022 attachment (1604-C schedules and code lists)
 - RR 14-2008 and RMC 5-2009 (SRS); RMC 122-2019 (reported termination of SRS)

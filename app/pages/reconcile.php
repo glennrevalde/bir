@@ -69,13 +69,16 @@ if ($tab === 'certs') {
       <td data-label="Status"><?= $ok ? '<span class="st st-ok">Consistent</span>' : '<span class="st st-bad">Records changed after the file was made</span>' ?></td></tr>
   <?php } ?></tbody></table></div>
 <?php } elseif ($tab === 'annual') {
-    $months = DB::all('SELECT period_month, SUM(tax_withheld) AS tax FROM withholding_entries WHERE client_id = ? AND direction = ? AND tax_kind = ? AND status = ? AND period_month LIKE ? GROUP BY period_month ORDER BY period_month',
-        array($cid, 'agent', 'EWT', 'posted', $year . '-%'));
+    // Year totals entered from a 1604-E alphalist (placement Y) are not in any QAP; they count only for the 1604-E.
+    $months = DB::all('SELECT period_month, SUM(tax_withheld) AS tax FROM withholding_entries WHERE client_id = ? AND direction = ? AND tax_kind = ? AND status = ? AND schedule_tag <> ? AND period_month LIKE ? GROUP BY period_month ORDER BY period_month',
+        array($cid, 'agent', 'EWT', 'posted', 'Y', $year . '-%'));
+    $yearTotals = Money::fromDb(DB::val('SELECT COALESCE(SUM(tax_withheld),0) FROM withholding_entries WHERE client_id = ? AND direction = ? AND tax_kind = ? AND status = ? AND schedule_tag = ? AND period_month LIKE ?',
+        array($cid, 'agent', 'EWT', 'posted', 'Y', $year . '-%')));
     $files = array();
     foreach (DB::all('SELECT period_to, SUM(total_tax) AS tax FROM dat_files WHERE client_id = ? AND form_code = ? AND status <> ? AND YEAR(period_to) = ? GROUP BY period_to', array($cid, '1601EQ', 'superseded', $year)) as $r) {
         $files[substr($r['period_to'], 0, 7)] = Money::fromDb($r['tax']);
     }
-    $annual = DB::row('SELECT * FROM dat_files WHERE client_id = ? AND form_code = ? AND schedule_code = ? AND status <> ? AND YEAR(period_to) = ? ORDER BY id DESC LIMIT 1', array($cid, '1604E', 'S4', 'superseded', $year));
+    $annual = DB::row('SELECT * FROM dat_files WHERE client_id = ? AND form_code = ? AND schedule_code IN (?, ?) AND status <> ? AND YEAR(period_to) = ? ORDER BY id DESC LIMIT 1', array($cid, '1604E', 'S3', Specs::combinedCode('1604E'), 'superseded', $year));
     $sumRec = 0;
     $sumFiles = 0; ?>
   <div class="table-wrap"><table class="table table-stack"><thead><tr><th>Month</th><th class="num">EWT in records</th><th class="num">QAP files</th><th>Status</th></tr></thead><tbody>
@@ -83,7 +86,7 @@ if ($tab === 'certs') {
     <tr class="<?= $f === null || $f !== $t ? 'hl' : '' ?>"><td data-label="Month"><?= e(month_label($r['period_month'])) ?></td><td data-label="Records" class="num"><?= Money::fmt($t) ?></td><td data-label="QAP" class="num"><?= $f === null ? '<span class="muted">No file</span>' : Money::fmt($f) ?></td>
       <td data-label="Status"><?= $f === null ? '<span class="st st-wait">Missing QAP</span>' : ($f === $t ? '<span class="st st-ok">Matches</span>' : '<span class="st st-bad">Differs</span>') ?></td></tr>
   <?php } ?></tbody><tfoot><tr><td>Year</td><td class="num"><?= Money::fmt($sumRec) ?></td><td class="num"><?= Money::fmt($sumFiles) ?></td><td></td></tr></tfoot></table></div>
-  <div class="sheet-body small"><?= $annual ? '1604-E Schedule 4 file <a href="' . e(url('file_view', array('id' => $annual['id']))) . '">' . e($annual['filename']) . '</a> totals ' . Money::fmtDb($annual['total_tax']) . (Money::fromDb($annual['total_tax']) === $sumRec ? ' <span class="st st-ok">equal to records</span>' : ' <span class="st st-bad">differs from records</span>') : 'No 1604-E Schedule 4 file for ' . (int)$year . ' yet. Build it in the <a href="' . e(url('consolidate')) . '">SRS and annual builder</a>.' ?></div>
+  <div class="sheet-body small"><?= $annual ? '1604-E file <a href="' . e(url('file_view', array('id' => $annual['id']))) . '">' . e($annual['filename']) . '</a> totals ' . Money::fmtDb($annual['total_tax']) . ($yearTotals ? ', including ' . Money::fmt($yearTotals) . ' entered as year totals' : '') . (Money::fromDb($annual['total_tax']) === $sumRec + $yearTotals ? ' <span class="st st-ok">equal to records</span>' : ' <span class="st st-bad">differs from records</span>') : 'No 1604-E file for ' . (int)$year . ' yet. Generate it, or build Schedule 3 from the QAP files in the <a href="' . e(url('consolidate')) . '">SRS and annual builder</a>.' ?></div>
 <?php } else {
     $ex = array();
     foreach (DB::all('SELECT DISTINCT cp.id, cp.registered_name, cp.last_name, cp.first_name, cp.middle_name FROM withholding_entries w JOIN counterparties cp ON cp.id = w.counterparty_id

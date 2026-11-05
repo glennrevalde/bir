@@ -28,7 +28,7 @@ class Imports
         $t = array(
             // The 17 columns of the VAT sales workbook, in its order, with its headers and widths. GROSS TAXABLE
             // includes VAT; TAXABLE SALES and OUTPUT VAT may be left blank and are worked out from it and the rate.
-            'sales' => array('label' => 'Sales (VAT sales format)', 'code' => 'GSB-SALES', 'module' => 'sales', 'role' => 'customer', 'sheet' => 'Sheet1', 'version' => '2.0', 'columns' => array(
+            'sales' => array('label' => 'Sales (VAT sales format)', 'feeds' => 'Summary List of Sales', 'code' => 'GSB-SALES', 'module' => 'sales', 'role' => 'customer', 'sheet' => 'Sheet1', 'version' => '2.0', 'columns' => array(
                 array('key' => 'p_tin', 'title' => 'CUSTOMER TIN', 'format' => 'text', 'width' => 13.86, 'help' => 'Customer TIN, 9 digits, dashes allowed. Keep the column as Text so leading zeros stay. Leave blank for walk-in customers without a TIN.', 'example' => '123-456-789'),
                 array('key' => 'p_branch', 'title' => 'CUSTOMER BRANCH CODE', 'format' => 'text', 'width' => 22.27, 'help' => '4 digits; 0000 for the head office or when blank.', 'example' => '0000'),
                 array('key' => 'p_registered_name', 'title' => 'REGISTERED NAME', 'format' => 'text', 'width' => 16.07, 'help' => 'For a company or other non-individual. Leave blank for individuals.', 'example' => 'ACME TRADING CORP'),
@@ -50,7 +50,7 @@ class Imports
             )),
             // Exactly the 16 columns of the R_Purchases workbook, in its order and with its headers.
             // Columns marked 'extra' are optional, never in the template, and only used when a file has them.
-            'purchases' => array('label' => 'Purchases (R_Purchases format)', 'code' => 'GSB-PURCHASES', 'module' => 'purchases', 'role' => 'supplier',
+            'purchases' => array('label' => 'Purchases (R_Purchases format)', 'feeds' => 'Summary List of Purchases', 'code' => 'GSB-PURCHASES', 'module' => 'purchases', 'role' => 'supplier',
                 'sheet' => 'R_Purchases', 'version' => '2.1', 'needs_month' => true, 'repeatable' => true, 'columns' => array(
                 array('key' => 'p_tin', 'title' => 'Vendor_TIN', 'format' => 'text', 'width' => 18.73, 'help' => 'Vendor TIN, 9 digits. Keep the column as Text so leading zeros stay. A 13-digit TIN includes the branch code.', 'example' => '000488793'),
                 array('key' => 'p_registered_name', 'title' => 'companyName', 'format' => 'text', 'width' => 69.13, 'help' => 'Registered name of a non-individual vendor. Leave blank for individuals.', 'example' => 'PLDT, INC.'),
@@ -78,7 +78,7 @@ class Imports
                 array('key' => 'non_creditable_vat', 'title' => 'Non-creditable input VAT', 'format' => 'amount', 'extra' => true, 'help' => 'Optional.'),
                 array('key' => 'description', 'title' => 'Description', 'format' => 'text', 'extra' => true, 'help' => 'Optional.'),
             )),
-            'importations' => array('label' => 'Importations', 'code' => 'GSB-IMPORTS', 'module' => 'importations', 'role' => 'supplier', 'columns' => array_merge(self::party('SELLER'), array(
+            'importations' => array('label' => 'Importations', 'feeds' => 'Summary List of Importations', 'code' => 'GSB-IMPORTS', 'module' => 'importations', 'role' => 'supplier', 'columns' => array_merge(self::party('SELLER'), array(
                 $branch,
                 array('key' => 'import_entry_no', 'title' => 'IMPORT ENTRY NO', 'format' => 'text', 'width' => 16, 'required' => true, 'example' => 'IE-2026-0001'),
                 array('key' => 'importation_date', 'title' => 'IMPORTATION DATE', 'format' => 'text', 'width' => 13, 'required' => true, 'example' => '01/10/2026'),
@@ -95,7 +95,7 @@ class Imports
             // Taxes we withheld: 17 columns. ATC is a dropdown of the codes saved in the system (filled when the
             // template is made); SCHEDULE is 1 or 2 (3 only for final tax). Reference no. and rate exception note
             // are no longer in the template but are still read when a file has them.
-            'withholding' => array('label' => 'Taxes we withheld (EWT, FWT, government)', 'code' => 'GSB-WH-AGENT', 'module' => 'withholding', 'role' => 'payee', 'version' => '2.0', 'columns' => array(
+            'withholding' => array('label' => 'Taxes we withheld (EWT, FWT, government)', 'feeds' => 'QAP, MAP, 1604-E, 1604-F, 2307, 2306', 'code' => 'GSB-WH-AGENT', 'module' => 'withholding', 'role' => 'payee', 'version' => '2.0', 'columns' => array(
                 array('key' => 'p_tin', 'title' => 'PAYEE TIN', 'format' => 'text', 'width' => 18.46, 'help' => '9 digits, dashes allowed; a branch code at the end is read too. Keep the column as Text.', 'example' => '123-456-789'),
                 array('key' => 'p_branch', 'title' => 'PAYEE BRANCH CODE', 'format' => 'text', 'width' => 18.13, 'help' => '4 digits; 0000 for the head office or when blank.', 'example' => '0000'),
                 array('key' => 'p_registered_name', 'title' => 'REGISTERED NAME', 'format' => 'text', 'width' => 22.66, 'help' => 'For non-individuals. Leave blank for individuals.', 'example' => 'ACME TRADING CORP'),
@@ -112,15 +112,43 @@ class Imports
                 array('key' => 'income_amount', 'title' => 'INCOME PAYMENT', 'format' => 'amount', 'width' => 16, 'required' => true, 'example' => '100000.00'),
                 array('key' => 'tax_rate', 'title' => 'TAX RATE', 'format' => 'text', 'width' => 8.53, 'help' => 'Percent (1 for 1%) or a decimal (0.01). Blank uses the ATC rate.', 'example' => '1'),
                 array('key' => 'tax_withheld', 'title' => 'TAX WITHHELD', 'format' => 'amount', 'width' => 13, 'help' => 'Blank computes income x rate. A different amount is refused, so a typing error is caught.', 'example' => '1000.00'),
-                array('key' => 'schedule_tag', 'title' => 'SCHEDULE', 'format' => 'text', 'width' => 9, 'help' => '1 or 2. Blank means 1. Use 3 only for final tax (1601-FQ Schedule 3).', 'example' => '1', 'list' => array('1', '2')),
+                array('key' => 'schedule_tag', 'title' => 'SCHEDULE', 'format' => 'text', 'width' => 9, 'help' => '1: subject to withholding (blank means 1). 2: payees exempt from expanded withholding (1601-EQ Schedule 2, 1604-E Schedule 4), or fringe benefits under final tax (1601-FQ Schedule 2). 3: payees exempt from final tax (1601-FQ Schedule 3).', 'example' => '1', 'list' => array('1', '2', '3')),
                 array('key' => 'reference_no', 'title' => 'REFERENCE NO', 'format' => 'text', 'extra' => true, 'help' => 'Optional; no longer in the template.'),
                 array('key' => 'rate_exception_note', 'title' => 'RATE EXCEPTION NOTE', 'format' => 'text', 'extra' => true, 'help' => 'Optional; no longer in the template.'),
+            )),
+            // The 1604-E Schedule 3 printout of the BIR module: title lines (form and schedule, AS OF DECEMBER 31,
+            // TIN, withholding agent's name) above a three-row header, "(1)".."(8)", dashes, one line per payee
+            // and ATC, Grand Total and END OF REPORT. The lines are the year's totals; they are saved as taxes
+            // we withheld on December 31 of the year, in the schedule that feeds the 1604-E Schedule 3.
+            'alphalist_1604e' => array('label' => 'Annual alphalist 1604-E (Schedule 3)', 'code' => 'GSB-1604E', 'module' => 'withholding', 'role' => 'payee',
+                'sheet' => 'Sheet1', 'version' => '1.0', 'needs_month' => true, 'month_from_file' => true, 'repeatable' => true, 'report' => '1604e', 'feeds' => '1604-E Schedule 3', 'columns' => array(
+                array('key' => 'seq_no', 'title' => 'SEQ NO', 'format' => 'text', 'width' => 25, 'weak' => true, 'help' => 'Line number (1). Not stored.', 'example' => '1'),
+                array('key' => 'p_tin', 'title' => 'TAXPAYER IDENTIFICATION NUMBER', 'format' => 'text', 'width' => 25, 'help' => 'Payee TIN with branch code, as 000-000-000-0000 (2). Keep the column as Text.', 'example' => '255-420-851-0000'),
+                array('key' => 'p_registered_name', 'title' => 'REGISTERED NAME', 'format' => 'text', 'width' => 50, 'help' => 'Registered name of a non-individual payee (3).', 'example' => 'SAMPLE DEVELOPMENT INC'),
+                array('key' => 'p_individual', 'title' => 'NAME OF PAYEES (Last Name, First Name, Middle Name)', 'format' => 'text', 'width' => 50, 'help' => 'An individual payee as LAST NAME, FIRST NAME, MIDDLE NAME (4). Leave blank for a corporation.', 'example' => ''),
+                array('key' => 'atc_code', 'title' => 'ATC CODE', 'format' => 'text', 'width' => 25, 'required' => true, 'help' => 'Alphanumeric tax code (5), for example WC100.', 'example' => 'WC100'),
+                array('key' => 'income_amount', 'title' => 'AMOUNT OF INCOME PAYMENT', 'format' => 'amount', 'xlsx_format' => 'sawt', 'width' => 25, 'required' => true, 'help' => 'Income payments for the year (6).', 'example' => '225600.00'),
+                array('key' => 'tax_rate', 'title' => 'RATE OF TAX', 'format' => 'amount', 'xlsx_format' => 'sawt', 'width' => 25, 'weak' => true, 'help' => 'Percent (7), for example 5. Blank uses the ATC rate.', 'example' => '5'),
+                array('key' => 'tax_withheld', 'title' => 'AMOUNT OF TAX WITHHELD', 'format' => 'amount', 'xlsx_format' => 'sawt', 'width' => 25, 'weak' => true,
+                    'formula' => 'IF(F{r}="","",ROUND(F{r}*G{r}/100,2))', 'help' => 'Tax withheld for the year (8). Blank computes income x rate.', 'example' => ''),
+                array('key' => 'p_branch', 'title' => 'Payee branch code', 'format' => 'text', 'extra' => true, 'help' => 'Optional when the TIN already ends in the branch code.'),
+                array('key' => 'p_last_name', 'title' => 'Last name', 'format' => 'text', 'extra' => true, 'help' => 'Optional: an individual payee in separate columns.'),
+                array('key' => 'p_first_name', 'title' => 'First name', 'format' => 'text', 'extra' => true, 'help' => 'Optional.'),
+                array('key' => 'p_middle_name', 'title' => 'Middle name', 'format' => 'text', 'extra' => true, 'help' => 'Optional.'),
+                array('key' => 'nature_of_payment', 'title' => 'Nature of income payment', 'format' => 'text', 'extra' => true, 'help' => 'Optional. Blank uses the ATC description.'),
+                $branch + array('extra' => true),
             )),
             // The SAWT report layout: title lines (form, month, TIN, payee's name) above a three-row header,
             // a "(1)".."(8)" line, dashes, one line per payor and ATC, then Grand Total and END OF REPORT.
             // Only the nine columns are read; the title lines are checked against this client.
+            // Two templates in the template library, one import: the SAWT of the BIR module has the same nine
+            // columns for every return it is attached to; only "BIR FORM ..." in the first line differs.
             'withheld_on_us' => array('label' => 'Taxes withheld on us (SAWT)', 'code' => 'GSB-SAWT', 'module' => 'withheld_on_us', 'role' => 'payor',
-                'sheet' => 'Sheet1', 'version' => '2.0', 'needs_month' => true, 'month_from_file' => true, 'repeatable' => true, 'report' => 'sawt', 'columns' => array(
+                'sheet' => 'Sheet1', 'version' => '2.1', 'needs_month' => true, 'month_from_file' => true, 'repeatable' => true, 'report' => 'sawt', 'feeds' => 'SAWT',
+                'variants' => array(
+                    '1702Q' => array('label' => 'Taxes withheld on us 1702Q (SAWT)', 'code' => 'GSB-SAWT', 'version' => '2.1', 'feeds' => 'SAWT attached to 1702Q (also 1700, 1701, 1701Q, 1702)'),
+                    '2550Q' => array('label' => 'Taxes withheld on us 2550Q (SAWT)', 'code' => 'GSB-SAWT-2550Q', 'version' => '1.0', 'feeds' => 'SAWT attached to 2550Q (also 2550M)'),
+                ), 'columns' => array(
                 array('key' => 'seq_no', 'title' => 'SEQ NO', 'format' => 'text', 'width' => 25.69, 'weak' => true, 'help' => 'Line number (1). Not stored.', 'example' => '1'),
                 array('key' => 'p_tin', 'title' => 'TAXPAYER IDENTIFICATION NUMBER', 'format' => 'text', 'width' => 18, 'help' => 'Payor TIN with branch code, as 000-000-000-0000 (2). Keep the column as Text.', 'example' => '000-123-456-0000'),
                 array('key' => 'p_registered_name', 'title' => 'CORPORATION (Registered Name)', 'format' => 'text', 'width' => 50.69, 'help' => 'Registered name of a non-individual payor (3).', 'example' => 'SAMPLE BANKING CORPORATION'),
@@ -140,12 +168,12 @@ class Imports
                 array('key' => 'reference_no', 'title' => 'Certificate reference', 'format' => 'text', 'extra' => true, 'help' => 'Optional. The 2307 number or reference.'),
                 array('key' => 'rate_exception_note', 'title' => 'Note', 'format' => 'text', 'extra' => true, 'help' => 'Optional.'),
             )),
-            'counterparties' => array('label' => 'Directory: customers, suppliers, payees', 'code' => 'GSB-DIRECTORY', 'module' => null, 'role' => null, 'columns' => array_merge(self::party(''), array(
+            'counterparties' => array('label' => 'Directory: customers, suppliers, payees', 'feeds' => 'Directory', 'code' => 'GSB-DIRECTORY', 'module' => null, 'role' => null, 'columns' => array_merge(self::party(''), array(
                 array('key' => 'p_zip', 'title' => 'ZIP CODE', 'format' => 'text', 'width' => 9, 'example' => '6000'),
                 array('key' => 'roles', 'title' => 'ROLES', 'format' => 'text', 'width' => 26, 'help' => 'Any of: SUPPLIER, CUSTOMER, PAYEE, PAYOR (comma separated).', 'example' => 'SUPPLIER,PAYEE'),
                 array('key' => 'default_atc', 'title' => 'DEFAULT ATC', 'format' => 'text', 'width' => 10, 'example' => 'WC158'),
             ))),
-            'compensation' => array('label' => 'Annual compensation (1604-C, 2316)', 'code' => 'GSB-COMP', 'module' => null, 'role' => null, 'columns' => self::compColumns($branch)),
+            'compensation' => array('label' => 'Annual compensation (1604-C, 2316)', 'feeds' => '1604-C, 2316', 'code' => 'GSB-COMP', 'module' => null, 'role' => null, 'columns' => self::compColumns($branch)),
         );
         foreach ($t as $k => $v) {
             $t[$k]['key'] = $k;
@@ -211,19 +239,40 @@ class Imports
         if ($typeKey === 'withheld_on_us') {
             $client = isset($ctx['client']) ? $ctx['client'] : Ctx::client();
             $month = isset($ctx['month']) && $ctx['month'] ? $ctx['month'] : date('Y-m', strtotime('first day of last month'));
+            $vat = isset($ctx['variant']) && $ctx['variant'] === '2550Q';
+            $form = isset($ctx['form']) && $ctx['form'] ? $ctx['form'] : ($vat ? '2550Q' : null);
             $lines = array();
             if ($withSamples) {
-                foreach (array(
-                             array('000-123-456-0000', 'SAMPLE BANKING CORPORATION', '', 'WC160', 100000, 2, 2000),
-                             array('000-234-567-0000', 'SAMPLE PROPERTY HOLDINGS INC', '', 'WC120', 45250.5, 2, 905.01),
-                             array('000-345-678-0000', '', 'DELA CRUZ, JUAN, SANTOS', 'WC160', 12000, 2, 240),
-                         ) as $v) {
-                    $tc = Records::taxCode($v[3], 'EWT', last_day($month));
+                $samples = $vat ? array(
+                    array('000-123-456-0000', 'SAMPLE CITY GOVERNMENT', '', 'WV010', 71428.5, 5, 3571.43, 'GVAT'),
+                    array('000-234-567-0000', 'SAMPLE PROVINCIAL HOSPITAL', '', 'WV020', 22321.4, 5, 1116.07, 'GVAT'),
+                ) : array(
+                    array('000-123-456-0000', 'SAMPLE BANKING CORPORATION', '', 'WC160', 100000, 2, 2000, 'EWT'),
+                    array('000-234-567-0000', 'SAMPLE PROPERTY HOLDINGS INC', '', 'WC120', 45250.5, 2, 905.01, 'EWT'),
+                    array('000-345-678-0000', '', 'DELA CRUZ, JUAN, SANTOS', 'WC160', 12000, 2, 240, 'EWT'),
+                );
+                foreach ($samples as $v) {
+                    $tc = Records::taxCode($v[3], $v[7], last_day($month));
                     $lines[] = array('tin' => $v[0], 'company' => $v[1], 'individual' => $v[2], 'atc' => $v[3], 'nature' => $tc ? $tc['description'] : '',
                         'income' => $v[4], 'rate' => $v[5], 'tax' => $v[6]);
                 }
             }
-            return self::sawtWorkbook($client, isset($ctx['form']) ? $ctx['form'] : null, $month, $lines, true);
+            return self::sawtWorkbook($client, $form, $month, $lines, true, $vat ? '2550Q' : '1702Q');
+        }
+        if ($typeKey === 'alphalist_1604e') {
+            $client = isset($ctx['client']) ? $ctx['client'] : Ctx::client();
+            $year = isset($ctx['month']) && $ctx['month'] ? (int)substr($ctx['month'], 0, 4) : (int)date('Y', strtotime('-1 year'));
+            $lines = array();
+            if ($withSamples) {
+                foreach (array(
+                             array('255-420-851-0000', 'SAMPLE DEVELOPMENT INC', '', 'WC100', 225600, 5, 11280),
+                             array('123-456-789-0000', 'SAMPLE SECURITY AGENCY INC', '', 'WC120', 480000, 2, 9600),
+                             array('345-678-901-0000', '', 'DELA CRUZ, JUAN, SANTOS', 'WI010', 120000, 5, 6000),
+                         ) as $v) {
+                    $lines[] = array('tin' => $v[0], 'company' => $v[1], 'individual' => $v[2], 'atc' => $v[3], 'income' => $v[4], 'rate' => $v[5], 'tax' => $v[6]);
+                }
+            }
+            return self::alphalistWorkbook($client, $year, $lines, true);
         }
         $cols = self::templateColumns($type);
         $rows = array();
@@ -308,8 +357,11 @@ class Imports
      * the tax and the totals; as an export the amounts are written as values.
      * $lines: tin, company, individual, atc, nature, income, rate, tax.
      */
-    public static function sawtWorkbook($client, $form, $month, $lines, $template = false)
+    public static function sawtWorkbook($client, $form, $month, $lines, $template = false, $variant = null)
     {
+        $variant = $variant ?: (in_array($form, array('2550M', '2550Q'), true) ? '2550Q' : '1702Q');
+        $vt = self::type('withheld_on_us');
+        $vt = $vt['variants'][$variant];
         $form = $form ?: ($client && $client['taxpayer_type'] === 'individual' ? '1701Q' : '1702Q');
         $name = $client ? Ctx::clientName($client) : '';
         $branch = '0000';
@@ -359,8 +411,9 @@ class Imports
         $cells[$dash + 2] = array(6 => str_repeat('=', 18), 7 => str_repeat('=', 18), 8 => str_repeat('=', 18));
         $cells[$dash + 3] = array(0 => $b('END OF REPORT'));
         $cols = array();
-        foreach (self::templateColumns(self::type('withheld_on_us')) as $c) {
-            $cols[] = array('title' => $c['title'], 'width' => $c['width'], 'format' => $c['format'] === 'amount' ? 'amount' : 'general', 'xlsx_format' => $c['format'] === 'amount' ? 'sawt' : null);
+        foreach (self::templateColumns(self::type('withheld_on_us')) as $i => $c) {
+            // The column widths the BIR module gives its SAWT printout: 25, with 50 for (3), (4) and the nature of payment.
+            $cols[] = array('title' => $c['title'], 'width' => in_array($i, array(2, 3, 5), true) ? 50 : 25, 'format' => $c['format'] === 'amount' ? 'amount' : 'general', 'xlsx_format' => $c['format'] === 'amount' ? 'sawt' : null);
         }
         foreach ($cols as $k => $c) {
             if ($c['xlsx_format'] === null) {
@@ -379,18 +432,100 @@ class Imports
             $sheets[] = array('name' => 'Fields', 'columns' => array(array('title' => 'Column', 'width' => 46, 'format' => 'text'), array('title' => 'Required', 'width' => 10, 'format' => 'text'),
                 array('title' => 'How to fill', 'width' => 80, 'format' => 'text')), 'rows' => $fieldRows, 'freeze' => true);
             $sheets[] = array('name' => 'About', 'columns' => array(array('title' => 'Key', 'width' => 22, 'format' => 'text'), array('title' => 'Value', 'width' => 90, 'format' => 'text')),
-                'rows' => array(array('Template code', 'GSB-SAWT'), array('Template version', '2.0'), array('Import type', 'Taxes withheld on us (SAWT)'), array('Generated', date('Y-m-d H:i')),
-                    array('Rules', 'Keep the title lines and the header as they are. One line per payor and ATC, between the two lines of dashes; insert rows there for more payors. TIN with branch code as 000-000-000-0000. A corporation goes under CORPORATION; a person under INDIVIDUAL as LAST NAME, FIRST NAME, MIDDLE NAME. The month is read from the line FOR THE MONTH OF.'),
+                'rows' => array(array('Template code', $vt['code']), array('Template version', $vt['version']), array('Import type', $vt['label']), array('Generated', date('Y-m-d H:i')),
+                    array('Rules', 'Keep the title lines and the header as they are. One line per payor and ATC, between the two lines of dashes; insert rows there for more payors. TIN with branch code as 000-000-000-0000. A corporation goes under CORPORATION; a person under INDIVIDUAL as LAST NAME, FIRST NAME, MIDDLE NAME. The month is read from the line FOR THE MONTH OF: for a quarterly return, the last month of the quarter.'),
+                    array('Codes', $variant === '2550Q' ? 'The 2550Q SAWT lists the VAT withheld on your sales (ATC WV010, WV020 and the other WV codes).' : 'The 1702Q SAWT lists the income tax withheld on your income (ATC WC and WI codes).'),
                     array('Note', 'This workbook is an input template for G-SMaRT BIR in the layout of the SAWT. It is not the SAWT DAT file and is not submitted to the BIR.')));
         }
         return XlsxWriter::build($sheets, array('title' => 'SAWT ' . $form . ' ' . month_label($month)));
     }
 
     /**
-     * Saved taxes withheld on us as SAWT lines: one per payor, ATC and rate for the months given, in the
-     * order of the SAWT (by payor name), for the SAWT layout export.
+     * A workbook in the layout of the BIR module's 1604-E Schedule 3 printout: title lines, the three-row
+     * header, "(1)".."(8)", dashes, one line per payee and ATC, Grand Total and END OF REPORT, with the
+     * module's column widths (25, and 50 for the two name columns). As a template the lines are left open
+     * with formulas for the tax and the totals. $lines: tin, company, individual, atc, income, rate, tax.
      */
-    public static function sawtLines($clientId, $branchId, $fromMonth, $toMonth = null)
+    public static function alphalistWorkbook($client, $year, $lines, $template = false)
+    {
+        $name = $client ? Ctx::clientName($client) : '';
+        $branch = '0000';
+        if ($client) {
+            $ho = Ctx::headOffice($client['id']);
+            $branch = $ho ? $ho['branch_code'] : '0000';
+        }
+        $b = function ($v) {
+            return array('v' => $v, 's' => 'bold');
+        };
+        $cells = array(
+            1 => array(0 => $b('BIR FORM 1604E - SCHEDULE 3')),
+            2 => array(0 => $b('ALPHALIST OF PAYEES SUBJECT TO EXPANDED WITHHOLDING TAX')),
+            3 => array(0 => $b('AS OF DECEMBER 31,' . (int)$year)),
+            6 => array(0 => $b('TIN : ' . ($client ? $client['tin'] . '-' . $branch : ''))),
+            7 => array(0 => $b("WITHHOLDING AGENT'S NAME: " . strtoupper($name))),
+            11 => array(0 => $b('SEQ'), 1 => $b('TAXPAYER'), 2 => $b('REGISTERED NAME'), 3 => $b('NAME OF PAYEES'), 4 => $b('ATC CODE'), 5 => $b('AMOUNT OF'), 6 => $b('RATE OF TAX'), 7 => $b('AMOUNT OF')),
+            12 => array(0 => $b('NO'), 1 => $b('IDENTIFICATION'), 3 => $b('(Last Name, First Name, Middle Name)'), 5 => $b('INCOME PAYMENT'), 7 => $b('TAX WITHHELD')),
+            13 => array(1 => $b('NUMBER')),
+            14 => array(0 => $b('(1)'), 1 => $b('(2)'), 2 => $b('(3)'), 3 => $b('(4)'), 4 => $b('(5)'), 5 => $b('(6)'), 6 => $b('(7)'), 7 => $b('(8)')),
+            15 => array_fill(0, 8, str_repeat('-', 30)),
+        );
+        $taxF = function ($r) {
+            return array('f' => 'IF(OR(F' . $r . '="",G' . $r . '=""),"",ROUND(F' . $r . '*G' . $r . '/100,2))', 's' => 'amount');
+        };
+        $r = 16;
+        $income = 0;
+        $tax = 0;
+        foreach (array_values($lines) as $i => $l) {
+            $cells[$r] = array(0 => $i + 1, 1 => array('v' => (string)$l['tin'], 's' => 'text'), 2 => (string)$l['company'], 3 => (string)$l['individual'],
+                4 => (string)$l['atc'], 5 => array('v' => (float)$l['income'], 's' => 'amount'), 6 => array('v' => (float)$l['rate'], 's' => 'amount'),
+                7 => $template ? $taxF($r) : array('v' => (float)$l['tax'], 's' => 'amount'));
+            $income += Money::parse((string)$l['income'])['cents'];
+            $tax += Money::parse((string)$l['tax'])['cents'];
+            $r++;
+        }
+        if ($template) {
+            for ($n = count($lines); $n < 30; $n++, $r++) {
+                $cells[$r] = array(1 => array('v' => '', 's' => 'text'), 5 => array('v' => '', 's' => 'amount'), 6 => array('v' => '', 's' => 'amount'), 7 => $taxF($r));
+            }
+        }
+        $dash = $r;
+        $cells[$dash] = array(5 => str_repeat('-', 18), 6 => str_repeat('-', 18), 7 => str_repeat('-', 18));
+        $cells[$dash + 1] = array(0 => $b('Grand Total :'),
+            5 => $template ? array('f' => 'SUM(F15:F' . $dash . ')', 's' => 'amount_bold') : array('v' => $income / 100, 's' => 'amount_bold'),
+            7 => $template ? array('f' => 'SUM(H15:H' . $dash . ')', 's' => 'amount_bold') : array('v' => $tax / 100, 's' => 'amount_bold'));
+        $cells[$dash + 2] = array(5 => str_repeat('=', 18), 6 => str_repeat('=', 18), 7 => str_repeat('=', 18));
+        $cells[$dash + 3] = array(0 => $b('END OF REPORT'));
+        $type = self::type('alphalist_1604e');
+        $cols = array();
+        foreach (self::templateColumns($type) as $i => $c) {
+            $col = array('title' => $c['title'], 'width' => in_array($i, array(2, 3), true) ? 50 : 25, 'format' => $i === 1 ? 'text' : ($c['format'] === 'amount' ? 'amount' : 'general'));
+            if ($c['format'] === 'amount') {
+                $col['xlsx_format'] = 'sawt';
+            }
+            $cols[] = $col;
+        }
+        $sheets = array(array('name' => 'Sheet1', 'columns' => $cols, 'cells' => $cells));
+        if ($template) {
+            $fieldRows = array();
+            foreach (self::templateColumns($type) as $c) {
+                $fieldRows[] = array($c['title'], !empty($c['required']) ? 'Yes' : 'No', isset($c['help']) ? $c['help'] : '');
+            }
+            $sheets[] = array('name' => 'Fields', 'columns' => array(array('title' => 'Column', 'width' => 46, 'format' => 'text'), array('title' => 'Required', 'width' => 10, 'format' => 'text'),
+                array('title' => 'How to fill', 'width' => 80, 'format' => 'text')), 'rows' => $fieldRows, 'freeze' => true);
+            $sheets[] = array('name' => 'About', 'columns' => array(array('title' => 'Key', 'width' => 22, 'format' => 'text'), array('title' => 'Value', 'width' => 90, 'format' => 'text')),
+                'rows' => array(array('Template code', $type['code']), array('Template version', $type['version']), array('Import type', $type['label']), array('Generated', date('Y-m-d H:i')),
+                    array('Rules', 'Keep the title lines and the header as they are. One line per payee and ATC with the totals for the year, between the two lines of dashes; insert rows there for more payees. TIN with branch code as 000-000-000-0000. A corporation goes under REGISTERED NAME; a person under NAME OF PAYEES as LAST NAME, FIRST NAME, MIDDLE NAME. The year is read from the line AS OF DECEMBER 31.'),
+                    array('Saved as', 'Taxes we withheld dated December 31 of the year, in the schedule that feeds the 1604-E Schedule 3. Use it for a year whose withholding is not already in the system month by month, or the amounts count twice.'),
+                    array('Note', 'This workbook is an input template for G-SMaRT BIR in the layout of the 1604-E Schedule 3 printout of the BIR Alphalist module. It is not the 1604-E DAT file and is not submitted to the BIR.')));
+        }
+        return XlsxWriter::build($sheets, array('title' => '1604-E Schedule 3 ' . (int)$year));
+    }
+
+    /**
+     * Saved taxes withheld on us as SAWT lines: one per payor, ATC and rate for the months given, in the
+     * order of the SAWT (by payor name), for the SAWT layout export. $kinds limits them to EWT, GVAT or GPT.
+     */
+    public static function sawtLines($clientId, $branchId, $fromMonth, $toMonth = null, $kinds = null)
     {
         $sql = 'SELECT w.*, cp.tin, cp.branch_code AS cp_branch, cp.entity_type, cp.registered_name, cp.last_name, cp.first_name, cp.middle_name
             FROM withholding_entries w JOIN counterparties cp ON cp.id = w.counterparty_id
@@ -399,6 +534,12 @@ class Imports
         if ($branchId) {
             $sql .= ' AND w.branch_id = ?';
             $p[] = $branchId;
+        }
+        if ($kinds) {
+            // The 1702Q SAWT lists income tax withheld (EWT); the 2550Q SAWT lists VAT withheld (GVAT).
+            $kinds = (array)$kinds;
+            $sql .= ' AND w.tax_kind IN (' . implode(',', array_fill(0, count($kinds), '?')) . ')';
+            $p = array_merge($p, $kinds);
         }
         $out = array();
         foreach (DB::all($sql . ' ORDER BY COALESCE(cp.registered_name, cp.last_name), cp.first_name, cp.tin, w.atc_code, w.id', $p) as $r) {
@@ -643,7 +784,7 @@ class Imports
      */
     public static function reportMeta($rows, $before)
     {
-        $m = array('form' => null, 'month' => null, 'tin' => null, 'branch' => null, 'name' => null, 'lines' => array());
+        $m = array('form' => null, 'schedule' => null, 'month' => null, 'tin' => null, 'branch' => null, 'name' => null, 'lines' => array());
         foreach ($rows as $rn => $cells) {
             if ($rn >= $before) {
                 break;
@@ -671,10 +812,13 @@ class Imports
                     $m['branch'] = $t['branch'];
                 }
             }
-            if (!$m['name'] && preg_match('/(?:PAYEE|TAXPAYER|REGISTERED)\s*\'?\s*S?\s+NAME\s*:\s*(.+)$/i', $line, $x)) {
+            if (!$m['schedule'] && preg_match('/\bSCHEDULE\s*(?:NO\.?\s*)?(\d)\b/i', $line, $x)) {
+                $m['schedule'] = (int)$x[1];
+            }
+            if (!$m['name'] && preg_match('/(?:PAYEE|TAXPAYER|REGISTERED|AGENT)\s*\'?\s*S?\s+NAME\s*:\s*(.+)$/i', $line, $x)) {
                 $m['name'] = trim($x[1]);
             }
-            if (!$m['month'] && preg_match('/\b(FOR\s+THE|MONTH|QUARTER|PERIOD|YEAR\s+ENDED)\b/i', $line)) {
+            if (!$m['month'] && preg_match('/\b(FOR\s+THE|MONTH|QUARTER|PERIOD|YEAR\s+ENDED|AS\s+OF)\b/i', $line)) {
                 $m['month'] = self::monthIn($line);
             }
         }
@@ -701,17 +845,17 @@ class Imports
         $branchId = null;
         $clientName = Ctx::clientName($client);
         if ($meta['tin'] && $meta['tin'] !== $client['tin']) {
-            $problems[] = 'This SAWT is for TIN ' . Tin::display($meta['tin'], $meta['branch']) . ($meta['name'] ? ' (' . $meta['name'] . ')' : '') . ', but the active client is '
-                . $clientName . ', TIN ' . Tin::display($client['tin']) . '. Switch to that client, or upload the SAWT of this one.';
+            $problems[] = 'This file is for TIN ' . Tin::display($meta['tin'], $meta['branch']) . ($meta['name'] ? ' (' . $meta['name'] . ')' : '') . ', but the active client is '
+                . $clientName . ', TIN ' . Tin::display($client['tin']) . '. Switch to that client, or upload the file of this one.';
         }
         if ($meta['tin'] && $meta['tin'] === $client['tin'] && $meta['branch'] !== null) {
             $branchId = DB::val('SELECT id FROM branches WHERE client_id = ? AND branch_code = ?', array($client['id'], $meta['branch']));
             if (!$branchId) {
-                $problems[] = 'The SAWT is for branch ' . $meta['branch'] . ', which ' . $clientName . ' does not have. Add the branch under the client, then map again.';
+                $problems[] = 'The file is for branch ' . $meta['branch'] . ', which ' . $clientName . ' does not have. Add the branch under the client, then map again.';
             }
         }
         if ($meta['name'] && !self::sameName($meta['name'], $clientName) && !self::sameName($meta['name'], $client['trade_name'])) {
-            $notes[] = 'The payee\'s name in the file is ' . $meta['name'] . '; the client is registered as ' . $clientName . '. Check that this is the right SAWT.';
+            $notes[] = 'The name in the file is ' . $meta['name'] . '; the client is registered as ' . $clientName . '. Check that this is the right file.';
         }
         if (!$meta['tin']) {
             $notes[] = 'The file has no "TIN :" line above the header, so it could not be matched to the client. Check that it belongs to ' . $clientName . '.';
@@ -785,7 +929,7 @@ class Imports
                 $p[] = 'Map a column to "' . $c['title'] . '".';
             }
         }
-        if (in_array($type['key'], array('sales', 'purchases', 'importations', 'withholding', 'withheld_on_us', 'counterparties'), true)) {
+        if (in_array($type['key'], array('sales', 'purchases', 'importations', 'withholding', 'withheld_on_us', 'alphalist_1604e', 'counterparties'), true)) {
             $hasName = isset($map['p_registered_name']) && $map['p_registered_name'] !== '' || isset($map['p_last_name']) && $map['p_last_name'] !== ''
                 || isset($map['p_individual']) && $map['p_individual'] !== '';
             if (!$hasName) {
@@ -1227,6 +1371,50 @@ class Imports
         unset($in['seq_no'], $in['p_individual']);
     }
 
+    /** The schedule tag of the records that feed the 1604-E Schedule 3. */
+    public static function tag1604eS3()
+    {
+        // Y: a year total for the 1604-E Schedule 3, kept out of the monthly QAP so December is not counted twice.
+        $key = (string)DB::val('SELECT dataset_key FROM report_schedules WHERE form_code = ? AND schedule_code = ?', array('1604E', 'S3'));
+        $p = explode(':', $key);
+        return isset($p[2]) && in_array('Y', explode('+', $p[2]), true) ? 'Y' : (isset($p[2]) && $p[2] !== '*' ? substr($p[2], 0, 1) : 'A');
+    }
+
+    /**
+     * 1604-E alphalist lines: the year's totals for a payee and ATC, saved as taxes we withheld (expanded)
+     * dated December 31 of the year from the line AS OF DECEMBER 31, as year totals of the 1604-E Schedule 3
+     * (placement Y), which the monthly QAP leaves out.
+     * The tax is kept as the alphalist reports it.
+     */
+    private static function alphalistRow($raw, &$in, $opts, &$errors, &$warnings)
+    {
+        $num = isset($raw['__numeric']) ? $raw['__numeric'] : array();
+        foreach (array('income_amount', 'tax_rate', 'tax_withheld') as $k) {
+            if (isset($raw[$k])) {
+                $in[$k] = self::excelNumber($raw[$k], in_array($k, $num, true));
+            }
+        }
+        if (isset($raw['atc_code'])) {
+            $in['atc_code'] = strtoupper(preg_replace('/\s+/', '', (string)$raw['atc_code']));
+        }
+        $in['tax_kind'] = 'EWT';
+        $in['schedule_tag'] = self::tag1604eS3();
+        $sched = isset($opts['report']['schedule']) ? (int)$opts['report']['schedule'] : 0;
+        if ($sched && $sched !== 3) {
+            $errors['schedule_tag'] = 'The file is the 1604-E Schedule ' . $sched . '. This template reads Schedule 3 (payees subject to expanded withholding tax).';
+        }
+        if (!empty($opts['period_month'])) {
+            $in['payment_date'] = last_day($opts['period_month']);
+        } else {
+            $errors['payment_date'] = 'Choose the year: the file has no line AS OF DECEMBER 31';
+        }
+        if (isset($in['tax_withheld']) && trim((string)$in['tax_withheld']) !== '') {
+            $in['rate_exception_note'] = 'Year total from a 1604-E alphalist; tax kept as reported';
+            $in['__tax_given'] = true;
+        }
+        unset($in['seq_no'], $in['p_individual']);
+    }
+
     public static function normalizeRow($type, $raw, $job, $opts)
     {
         $errors = array();
@@ -1290,7 +1478,7 @@ class Imports
             return array(array('employee' => $emp, 'record' => $d), $errors, $warnings, $hash);
         }
         $mod = Records::module($type['module']);
-        if ($type['key'] === 'withheld_on_us') {
+        if ($type['key'] === 'withheld_on_us' || $type['key'] === 'alphalist_1604e') {
             self::sawtParty($raw, $errors, $warnings);
         }
         $p = self::partyFrom($raw, $errors, $warnings);
@@ -1301,6 +1489,9 @@ class Imports
         }
         if ($type['key'] === 'withheld_on_us') {
             self::sawtRow($raw, $in, $opts, $errors, $warnings);
+        }
+        if ($type['key'] === 'alphalist_1604e') {
+            self::alphalistRow($raw, $in, $opts, $errors, $warnings);
         }
         if ($type['key'] === 'sales') {
             // Amounts as Excel shows them (15 significant digits); GROSS TAXABLE is checked and split by the sales rules.
@@ -1320,6 +1511,13 @@ class Imports
             }
         }
         list($d, $e2, $w2) = Records::validate($mod, $in, $clientId, array('skip_party' => true, 'skip_scope' => true, 'date_format' => $dateFmt, 'party_entity_type' => $p['entity_type']));
+        if ($type['key'] === 'alphalist_1604e' && !empty($in['__tax_given']) && empty($e2['tax_withheld']) && isset($d['income_amount'], $d['tax_rate'], $d['tax_withheld'])) {
+            $expected = Money::applyRate(Money::fromDb($d['income_amount']), Money::rateUnits($d['tax_rate']));
+            if (abs($expected - Money::fromDb($d['tax_withheld'])) > 1) {
+                $w2['tax_withheld'] = 'Tax withheld ' . Money::fmt(Money::fromDb($d['tax_withheld'])) . ' differs from ' . Money::rateFormat(Money::rateUnits($d['tax_rate']), 'pct2') . '% of '
+                    . Money::fmt(Money::fromDb($d['income_amount'])) . ' (' . Money::fmt($expected) . '). It is kept as the year\'s total in the alphalist.';
+            }
+        }
         if ($type['key'] === 'withheld_on_us' && isset($e2['period_month']) && empty($in['period_month']) && empty($raw['payment_date'])) {
             $e2['period_month'] = 'Choose the month for this import: the file has no "FOR THE MONTH OF" line and no date column';
         }

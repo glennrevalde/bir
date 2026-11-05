@@ -92,9 +92,12 @@ class Records
                     $amount('tax_withheld', 'Tax withheld'),
                     // Kept for records made earlier and for the API, but no longer asked for on screen or in the template.
                     array('key' => 'rate_exception_note', 'label' => 'Reason when rate or tax differs from the ATC', 'type' => 'text', 'max' => 255, 'hidden' => true),
-                    // Stored as A, B or C; typed and shown as schedule 1, 2 or 3.
+                    // Stored as A, B or C; typed and shown as schedule 1, 2 or 3. Y holds year totals entered from a
+                    // 1604-E alphalist: they go to the 1604-E Schedule 3 and not to the monthly QAP.
                     array('key' => 'schedule_tag', 'label' => 'Schedule', 'type' => 'select', 'required' => true,
-                        'options' => array('A' => '1: QAP Schedule 1 / annual Schedule 4', 'B' => '2: second schedule (1601-EQ S2, 1604-E S3, 1604-F S5)', 'C' => '3: final tax only (1601-FQ S3, 1604-F S6)'),
+                        'options' => array('A' => '1: subject to withholding (QAP Schedule 1, 1604-E Schedule 3, 1604-F Schedule 4)',
+                            'B' => '2: exempt payees (1601-EQ S2, 1604-E S4) or fringe benefits (1601-FQ S2, 1604-F S5)',
+                            'C' => '3: final tax, exempt payees (1601-FQ S3, 1604-F S6)', 'Y' => 'Year total for the 1604-E Schedule 3 only'),
                         'aliases' => array('1' => 'A', '2' => 'B', '3' => 'C')),
                     array('key' => 'reference_no', 'label' => 'Voucher or reference no.', 'type' => 'text', 'max' => 40, 'hidden' => true),
                 ),
@@ -104,8 +107,8 @@ class Records
             'withheld_on_us' => array(
                 'title' => 'Taxes withheld on us', 'singular' => 'tax withheld on us', 'table' => 'withholding_entries', 'party' => 'payor', 'date' => 'payment_date',
                 'sort' => 'period_month', 'period_field' => true, 'repeatable' => true, 'repeat_key' => 'reference_no',
-                'lock_scope' => 'withholding', 'fixed' => array('direction' => 'payee', 'tax_kind' => 'EWT', 'schedule_tag' => 'A'),
-                'help' => 'Creditable taxes customers withheld from this client (Form 2307 received), in the columns of the SAWT. Feeds the SAWT attachment.',
+                'lock_scope' => 'withholding', 'fixed' => array('direction' => 'payee', 'schedule_tag' => 'A'), 'kinds' => array('EWT', 'GVAT', 'GPT'),
+                'help' => 'Taxes customers withheld from this client (Form 2307 received), in the columns of the SAWT: income tax (WC, WI) for the 1701Q and 1702Q SAWT, VAT (WV) for the 2550Q SAWT, percentage tax (WB) for the 2551Q SAWT.',
                 'fields' => array(
                     array('key' => 'branch_id', 'label' => 'Branch', 'type' => 'branch', 'required' => true),
                     array('key' => 'counterparty_id', 'label' => 'Payor', 'type' => 'counterparty', 'required' => true, 'role' => 'payor'),
@@ -170,12 +173,24 @@ class Records
             AND status <> ? ORDER BY effective_from DESC LIMIT 1', array($atc, $kind, $onDate, $onDate, 'retired'));
     }
 
+    /** The kind (EWT, GVAT, GPT...) an ATC is registered under on a date, among $kinds; null when none. */
+    public static function kindOfAtc($atc, $kinds, $onDate)
+    {
+        $k = DB::val('SELECT tax_kind FROM tax_codes WHERE atc_code = ? AND tax_kind IN (' . DB::in($kinds) . ') AND status <> ? AND effective_from <= ?
+            AND (effective_to IS NULL OR effective_to >= ?) ORDER BY effective_from DESC LIMIT 1', array_merge(array(strtoupper((string)$atc)), $kinds, array('retired', $onDate, $onDate)));
+        return $k ?: null;
+    }
+
+    /** Tax codes in force on a date; $kind is one kind or a list of kinds. */
     public static function atcOptions($kind = null, $onDate = null)
     {
         $onDate = $onDate ?: today();
         $sql = 'SELECT * FROM tax_codes WHERE status <> ? AND effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?)';
         $p = array('retired', $onDate, $onDate);
-        if ($kind) {
+        if (is_array($kind)) {
+            $sql .= ' AND tax_kind IN (' . DB::in($kind) . ')';
+            $p = array_merge($p, $kind);
+        } elseif ($kind) {
             $sql .= ' AND tax_kind = ?';
             $p[] = $kind;
         }
@@ -338,6 +353,11 @@ class Records
         }
         if ($mod['table'] === 'sales_entries' && !isset($errors['vat_rate']) && !isset($errors['taxable_amount']) && !isset($errors['output_vat'])) {
             self::checkSales($data, $errors, $warnings, isset($input['gross_taxable']) ? $input['gross_taxable'] : '');
+        }
+        if (!empty($mod['kinds']) && !empty($data['atc_code'])) {
+            // Taxes withheld on us: income tax, VAT or percentage tax, as the ATC says.
+            $onDate = !empty($data['payment_date']) ? $data['payment_date'] : (!empty($data['period_month']) ? last_day($data['period_month']) : today());
+            $data['tax_kind'] = self::kindOfAtc($data['atc_code'], $mod['kinds'], $onDate) ?: $mod['kinds'][0];
         }
         if ($mod['table'] === 'withholding_entries' && empty($errors)) {
             self::checkWithholding($data, $errors, $warnings, $clientId, isset($options['party_entity_type']) ? $options['party_entity_type'] : null);

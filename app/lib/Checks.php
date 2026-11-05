@@ -74,11 +74,62 @@ class Checks
         return $msgs;
     }
 
+    private static $v74 = null;
+
+    /** The ATC codes the BIR Alphalist module v7.4 accepts, as a set. */
+    /**
+     * Line checks of the BIR Alphalist module v7.4 validator for the QAP, MAP, 1604-E and 1604-F, by the
+     * schedule a row is written in. Returns array(severity, code, field, message).
+     */
+    public static function v74Withholding($form, $schedule, $r)
+    {
+        $out = array();
+        // Schedules whose line carries the rate and the tax, and so the validator's income x rate check.
+        $withTax = array('1601EQ' => array('S1'), '1601FQ' => array('S1'), '1600VT' => array('S1'), '1600PT' => array('S1'), '1604E' => array('S3'), '1604F' => array('S4'));
+        $fringe = array('1601FQ' => 'S2', '1604F' => 'S5');
+        $exempt = array('1601EQ' => 'S2', '1601FQ' => 'S3', '1604E' => 'S4', '1604F' => 'S6');
+        $rate = (float)$r['rate'];
+        if (isset($withTax[$form]) && in_array($schedule, $withTax[$form], true)) {
+            if ($rate > 99) {
+                $out[] = array('error', 'RATE_V74', 'rate', 'a tax rate over 99 percent is refused by the BIR validator.');
+            }
+            $exact = $r['income'] * $rate / 100;
+            $skip = in_array($form, array('1601FQ', '1604F'), true) && in_array(strtoupper($r['atc']), array('WI320', 'WI750'), true);
+            if (!$skip && $r['income'] > 0 && floor($exact / 100) != floor($r['tax'] / 100) && round($exact) != $r['tax']) {
+                $out[] = array($form === '1600PT' ? 'warning' : 'error', 'TAX_V74', 'tax', 'tax withheld ' . Money::fmt($r['tax']) . ' is not ' . Money::rateFormat(Money::rateUnits($r['rate']), 'pct2')
+                    . '% of ' . Money::fmt($r['income']) . '; the BIR validator checks income x rate against the tax in whole pesos.');
+            }
+            if (in_array($form . $schedule, array('1601EQS1', '1604ES3'), true) && (int)$r['tax'] === 0) {
+                $out[] = array('error', 'TAX_ZERO', 'tax', 'the BIR validator refuses a line in this schedule whose tax withheld is zero. Payees exempt from withholding go in ' . ($form === '1604E' ? 'Schedule 4' : 'Schedule 2') . '.');
+            }
+        }
+        if (isset($fringe[$form]) && $fringe[$form] === $schedule) {
+            if (trim($r['last_name'] . $r['first_name'] . $r['middle_name']) === '') {
+                $out[] = array('error', 'FRINGE_NAME', 'last_name', 'the fringe benefit schedule holds employees by last, first and middle name; this payee has none.');
+            }
+            if (isset($r['fringe']) && $r['fringe'] <= 0) {
+                $out[] = array('error', 'FRINGE_ZERO', 'income', 'the fringe benefit (grossed-up monetary value less the tax) is zero; the BIR validator refuses it.');
+            }
+        }
+        if (isset($exempt[$form]) && $exempt[$form] === $schedule && $r['tax'] != 0) {
+            $out[] = array('warning', 'EXEMPT_TAX', 'tax', 'this schedule lists payees exempt from withholding and carries no tax; the ' . Money::fmt($r['tax']) . ' withheld is not written.');
+        }
+        return $out;
+    }
+
+    public static function v74Atcs()
+    {
+        if (self::$v74 === null) {
+            self::$v74 = array_fill_keys(require APP_PATH . '/specs/bir_v74_atc.php', true);
+        }
+        return self::$v74;
+    }
+
     /**
      * Level 1: data quality on a dataset before serialization.
      * Returns list of issues (severity, code, record_no, field_key, message).
      */
-    public static function dataQuality($form, $schedule, $client, $agent, $rows, $spec, $period)
+    public static function dataQuality($form, $schedule, $client, $agent, $rows, $spec, $period, $vars = array())
     {
         $issues = array();
         $add = function ($sev, $code, $rec, $field, $msg) use (&$issues) {
@@ -112,6 +163,10 @@ class Checks
         }
         $isWh = in_array($form, array('1601EQ', '1601FQ', '1600VT', '1600PT', '1604E', '1604F', 'SAWT', 'SRS'), true);
         $kind = in_array($form, array('1601FQ', '1604F'), true) ? 'FWT' : ($form === '1600VT' ? 'GVAT' : ($form === '1600PT' ? 'GPT' : 'EWT'));
+        if ($form === 'SAWT') {
+            $kind = Datasets::sawtKind(isset($vars['sawt_form']) ? $vars['sawt_form'] : null);
+        }
+        $v74Atc = $isWh && $form !== 'SRS' ? self::v74Atcs() : array();
         $names = array();
         foreach ($rows as $i => $r) {
             $n = $i + 1;
@@ -145,7 +200,24 @@ class Checks
                     $add('warning', 'TAX_MATH', $n, 'tax', 'Row ' . $n . ': tax ' . Money::fmt($r['tax']) . ' differs from ' . Money::rateFormat(Money::rateUnits($r['rate']), 'pct2') . '% of ' . Money::fmt($r['income']) . ' (' . Money::fmt($expected) . ').');
                 }
                 if ($r['income'] <= 0) {
-                    $add('warning', 'ZERO_AMOUNT', $n, 'income', 'Row ' . $n . ' has a zero or negative income payment.');
+                    $zero = $form !== 'SRS' && $r['income'] == 0;
+                    $add($zero ? 'error' : 'warning', 'ZERO_AMOUNT', $n, 'income', 'Row ' . $n . ' has a zero or negative income payment.'
+                        . ($zero ? ' The BIR validator rejects a line whose income payment is zero.' : ''));
+                }
+                foreach (self::v74Withholding($form, isset($r['schedule_code']) ? $r['schedule_code'] : $schedule, $r) as $m) {
+                    $add($m[0], $m[1], $n, $m[2], 'Row ' . $n . ' (' . party_name($r) . '): ' . $m[3]);
+                }
+                if ($v74Atc && $r['atc'] !== '' && !isset($v74Atc[strtoupper($r['atc'])])) {
+                    $add('error', 'ATC_V74', $n, 'atc', 'Row ' . $n . ': ATC ' . $r['atc'] . ' is not in the ATC table of the BIR Alphalist module v7.4; its validator reports it as invalid.');
+                }
+                if (isset($r['tin']) && in_array((string)$r['tin'], array('999999999', '111111111'), true)) {
+                    $add('error', 'ROW_TIN', $n, 'tin', 'Row ' . $n . ': TIN ' . $r['tin'] . ' is refused by the BIR validator.');
+                }
+            }
+            if ($form === '1601FQ' && (isset($r['schedule_code']) ? $r['schedule_code'] : $schedule) === 'S3') {
+                $fqS3 = isset($fqS3) ? $fqS3 + 1 : 1;
+                if ($fqS3 === 10) {
+                    $add('warning', 'FQ_S3_SEQ', $n, null, 'Schedule 3 has 10 or more lines. The v7.4 validator itself reports "Status Code is Invalid" on a Schedule 3 line numbered 10 or more; keep its report with the file.');
                 }
             }
             if ($form === '1604C') {

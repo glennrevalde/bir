@@ -70,17 +70,30 @@ function gsb_import_dat_rows($f, $client)
         throw new RuntimeException('Only QAP, MAP and SAWT files can be imported into withholding records.');
     }
     list($dir, $kind) = $map[$f['form_code']];
+    if ($f['form_code'] === 'SAWT') {
+        // A SAWT holds income tax, VAT or percentage tax withheld, by the return it is attached to.
+        $kind = Datasets::sawtKind(!empty($f['variant_key']) ? $f['variant_key'] : (preg_match('/(\d{4}[A-Z]?)\.DAT$/i', $f['filename'], $mm) ? strtoupper($mm[1]) : ''));
+    }
     $spec = Specs::forFile($f);
     $parsed = DatReader::parse((string)Reports::storedBytes($f), $spec);
     $branchId = $f['branch_id'] ?: (int)Ctx::headOffice()['id'];
-    $tag = $f['schedule_code'] === 'S3' ? 'C' : ($f['schedule_code'] === 'S2' ? 'B' : 'A');
+    // Each line goes to the placement its schedule reads (a 1601-EQ written as one file holds Schedules 1 and 2).
+    $tags = array();
+    foreach (Specs::partsOf($spec) as $pi => $part) {
+        $tags[$pi] = $f['form_code'] === 'SAWT' ? 'A' : Datasets::scheduleTag($f['form_code'], $part['schedule_code']);
+    }
     $month = substr($f['period_to'], 0, 7);
     if (Records::lockedPeriod($client['id'], $month, 'withholding')) {
         throw new RuntimeException(month_label($month) . ' is locked.');
     }
-    return DB::tx(function () use ($parsed, $client, $dir, $kind, $branchId, $tag, $month, $f) {
+    return DB::tx(function () use ($parsed, $client, $dir, $kind, $branchId, $tags, $month, $f) {
         $n = 0;
-        foreach ($parsed['rows'] as $r) {
+        foreach ($parsed['rows'] as $ri => $r) {
+            $tag = isset($tags[$parsed['row_parts'][$ri]]) ? $tags[$parsed['row_parts'][$ri]] : 'A';
+            $r += array('rate' => '0', 'tax' => 0);
+            if (isset($r['monetary'])) {
+                $r['income'] = $r['monetary'];
+            }
             $p = array('tin' => $r['tin'] ?: null, 'branch_code' => $r['branch'] ?: '0000', 'entity_type' => !empty($r['registered_name']) ? 'non_individual' : 'individual',
                 'registered_name' => !empty($r['registered_name']) ? $r['registered_name'] : null, 'last_name' => !empty($r['last_name']) ? $r['last_name'] : null,
                 'first_name' => !empty($r['first_name']) ? $r['first_name'] : null, 'middle_name' => !empty($r['middle_name']) ? $r['middle_name'] : null);
