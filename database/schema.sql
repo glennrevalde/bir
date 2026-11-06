@@ -751,6 +751,44 @@ CREATE TABLE import_rows (
   CONSTRAINT fk_irow_job FOREIGN KEY (job_id) REFERENCES import_jobs (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
+-- New clients uploaded from a CSV file, held for review until they are saved (2026-11-06).
+DROP TABLE IF EXISTS client_import_rows;
+DROP TABLE IF EXISTS client_import_batches;
+CREATE TABLE client_import_batches (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  organization_id INT UNSIGNED NOT NULL,
+  original_filename VARCHAR(200) NOT NULL,
+  stored_path VARCHAR(255) NULL,
+  file_sha256 CHAR(64) NULL,
+  ignored_columns VARCHAR(500) NULL,
+  status VARCHAR(12) NOT NULL DEFAULT 'review',
+  total_rows INT NOT NULL DEFAULT 0,
+  saved_rows INT NOT NULL DEFAULT 0,
+  created_by INT UNSIGNED NOT NULL,
+  saved_by INT UNSIGNED NULL,
+  saved_at DATETIME NULL,
+  created_at DATETIME NULL,
+  updated_at DATETIME NULL,
+  PRIMARY KEY (id),
+  KEY ix_cib_org (organization_id, status),
+  CONSTRAINT fk_cib_org FOREIGN KEY (organization_id) REFERENCES organizations (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+CREATE TABLE client_import_rows (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  batch_id INT UNSIGNED NOT NULL,
+  row_no INT UNSIGNED NOT NULL,
+  data_json TEXT NOT NULL,
+  errors_json TEXT NULL,
+  warnings_json TEXT NULL,
+  status VARCHAR(12) NOT NULL DEFAULT 'error',
+  edited TINYINT(1) NOT NULL DEFAULT 0,
+  client_id INT UNSIGNED NULL,
+  PRIMARY KEY (id),
+  KEY ix_cir_batch (batch_id, row_no),
+  CONSTRAINT fk_cir_batch FOREIGN KEY (batch_id) REFERENCES client_import_batches (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
 DROP TABLE IF EXISTS column_mappings;
 CREATE TABLE column_mappings (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,

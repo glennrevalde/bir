@@ -6,7 +6,7 @@
  */
 class Migrations
 {
-    const CURRENT = 7;
+    const CURRENT = 8;
 
     public static function run()
     {
@@ -64,10 +64,33 @@ class Migrations
                 self::addTaxCodes(array('FWT'));
                 set_sys_config('schema_version', '7');
             }
+            if ($v < 8) {
+                // 2026-11-06: new clients uploaded from a CSV file, held for review until they are saved.
+                foreach (self::sqlStatements(dirname(APP_PATH) . '/database/migrations/2026-11-06_client_upload.sql') as $sql) {
+                    if (stripos($sql, 'CREATE TABLE') === 0) {
+                        DB::q($sql);
+                    }
+                }
+                set_sys_config('schema_version', '8');
+            }
         } catch (Exception $e) {
             // Without ALTER rights the update waits for database/migrations/; check.php reports it.
             error_log('[GSB] Schema update to version ' . self::CURRENT . ' failed: ' . $e->getMessage());
         }
+    }
+
+    /** The statements of a migration file, without its comment lines. */
+    public static function sqlStatements($path)
+    {
+        $sql = preg_replace('/^\s*--.*$/m', '', (string)@file_get_contents($path));
+        $out = array();
+        foreach (explode(';', $sql) as $st) {
+            $st = trim($st);
+            if ($st !== '') {
+                $out[] = $st;
+            }
+        }
+        return $out;
     }
 
     /** Bring the names and data sources of the report schedules in line with the reference data. */

@@ -52,6 +52,7 @@ class View
             )),
             'admin' => array('label' => 'Admin', 'icon' => 'gear', 'items' => array(
                 array('clients', 'Clients and branches', 'clients.view'),
+                array('client_import', 'Upload clients (CSV)', 'clients.manage'),
                 array('users', 'Members and roles', 'users.manage'),
                 array('atc', 'Tax codes (ATC)', 'reference.view'),
                 array('specs', 'File layouts', 'reference.view'),
@@ -182,7 +183,7 @@ class View
         </select>
         <?php if ($client) { echo Tin::boxes($client['tin'], (($ho = Ctx::headOffice()) ? $ho['branch_code'] : null)); } ?>
       <?php } else { ?>
-        <?php if (Ctx::org()) { ?><a class="link" href="<?= e(url('client_form')) ?>">Add your first client</a><?php } else { ?><a class="link" href="<?= e(url('orgs')) ?>">Choose an organization</a><?php } ?>
+        <?php if (Ctx::org()) { ?><a class="link" href="<?= e(url('client_form')) ?>">Add your first client</a><?php if (Ctx::can('clients.manage')) { ?> <a class="link" href="<?= e(url('client_import')) ?>">or upload a list</a><?php } ?><?php } else { ?><a class="link" href="<?= e(url('orgs')) ?>">Choose an organization</a><?php } ?>
       <?php } ?>
     </form>
     <div class="topbar-tools">

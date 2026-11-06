@@ -220,7 +220,7 @@ function gsb_reference()
     );
 
     $config = array(
-        'schema_version' => '7',
+        'schema_version' => '8',
         'registration_open' => '1',
         'enforce_mfa_privileged' => '0',
         'mail_mode' => 'outbox',

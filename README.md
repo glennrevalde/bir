@@ -13,7 +13,7 @@ Plain PHP, MySQL, HTML, CSS and JavaScript. No framework, no Composer, no build 
 | Annual alphalists | 1604-C Schedules 1 and 2, 1604-E Schedules 3 and 4 (with QAP consolidation), 1604-F Schedules 4 to 6, each return in one file in the v7.4 format |
 | Other | Semestral List of Regular Suppliers (SRS) consolidation, reconciliation views |
 | Certificates | BIR Form 2307, 2306 and 2316 as PDF, single or batch, with void and reissue |
-| Operations | Excel and CSV import with column mapping, direct entry, spreadsheet-style grid entry, period locks, maker-checker approvals, hash-chained audit trail, encrypted backups, token API |
+| Operations | New clients uploaded from a CSV file and reviewed before saving, Excel and CSV import with column mapping, direct entry, spreadsheet-style grid entry, period locks, maker-checker approvals, hash-chained audit trail, encrypted backups, token API |
 
 Every DAT is written by one serializer from a versioned layout registry, whether the rows came from Excel or from the database. Layouts that could not be confirmed from a BIR source are shipped as drafts and labelled as such. See [docs/COMPLIANCE.md](docs/COMPLIANCE.md) before using any output for a real filing.
 
@@ -39,7 +39,7 @@ Every DAT is written by one serializer from a versioned layout registry, whether
 
 ### Updating an existing installation
 
-Copy the new files over the old ones (keep your `config.php` and storage folder). The database is brought up to date by itself the first time a page is opened: sales gain the VAT rate of the VAT sales workbook, purchases gain the R_Purchases columns, and taxes withheld on us gain the SAWT layout (the payment date becomes optional). The SAWT layout of the BIR Alphalist module v7.4 replaces the two earlier SAWT layouts, and the VAT (WV), percentage tax (WB) and final tax (WF type) withholding codes of the module are added for review. The QAP, MAP, 1604-E and 1604-F layouts are replaced by the ones the v7.4 module writes, and the 1604-E Schedule 3 now reads the QAP Schedule 1 lines (Schedule 4 the exempt payees). If your MySQL user may not run `ALTER TABLE`, run the files in `database/migrations/` in name order in phpMyAdmin instead; `check.php` says when one is still needed. Nothing has to be deleted.
+Copy the new files over the old ones (keep your `config.php` and storage folder). The database is brought up to date by itself the first time a page is opened: sales gain the VAT rate of the VAT sales workbook, purchases gain the R_Purchases columns, and taxes withheld on us gain the SAWT layout (the payment date becomes optional). The SAWT layout of the BIR Alphalist module v7.4 replaces the two earlier SAWT layouts, and the VAT (WV), percentage tax (WB) and final tax (WF type) withholding codes of the module are added for review. The QAP, MAP, 1604-E and 1604-F layouts are replaced by the ones the v7.4 module writes, and the 1604-E Schedule 3 now reads the QAP Schedule 1 lines (Schedule 4 the exempt payees). Two tables are added for uploading new clients from a CSV file (`database/migrations/2026-11-06_client_upload.sql`). If your MySQL user may not run `ALTER TABLE`, run the files in `database/migrations/` in name order in phpMyAdmin instead; `check.php` says when one is still needed. Nothing has to be deleted.
 
 From the command line you can install instead of importing SQL:
 

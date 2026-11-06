@@ -8,10 +8,10 @@ foreach (Ctx::clients() as $c) {
     $rows[] = $c;
 }
 View::header('Clients and branches');
-View::pageBar('Clients and branches', e(Ctx::org() ? Ctx::org()['name'] : ''), Ctx::can('clients.manage') ? '<a class="btn btn-primary" href="' . e(url('client_form')) . '">' . View::icon('plus') . 'Add client</a>' : '');
+View::pageBar('Clients and branches', e(Ctx::org() ? Ctx::org()['name'] : ''), Ctx::can('clients.manage') ? '<a class="btn" href="' . e(url('client_import')) . '">' . View::icon('upload') . 'Upload clients (CSV)</a><a class="btn btn-primary" href="' . e(url('client_form')) . '">' . View::icon('plus') . 'Add client</a>' : '');
 ?>
 <div class="sheet">
-  <?php if (!$rows) { echo View::empty_state('No clients yet', 'Add the first taxpayer you prepare reports for.'); } else { ?>
+  <?php if (!$rows) { echo View::empty_state('No clients yet', 'Add the first taxpayer you prepare reports for, or upload a CSV list of several at once.'); } else { ?>
   <div class="table-wrap"><table class="table table-stack"><thead><tr><th>Client</th><th>TIN</th><th>Type</th><th>RDO</th><th class="num">Branches</th><th class="num">Files</th><th class="num">Awaiting BIR validation</th><th></th></tr></thead><tbody>
   <?php foreach ($rows as $c) { ?>
     <tr class="<?= (int)$c['id'] === Ctx::clientId() ? 'hl' : '' ?>"><td data-label="Client"><strong><?= e(Ctx::clientName($c)) ?></strong><span class="sub"><?= e(trim($c['trade_name'] . ($c['status'] === 'archived' ? ($c['trade_name'] ? ', ' : '') . 'Archived' : ''))) ?></span></td>

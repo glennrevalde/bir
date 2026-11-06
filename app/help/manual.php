@@ -163,6 +163,7 @@ H
 <ul>
 <li><b>Work on</b> makes that client the active one, the same as choosing it in the top bar.</li>
 <li><b>Details</b> opens the client's settings, branches and signatories.</li>
+<li><b>Upload clients (CSV)</b> adds many new clients at once; see <a href="{sec:client_import}">Upload clients (CSV)</a>.</li>
 <li><b>Files</b> counts current files; <b>Awaiting BIR validation</b> counts files still waiting for a validator result.</li>
 </ul>
 H
@@ -185,6 +186,27 @@ H
 <h3>Archiving a client</h3>
 <p><b>Archive client</b> keeps every record, file, certificate and audit event readable, but blocks new records, imports, files and certificates. Use it when an engagement ends. Click <b>Reactivate client</b> to undo it.</p>
 <div class="mwarn">Data quality blocks a file when the client or branch has no 3-digit RDO code, because the BIR layouts require one.</div>
+H
+),
+
+'client_import' => $S('Upload clients (CSV)', 'clients', 'Add many new clients at once from a CSV file, check them and correct the flagged rows before saving.', <<<'H'
+<figure><img src="{img:client_import}" alt="Reviewing uploaded clients"><figcaption>An uploaded list: three rows are ready and three are flagged.</figcaption></figure>
+<ol class="steps">
+<li>Open <b>Admin, Upload clients (CSV)</b>, or click <b>Upload clients (CSV)</b> on the client list.</li>
+<li>Download the <b>Blank template</b> (or the one with two sample clients), fill in one client per row and save it as CSV (comma delimited). Semicolon-delimited files and files saved by Excel in Windows encoding are read too.</li>
+<li>Choose the file and click <b>Upload and check</b>. Nothing is added to your clients yet.</li>
+<li>Review the list. Each row shows the client, TIN, tax profile, RDO, address, contact and its <b>Checks</b>: red for an error, yellow for a warning, or <i>Ready</i>. Use the <b>Errors</b>, <b>Warnings</b> and <b>Ready</b> buttons to see one group.</li>
+<li>Click <b>Edit</b> on a flagged row to correct it in a form that shows each problem under its field, then <b>Save row</b>. The whole list is checked again, so correcting one TIN also clears a repeat elsewhere. Click <b>Delete</b> to leave a row out, or <b>Delete the rows with errors</b> to leave out all flagged rows at once.</li>
+<li>When no row has an error, click <b>Save clients</b>. Each client is added with its head office, branch 0000, exactly as if it were entered with <a href="{sec:client_form}">Add client</a>.</li>
+</ol>
+<h3>The columns</h3>
+<p>Only <b>TIN</b> and the name are required: <b>REGISTERED NAME</b> for a non-individual, <b>LAST NAME</b> and <b>FIRST NAME</b> for an individual. The other columns are TAXPAYER TYPE, MIDDLE NAME, TRADE NAME, RDO CODE, REGISTERED ADDRESS, CITY OR MUNICIPALITY, ZIP CODE, CLASSIFICATION, VAT STATUS, ACCOUNTING PERIOD, FISCAL YEAR ENDS, EMAIL and PHONE. Columns may be in any order, and common other titles are understood (COMPANY NAME, RDO, ADDRESS, CITY, ZIP). A column that is not a client field is listed as not read.</p>
+<h3>What is flagged</h3>
+<ul>
+<li><b>Errors</b> (the row cannot be saved): a missing or malformed TIN, including an 8-digit TIN whose leading zero Excel dropped; a TIN already used by a client of the organization or by an earlier row of the file; the placeholder TINs 111-111-111 and 999-999-999; a missing name; an RDO code that is not 3 digits or digits and a letter; a ZIP code with letters; a taxpayer type, classification, VAT status or accounting period that is not one of the choices; a fiscal year without the month it ends; an invalid email; a value longer than the field.</li>
+<li><b>Warnings</b> (saved as they are): no RDO code, an RDO code not in the RDO list, a branch code after the TIN (the client starts with its head office; add other branches afterwards), a name with a character the BIR validator refuses (" &amp; ' , |), names given for the wrong taxpayer type, a ZIP code that is not 4 digits, and a fiscal year ending in December.</li>
+</ul>
+<p>An upload waits under <b>Uploads</b> until it is saved or discarded, so the review can be finished later or by another member. <b>Discard upload</b> drops the list without adding anyone. A member limited to some clients gets access to the clients they save. Every row correction, deletion and saved client is in the <a href="{sec:audit}">Audit trail</a>.</p>
 H
 ),
 

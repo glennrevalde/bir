@@ -3,8 +3,9 @@ $client = Ctx::client();
 View::header('Dashboard');
 if (!$client) {
     View::pageBar('Dashboard', e(Ctx::org() ? Ctx::org()['name'] : 'Platform'));
-    echo '<div class="sheet">' . View::empty_state('Add your first client', 'Each client is a taxpayer with its own TIN, branches and records. Add one to start encoding or importing data.',
-            Ctx::can('clients.manage') ? '<a class="btn btn-primary" href="' . e(url('client_form')) . '">' . View::icon('plus') . 'Add a client</a>' : '') . '</div>';
+    echo '<div class="sheet">' . View::empty_state('Add your first client', 'Each client is a taxpayer with its own TIN, branches and records. Add one, or upload a CSV list of several, to start encoding or importing data.',
+            Ctx::can('clients.manage') ? '<div class="btn-row" style="justify-content:center"><a class="btn btn-primary" href="' . e(url('client_form')) . '">' . View::icon('plus') . 'Add a client</a>'
+                . '<a class="btn" href="' . e(url('client_import')) . '">' . View::icon('upload') . 'Upload clients from CSV</a></div>' : '') . '</div>';
     View::footer();
     exit;
 }

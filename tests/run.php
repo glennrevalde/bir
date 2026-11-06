@@ -1208,6 +1208,89 @@ ok(strpos($t6, 'Certificate of Final Tax') !== false && $boxCheck($t6, $sp6, 936
     '2306 fills the module boxes; the template leftovers the module hides are not printed');
 
 // =====================================================================
+section('Uploading new clients from a CSV file');
+$Cu = make_org('Csvup', '008100100', 'firm_owner', 'CSV UPLOAD FIRST CLIENT');
+login_as($Cu['user'], $Cu['org'], $Cu['client']);
+$tplC = ClientImport::template(false);
+$tplHead = str_getcsv(trim(substr($tplC, 3)));
+ok(substr($tplC, 0, 3) === "\xEF\xBB\xBF" && count($tplHead) === 17 && $tplHead[0] === 'TIN' && $tplHead[16] === 'PHONE', 'the CSV template has the 17 client columns, UTF-8 with a BOM');
+$sb = ClientImport::stage(tmp_file(ClientImport::template(true)), 'sample.csv');
+$sc = ClientImport::counts($sb);
+ok($sc['total'] === 2 && $sc['error'] === 0, 'the template with sample clients checks without errors', json_encode($sc));
+ClientImport::discard($sb);
+ok(DB::val('SELECT status FROM client_import_batches WHERE id = ?', array($sb)) === 'discarded' && !DB::val('SELECT COUNT(*) FROM client_import_rows WHERE batch_id = ?', array($sb)), 'a discarded upload keeps no rows');
+throws(function () { ClientImport::stage(tmp_file("NAME,ADDRESS\r\nA,B\r\n"), 'x.csv'); }, 'a file without TIN and name columns is refused', 'No header row');
+throws(function () { ClientImport::stage(tmp_file("TIN,REGISTERED NAME\r\n"), 'x.csv'); }, 'a file without clients is refused', 'no clients');
+$csv = "TIN,TAXPAYER TYPE,REGISTERED NAME,LAST NAME,FIRST NAME,MIDDLE NAME,RDO CODE,ZIP CODE,CLASSIFICATION,VAT STATUS,ACCOUNTING PERIOD,FISCAL YEAR ENDS,EMAIL,REMARKS\r\n"
+    . "301-100-001,Non-individual,ALPHA ONE CORP,,,,81,6000,TWA,VAT,Fiscal,June,a@alpha.ph,x\r\n"      // row 2: fine (RDO 81 becomes 081)
+    . "301100002,Individual,,CRUZ,JUAN,DELA,050,1200,,Non-VAT,,,,\r\n"                                // row 3: fine
+    . "301-100-001,,ALPHA AGAIN CORP,,,,081,,,,,,,\r\n"                                                 // row 4: same TIN as row 2
+    . "008-100-100,,CSV UPLOAD FIRST CLIENT,,,,081,,,,,,,\r\n"                                          // row 5: already a client
+    . "30110000,,EIGHT DIGITS CORP,,,,081,,,,,,,\r\n"                                                   // row 6: Excel dropped a zero
+    . "301-100-007,Partner,,,,,ABC,60A0,Mega,Maybe,Quarterly,,bad-email,\r\n"                         // row 7: many errors
+    . "301-100-008,Non-individual,,,,,081,,,,Fiscal,,,\r\n"                                             // row 8: no name, no fiscal month
+    . "301-100-009-0002,,BRAVO & SONS,,,,,,Government,,,,,\r\n";                                        // row 9: warnings only
+$cb = ClientImport::stage(tmp_file($csv), 'clients.csv');
+$cr = array();
+foreach (ClientImport::rows($cb) as $r) {
+    $cr[$r['row_no']] = $r;
+}
+$cc = ClientImport::counts($cb);
+ok($cc['total'] === 8 && $cc['ok'] === 3 && $cc['error'] === 5 && $cc['warning'] === 1, 'every row is checked and flagged', json_encode($cc));
+ok(DB::val('SELECT ignored_columns FROM client_import_batches WHERE id = ?', array($cb)) === 'REMARKS', 'a column that is not a client field is reported as not read');
+ok(strpos($cr[4]['errors']['tin'], 'Same TIN as row 2') === 0 && strpos($cr[5]['errors']['tin'], 'Already a client: CSV UPLOAD FIRST CLIENT') === 0
+    && strpos($cr[6]['errors']['tin'], 'leading zero') !== false, 'TINs repeated in the file, already used by a client, or missing a zero are errors', json_encode(array($cr[4]['errors'], $cr[5]['errors'], $cr[6]['errors'])));
+ok(array_keys($cr[7]['errors']) == array('taxpayer_type', 'last_name', 'rdo_code', 'zip_code', 'classification', 'vat_status', 'reporting_cycle', 'email'),
+    'unknown type, classification, VAT status and period, a missing name, a bad RDO, ZIP and email are each flagged on their column', json_encode(array_keys($cr[7]['errors'])));
+ok(isset($cr[8]['errors']['registered_name'], $cr[8]['errors']['fiscal_month_end']) && !$cr[9]['errors'] && isset($cr[9]['warnings']['tin'], $cr[9]['warnings']['registered_name'], $cr[9]['warnings']['rdo_code']),
+    'a missing name and fiscal month are errors; a branch suffix, a character the validator refuses and a missing RDO are warnings', json_encode(array($cr[8]['errors'], $cr[9]['warnings'])));
+throws(function () use ($cb) { ClientImport::save($cb); }, 'the list cannot be saved while rows have errors', '5 rows still have errors');
+ClientImport::updateRow($cb, $cr[7]['id'], array('tin' => '301-100-007', 'taxpayer_type' => 'individual', 'last_name' => 'GARCIA', 'first_name' => 'MARIO', 'rdo_code' => '082', 'zip_code' => '6000',
+    'classification' => 'regular', 'vat_status' => 'non_vat', 'reporting_cycle' => 'calendar', 'email' => 'mario@garcia.ph', 'fiscal_month_end' => '', 'registered_name' => '', 'middle_name' => ''));
+ClientImport::updateRow($cb, $cr[8]['id'], array('registered_name' => 'CHARLIE HOLDINGS INC', 'fiscal_month_end' => 'March'));
+ClientImport::updateRow($cb, $cr[2]['id'], array('tin' => '301-100-010'));
+$cr4 = DB::row('SELECT status FROM client_import_rows WHERE id = ?', array($cr[4]['id']));
+ok(ClientImport::counts($cb)['error'] === 2 && $cr4['status'] === 'ok', 'corrected rows pass, and changing row 2\'s TIN clears the repeat in row 4', json_encode(ClientImport::counts($cb)));
+$n = ClientImport::deleteRows($cb, array($cr[5]['id']));
+$n += ClientImport::deleteRows($cb, 'errors');
+ok($n === 2 && ClientImport::counts($cb)['error'] === 0 && ClientImport::counts($cb)['total'] === 6, 'flagged rows can be deleted one by one or all at once', json_encode(ClientImport::counts($cb)));
+$before = (int)DB::val('SELECT COUNT(*) FROM client_entities WHERE organization_id = ?', array($Cu['org']));
+$saved = ClientImport::save($cb);
+$after = DB::all('SELECT c.*, (SELECT COUNT(*) FROM branches b WHERE b.client_id = c.id AND b.branch_code = ? AND b.is_head_office = 1) AS ho FROM client_entities c WHERE c.organization_id = ? AND c.id <> ? ORDER BY c.tin',
+    array('0000', $Cu['org'], $Cu['client']));
+$byTin = array();
+foreach ($after as $a) {
+    $byTin[$a['tin']] = $a;
+}
+ok($saved === 6 && count($after) === $before - 1 + 6 && array_sum(array_column($after, 'ho')) === 6, 'saving adds each client with its head office branch 0000', json_encode(array($saved, count($after))));
+ok($byTin['301100010']['classification'] === 'top_withholding_agent' && $byTin['301100010']['rdo_code'] === '081' && $byTin['301100010']['reporting_cycle'] === 'fiscal' && (int)$byTin['301100010']['fiscal_month_end'] === 6
+    && $byTin['301100002']['taxpayer_type'] === 'individual' && $byTin['301100002']['vat_status'] === 'non_vat' && $byTin['301100007']['last_name'] === 'GARCIA'
+    && (int)$byTin['301100008']['fiscal_month_end'] === 3 && $byTin['301100009']['rdo_code'] === null && $byTin['301100009']['classification'] === 'government',
+    'the saved clients carry the values as checked and corrected', json_encode(array_keys($byTin)));
+ok(DB::val('SELECT status FROM client_import_batches WHERE id = ?', array($cb)) === 'saved' && !DB::val("SELECT COUNT(*) FROM client_import_rows WHERE batch_id = ? AND (status <> 'saved' OR client_id IS NULL)", array($cb))
+    && DB::val("SELECT COUNT(*) FROM audit_events WHERE action = 'client.create' AND organization_id = ?", array($Cu['org'])) >= 6, 'the upload is marked saved and each client is in the audit trail');
+throws(function () use ($cb) { ClientImport::save($cb); }, 'a saved upload cannot be saved twice', 'already saved');
+$again = ClientImport::stage(tmp_file($csv), 'clients-again.csv');
+ok(ClientImport::counts($again)['ok'] === 0, 'uploading the same file again flags every client as already added');
+// A member limited to some clients gets access to the clients they upload.
+$su = DB::insert('users', array('email' => 'scoped.csv@test.local', 'password_hash' => Auth::hash('Test@123456'), 'full_name' => 'Scoped uploader', 'status' => 'active', 'email_verified_at' => now(), 'created_at' => now()));
+$sm = DB::insert('memberships', array('user_id' => $su, 'organization_id' => $Cu['org'], 'role_code' => 'firm_owner', 'all_clients' => 0, 'status' => 'active', 'created_at' => now()));
+login_as($su, $Cu['org'], null);
+$semi = ClientImport::stage(tmp_file(mb_convert_encoding("TIN;REGISTERED NAME;RDO CODE\r\n401-200-300;PE\xC3\x91A TRADING CORP;081\r\n", 'Windows-1252', 'UTF-8')), 'semicolon.csv');
+$sr = ClientImport::rows($semi);
+ok(count($sr) === 1 && $sr[0]['status'] === 'ok' && $sr[0]['data']['registered_name'] === "PE\xC3\x91A TRADING CORP", 'a semicolon-delimited Windows-1252 file is read with its Ñ', json_encode($sr[0]['data']));
+ClientImport::save($semi);
+$nc = DB::val('SELECT id FROM client_entities WHERE organization_id = ? AND tin = ?', array($Cu['org'], '401200300'));
+ok($nc && DB::val('SELECT COUNT(*) FROM membership_scopes WHERE membership_id = ? AND client_id = ?', array($sm, $nc)) && Ctx::clientAllowed($nc), 'a member limited to some clients can open the clients they uploaded');
+// Uploads stay inside their organization.
+login_as($Cu['user'], $Cu['org'], $Cu['client']);
+$mine = ClientImport::stage(tmp_file("TIN,REGISTERED NAME\r\n402-200-300,OWN ORG CORP\r\n"), 'own.csv');
+$Co = make_org('Csvother', '008200200', 'firm_owner');
+login_as($Co['user'], $Co['org'], $Co['client']);
+ok(ClientImport::batch($mine) === null, 'another organization cannot open the upload');
+throws(function () use ($mine) { ClientImport::save($mine); }, 'nor save it', 'not found');
+
+// =====================================================================
 section('Changing a sign-in email');
 $Em = make_org('Emailco', '777111222');
 login_as($Em['user'], $Em['org'], $Em['client']);
