@@ -84,6 +84,16 @@ class Evidence
             $validatedSha = hash_file('sha256', $datFile['tmp_name']);
             $checksumMatch = hash_equals($f['sha256'], $validatedSha) ? 1 : 0;
             if (!$checksumMatch) {
+                // The copy the validation module saves in its eAlpha folder is this file plus the module's
+                // additions (the TIN and branch on each SAWT detail line, and a key line): identical once they are removed.
+                $vcopy = DatReader::validationCopy((string)file_get_contents($datFile['tmp_name']));
+                if ($vcopy && hash_equals($f['sha256'], hash('sha256', $vcopy['clean']))) {
+                    $checksumMatch = 1;
+                    $in['notes'] = trim('The DAT uploaded was the validation module\'s eAlpha copy; it matches this file once the module\'s additions are removed. Attach this file, not that copy, to eSubmission. '
+                        . (isset($in['notes']) ? $in['notes'] : ''));
+                }
+            }
+            if (!$checksumMatch) {
                 throw new RuntimeException('The DAT you uploaded is not byte-identical to this stored file (SHA-256 differs). Validate the exact file downloaded from this page.');
             }
         }

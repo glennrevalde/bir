@@ -144,19 +144,25 @@ class Imports
             // Two templates in the template library, one import: the SAWT of the BIR module has the same nine
             // columns for every return it is attached to; only "BIR FORM ..." in the first line differs.
             'withheld_on_us' => array('label' => 'Taxes withheld on us (SAWT)', 'code' => 'GSB-SAWT', 'module' => 'withheld_on_us', 'role' => 'payor',
-                'sheet' => 'Sheet1', 'version' => '2.1', 'needs_month' => true, 'month_from_file' => true, 'repeatable' => true, 'report' => 'sawt', 'feeds' => 'SAWT',
+                'sheet' => 'Sheet1', 'version' => '3.0', 'needs_month' => true, 'month_from_file' => true, 'repeatable' => true, 'report' => 'sawt', 'feeds' => 'SAWT',
+                // One template per return the SAWT is attached to: the form is on the title line, and the ATC list
+                // holds the codes of that return (individual payees for 1700 to 1701Q, non-individuals for 1702 and 1702Q).
                 'variants' => array(
-                    '1702Q' => array('label' => 'Taxes withheld on us 1702Q (SAWT)', 'code' => 'GSB-SAWT', 'version' => '2.1', 'feeds' => 'SAWT attached to 1702Q (also 1700, 1701, 1701Q, 1702)'),
-                    '2550Q' => array('label' => 'Taxes withheld on us 2550Q (SAWT)', 'code' => 'GSB-SAWT-2550Q', 'version' => '1.0', 'feeds' => 'SAWT attached to 2550Q (also 2550M)'),
+                    '1700' => array('label' => 'Taxes withheld on us 1700 (SAWT)', 'code' => 'GSB-SAWT-1700', 'version' => '3.0', 'feeds' => 'SAWT attached to 1700'),
+                    '1701' => array('label' => 'Taxes withheld on us 1701 (SAWT)', 'code' => 'GSB-SAWT-1701', 'version' => '3.0', 'feeds' => 'SAWT attached to 1701'),
+                    '1701Q' => array('label' => 'Taxes withheld on us 1701Q (SAWT)', 'code' => 'GSB-SAWT-1701Q', 'version' => '3.0', 'feeds' => 'SAWT attached to 1701Q'),
+                    '1702' => array('label' => 'Taxes withheld on us 1702 (SAWT)', 'code' => 'GSB-SAWT-1702', 'version' => '3.0', 'feeds' => 'SAWT attached to 1702'),
+                    '1702Q' => array('label' => 'Taxes withheld on us 1702Q (SAWT)', 'code' => 'GSB-SAWT-1702Q', 'version' => '3.0', 'feeds' => 'SAWT attached to 1702Q'),
+                    '2550Q' => array('label' => 'Taxes withheld on us 2550Q (SAWT)', 'code' => 'GSB-SAWT-2550Q', 'version' => '2.0', 'feeds' => 'SAWT attached to 2550Q (also 2550M)'),
                 ), 'columns' => array(
                 array('key' => 'seq_no', 'title' => 'SEQ NO', 'format' => 'text', 'width' => 25.69, 'weak' => true, 'help' => 'Line number (1). Not stored.', 'example' => '1'),
                 array('key' => 'p_tin', 'title' => 'TAXPAYER IDENTIFICATION NUMBER', 'format' => 'text', 'width' => 18, 'help' => 'Payor TIN with branch code, as 000-000-000-0000 (2). Keep the column as Text.', 'example' => '000-123-456-0000'),
                 array('key' => 'p_registered_name', 'title' => 'CORPORATION (Registered Name)', 'format' => 'text', 'width' => 50.69, 'help' => 'Registered name of a non-individual payor (3).', 'example' => 'SAMPLE BANKING CORPORATION'),
                 array('key' => 'p_individual', 'title' => 'INDIVIDUAL (Last Name, First Name, Middle Name)', 'format' => 'text', 'width' => 36.44, 'help' => 'An individual payor as LAST NAME, FIRST NAME, MIDDLE NAME (4). Leave blank for a corporation.', 'example' => ''),
-                array('key' => 'atc_code', 'title' => 'ATC CODE', 'format' => 'text', 'width' => 25.69, 'required' => true, 'help' => 'Alphanumeric tax code (5), for example WC160 or WC120.', 'example' => 'WC160'),
-                array('key' => 'nature_of_payment', 'title' => 'NATURE OF PAYMENT', 'format' => 'text', 'width' => 50.69, 'help' => 'Description of the income payment. Blank uses the ATC description.', 'example' => ''),
+                array('key' => 'atc_code', 'title' => 'ATC CODE', 'format' => 'text', 'width' => 25.69, 'required' => true, 'help' => 'Alphanumeric tax code (5): choose it from the dropdown, which lists the codes on the sheet ATC codes, for example WC160 or WC120.', 'example' => 'WC160'),
+                array('key' => 'nature_of_payment', 'title' => 'NATURE OF PAYMENT', 'format' => 'text', 'width' => 50.69, 'help' => 'Filled in from the ATC chosen. Blank uses the ATC description.', 'example' => ''),
                 array('key' => 'income_amount', 'title' => 'AMOUNT OF INCOME PAYMENT', 'format' => 'amount', 'xlsx_format' => 'sawt', 'width' => 25.69, 'required' => true, 'help' => 'Income payment (6).', 'example' => '100000.00'),
-                array('key' => 'tax_rate', 'title' => 'TAX RATE', 'format' => 'amount', 'xlsx_format' => 'sawt', 'width' => 12, 'weak' => true, 'help' => 'Percent (7), for example 2. Blank uses the ATC rate.', 'example' => '2'),
+                array('key' => 'tax_rate', 'title' => 'TAX RATE', 'format' => 'amount', 'xlsx_format' => 'sawt', 'width' => 12, 'weak' => true, 'help' => 'Percent (7), filled in from the ATC chosen. Type over it only when the payor withheld at another rate. Blank uses the ATC rate.', 'example' => '2'),
                 array('key' => 'tax_withheld', 'title' => 'AMOUNT OF TAX WITHHELD', 'format' => 'amount', 'xlsx_format' => 'sawt', 'width' => 18, 'weak' => true,
                     'formula' => 'IF(G{r}="","",ROUND(G{r}*H{r}/100,2))', 'help' => 'Tax withheld (8), as on the 2307. Blank computes income x rate.', 'example' => ''),
                 array('key' => 'p_branch', 'title' => 'Payor branch code', 'format' => 'text', 'extra' => true, 'help' => 'Optional when the TIN already ends in the branch code.'),
@@ -238,26 +244,40 @@ class Imports
         $type = self::type($typeKey);
         if ($typeKey === 'withheld_on_us') {
             $client = isset($ctx['client']) ? $ctx['client'] : Ctx::client();
-            $month = isset($ctx['month']) && $ctx['month'] ? $ctx['month'] : date('Y-m', strtotime('first day of last month'));
-            $vat = isset($ctx['variant']) && $ctx['variant'] === '2550Q';
-            $form = isset($ctx['form']) && $ctx['form'] ? $ctx['form'] : ($vat ? '2550Q' : null);
+            $variants = $type['variants'];
+            // Variant keys such as 1700 are numbers to PHP: compare them as text.
+            $variant = isset($ctx['variant']) && isset($variants[(string)$ctx['variant']]) ? (string)$ctx['variant'] : null;
+            $form = isset($ctx['form']) && $ctx['form'] ? (string)$ctx['form'] : $variant;
+            $form = $form ?: ($client && $client['taxpayer_type'] === 'individual' ? '1701Q' : '1702Q');
+            $month = isset($ctx['month']) && $ctx['month'] ? $ctx['month'] : self::sawtDefaultMonth($form, $client);
+            $vat = in_array($form, array('2550M', '2550Q'), true);
             $lines = array();
             if ($withSamples) {
-                $samples = $vat ? array(
-                    array('000-123-456-0000', 'SAMPLE CITY GOVERNMENT', '', 'WV010', 71428.5, 5, 3571.43, 'GVAT'),
-                    array('000-234-567-0000', 'SAMPLE PROVINCIAL HOSPITAL', '', 'WV020', 22321.4, 5, 1116.07, 'GVAT'),
-                ) : array(
-                    array('000-123-456-0000', 'SAMPLE BANKING CORPORATION', '', 'WC160', 100000, 2, 2000, 'EWT'),
-                    array('000-234-567-0000', 'SAMPLE PROPERTY HOLDINGS INC', '', 'WC120', 45250.5, 2, 905.01, 'EWT'),
-                    array('000-345-678-0000', '', 'DELA CRUZ, JUAN, SANTOS', 'WC160', 12000, 2, 240, 'EWT'),
-                );
+                if ($vat) {
+                    $samples = array(
+                        array('000-123-456-0000', 'SAMPLE CITY GOVERNMENT', '', 'WV010', 71428.5, 3571.43, 'GVAT'),
+                        array('000-234-567-0000', 'SAMPLE PROVINCIAL HOSPITAL', '', 'WV020', 22321.4, 1116.07, 'GVAT'),
+                    );
+                } elseif (self::sawtPayeeType($form) === 'individual') {
+                    $samples = array(
+                        array('000-123-456-0000', 'SAMPLE BANKING CORPORATION', '', 'WI160', 100000, 2000, 'EWT'),
+                        array('000-234-567-0000', 'SAMPLE PROPERTY HOLDINGS INC', '', 'WI100', 45250.4, 2262.52, 'EWT'),
+                        array('000-345-678-0000', '', 'DELA CRUZ, JUAN, SANTOS', 'WI010', 12000, 600, 'EWT'),
+                    );
+                } else {
+                    $samples = array(
+                        array('000-123-456-0000', 'SAMPLE BANKING CORPORATION', '', 'WC160', 100000, 2000, 'EWT'),
+                        array('000-234-567-0000', 'SAMPLE PROPERTY HOLDINGS INC', '', 'WC120', 45250.5, 905.01, 'EWT'),
+                        array('000-345-678-0000', '', 'DELA CRUZ, JUAN, SANTOS', 'WC160', 12000, 240, 'EWT'),
+                    );
+                }
                 foreach ($samples as $v) {
-                    $tc = Records::taxCode($v[3], $v[7], last_day($month));
+                    $tc = Records::taxCode($v[3], $v[6], last_day($month));
                     $lines[] = array('tin' => $v[0], 'company' => $v[1], 'individual' => $v[2], 'atc' => $v[3], 'nature' => $tc ? $tc['description'] : '',
-                        'income' => $v[4], 'rate' => $v[5], 'tax' => $v[6]);
+                        'income' => $v[4], 'rate' => $tc ? (float)$tc['rate'] : 0, 'tax' => $v[5]);
                 }
             }
-            return self::sawtWorkbook($client, $form, $month, $lines, true, $vat ? '2550Q' : '1702Q');
+            return self::sawtWorkbook($client, $form, $month, $lines, true, $variant);
         }
         if ($typeKey === 'alphalist_1604e') {
             $client = isset($ctx['client']) ? $ctx['client'] : Ctx::client();
@@ -350,19 +370,74 @@ class Imports
         )), array('title' => $type['label'] . ' import template'));
     }
 
+    /** Individual payees for the SAWT of 1700, 1701 and 1701Q; non-individuals for 1702 and 1702Q; null otherwise. */
+    public static function sawtPayeeType($form)
+    {
+        $form = (string)$form;
+        if (in_array($form, array('1700', '1701', '1701Q'), true)) {
+            return 'individual';
+        }
+        return in_array($form, array('1702', '1702Q'), true) ? 'corporate' : null;
+    }
+
+    /**
+     * The month a new SAWT template is for: the last month of the latest quarter ended (quarterly returns),
+     * of the latest year ended (annual returns), or last month. Fiscal-year clients follow their year end.
+     */
+    public static function sawtDefaultMonth($form, $client = null, $today = null)
+    {
+        $today = $today ?: today();
+        $sf = Datasets::sawtForms();
+        $freq = isset($sf[$form]) ? $sf[$form][1] : 'monthly';
+        $fme = $client && !empty($client['fiscal_month_end']) ? (int)$client['fiscal_month_end'] : 12;
+        $step = $freq === 'annual' ? 12 : ($freq === 'quarterly' ? 3 : 1);
+        $t = strtotime(substr($today, 0, 7) . '-01');
+        for ($i = 1; $i <= 12; $i++) {
+            $m = strtotime('-' . $i . ' month', $t);
+            if ($step === 1 || ((int)date('n', $m) - $fme + 12) % $step === 0) {
+                return date('Y-m', $m);
+            }
+        }
+        return date('Y-m', strtotime('-1 month', $t));
+    }
+
+    /**
+     * The codes of the ATC dropdown of a SAWT template, from the tax code registry: VAT withheld (WV) for the
+     * 2550M and 2550Q SAWT, otherwise the expanded withholding codes for the return's payee (individual or
+     * non-individual). Returns rows of atc_code, description, rate (percent), by code.
+     */
+    public static function sawtAtcCodes($form, $onDate = null)
+    {
+        $vat = in_array($form, array('2550M', '2550Q'), true);
+        $who = self::sawtPayeeType($form);
+        $out = array();
+        foreach (Records::atcOptions($vat ? 'GVAT' : 'EWT', $onDate) as $tc) {
+            if (isset($out[$tc['atc_code']]) || ($who && !in_array($tc['payee_type'], array($who, 'any'), true))) {
+                continue;
+            }
+            $out[$tc['atc_code']] = array('atc_code' => $tc['atc_code'], 'description' => trim(preg_replace('/\s+/', ' ', $tc['description'])), 'rate' => (float)$tc['rate']);
+        }
+        return array_values($out);
+    }
+
     /**
      * A workbook in the SAWT report layout (the same rows, columns, widths and number format as the BIR
      * SAWT printout): title lines, the three-row header, "(1)".."(8)", dashes, one line per payor and ATC,
-     * Grand Total and END OF REPORT. As a template ($blankRows) the lines are left open with formulas for
-     * the tax and the totals; as an export the amounts are written as values.
+     * Grand Total and END OF REPORT. As a template the lines are left open: ATC CODE is a dropdown of the
+     * codes on the sheet ATC codes, and NATURE OF PAYMENT, TAX RATE and the tax are formulas worked out
+     * from the ATC chosen and the income typed. As an export the amounts are written as values.
      * $lines: tin, company, individual, atc, nature, income, rate, tax.
      */
     public static function sawtWorkbook($client, $form, $month, $lines, $template = false, $variant = null)
     {
-        $variant = $variant ?: (in_array($form, array('2550M', '2550Q'), true) ? '2550Q' : '1702Q');
-        $vt = self::type('withheld_on_us');
-        $vt = $vt['variants'][$variant];
-        $form = $form ?: ($client && $client['taxpayer_type'] === 'individual' ? '1701Q' : '1702Q');
+        $type = self::type('withheld_on_us');
+        $variant = $variant === null ? null : (string)$variant;
+        $form = (string)($form ?: ($variant ?: ($client && $client['taxpayer_type'] === 'individual' ? '1701Q' : '1702Q')));
+        if (!$variant || !isset($type['variants'][$variant])) {
+            $variant = isset($type['variants'][$form]) ? $form : (in_array($form, array('2550M', '2550Q'), true) ? '2550Q' : '1702Q');
+        }
+        $vt = $type['variants'][$variant];
+        $vat = $variant === '2550Q';
         $name = $client ? Ctx::clientName($client) : '';
         $branch = '0000';
         if ($client) {
@@ -384,22 +459,39 @@ class Imports
             14 => array(0 => $b('(1)'), 1 => $b('(2)'), 2 => $b('(3)'), 3 => $b('(4)'), 4 => $b('(5)'), 6 => $b('(6)'), 7 => $b('(7)'), 8 => $b('(8)')),
             15 => array_fill(0, 9, str_repeat('-', 30)),
         );
+        // The template's lookups: the nature of payment and the rate of the ATC chosen, from the sheet ATC codes.
+        $nature = function ($r) {
+            return 'IF(E' . $r . '="","",IFERROR(VLOOKUP(E' . $r . ',ATC_TABLE,2,FALSE),""))';
+        };
+        $rate = function ($r) {
+            return 'IF(E' . $r . '="","",IFERROR(VLOOKUP(E' . $r . ',ATC_TABLE,3,FALSE),""))';
+        };
+        $taxF = function ($r) {
+            return 'IF(OR(G' . $r . '="",H' . $r . '=""),"",ROUND(G' . $r . '*H' . $r . '/100,2))';
+        };
         $r = 16;
         $income = 0;
         $tax = 0;
         foreach (array_values($lines) as $i => $l) {
             $cells[$r] = array(0 => $i + 1, 1 => array('v' => (string)$l['tin'], 's' => 'text'), 2 => (string)$l['company'], 3 => (string)$l['individual'],
-                4 => (string)$l['atc'], 5 => (string)$l['nature'], 6 => array('v' => (float)$l['income'], 's' => 'amount'), 7 => array('v' => (float)$l['rate'], 's' => 'amount'));
-            $cells[$r][8] = $template ? array('f' => 'IF(OR(G' . $r . '="",H' . $r . '=""),"",ROUND(G' . $r . '*H' . $r . '/100,2))', 's' => 'amount') : array('v' => (float)$l['tax'], 's' => 'amount');
+                4 => (string)$l['atc'], 5 => (string)$l['nature'], 6 => array('v' => (float)$l['income'], 's' => 'amount'), 7 => array('v' => (float)$l['rate'], 's' => 'amount'),
+                8 => array('v' => (float)$l['tax'], 's' => 'amount'));
+            if ($template) {
+                // Sample lines carry the formulas with their results, so the file reads the same before Excel recalculates it.
+                $cells[$r][5] = array('f' => $nature($r), 'cv' => (string)$l['nature']);
+                $cells[$r][7] = array('f' => $rate($r), 'cv' => (float)$l['rate'], 's' => 'amount');
+                $cells[$r][8] = array('f' => $taxF($r), 'cv' => (float)$l['tax'], 's' => 'amount');
+            }
             $income += Money::parse((string)$l['income'])['cents'];
             $tax += Money::parse((string)$l['tax'])['cents'];
             $r++;
         }
+        $first = 16;
         if ($template) {
-            // Open lines ready for data: the tax works itself out once the income and rate are typed.
-            for ($n = count($lines); $n < 30; $n++, $r++) {
-                $cells[$r] = array(1 => array('v' => '', 's' => 'text'), 6 => array('v' => '', 's' => 'amount'), 7 => array('v' => '', 's' => 'amount'),
-                    8 => array('f' => 'IF(OR(G' . $r . '="",H' . $r . '=""),"",ROUND(G' . $r . '*H' . $r . '/100,2))', 's' => 'amount'));
+            // Open lines ready for data: pick the ATC and type the income; the rest works itself out.
+            for ($n = count($lines); $n < 50; $n++, $r++) {
+                $cells[$r] = array(1 => array('v' => '', 's' => 'text'), 5 => array('f' => $nature($r)), 6 => array('v' => '', 's' => 'amount'),
+                    7 => array('f' => $rate($r), 's' => 'amount'), 8 => array('f' => $taxF($r), 's' => 'amount'));
             }
         }
         $dash = $r;
@@ -411,7 +503,7 @@ class Imports
         $cells[$dash + 2] = array(6 => str_repeat('=', 18), 7 => str_repeat('=', 18), 8 => str_repeat('=', 18));
         $cells[$dash + 3] = array(0 => $b('END OF REPORT'));
         $cols = array();
-        foreach (self::templateColumns(self::type('withheld_on_us')) as $i => $c) {
+        foreach (self::templateColumns($type) as $i => $c) {
             // The column widths the BIR module gives its SAWT printout: 25, with 50 for (3), (4) and the nature of payment.
             $cols[] = array('title' => $c['title'], 'width' => in_array($i, array(2, 3, 5), true) ? 50 : 25, 'format' => $c['format'] === 'amount' ? 'amount' : 'general', 'xlsx_format' => $c['format'] === 'amount' ? 'sawt' : null);
         }
@@ -423,21 +515,39 @@ class Imports
                 $cols[$k]['format'] = 'text';
             }
         }
-        $sheets = array(array('name' => 'Sheet1', 'columns' => $cols, 'cells' => $cells));
+        $sheet = array('name' => 'Sheet1', 'columns' => $cols, 'cells' => $cells);
+        $sheets = array();
+        $names = array();
         if ($template) {
+            $codes = self::sawtAtcCodes($form, last_day($month));
+            $last = count($codes) + 1;
+            $names = array('ATC_CODES' => "'ATC codes'!\$A\$2:\$A\$" . $last, 'ATC_TABLE' => "'ATC codes'!\$A\$2:\$C\$" . $last);
+            $sheet['validations'] = array(array('sqref' => 'E' . $first . ':E' . ($dash - 1), 'formula' => 'ATC_CODES', 'title' => 'ATC CODE',
+                'prompt' => 'Choose the code. The nature of payment and the tax rate fill in by themselves.'));
+            $sheets[] = $sheet;
+            $atcRows = array();
+            foreach ($codes as $tc) {
+                $atcRows[] = array($tc['atc_code'], $tc['description'], $tc['rate']);
+            }
+            $sheets[] = array('name' => 'ATC codes', 'columns' => array(array('title' => 'ATC CODE', 'width' => 12, 'format' => 'text'),
+                array('title' => 'NATURE OF PAYMENT', 'width' => 110, 'format' => 'text'), array('title' => 'TAX RATE', 'width' => 10, 'format' => 'amount', 'xlsx_format' => 'two_dp')),
+                'rows' => $atcRows, 'freeze' => true);
             $fieldRows = array();
-            foreach (self::templateColumns(self::type('withheld_on_us')) as $c) {
+            foreach (self::templateColumns($type) as $c) {
                 $fieldRows[] = array($c['title'], !empty($c['required']) ? 'Yes' : 'No', isset($c['help']) ? $c['help'] : '');
             }
             $sheets[] = array('name' => 'Fields', 'columns' => array(array('title' => 'Column', 'width' => 46, 'format' => 'text'), array('title' => 'Required', 'width' => 10, 'format' => 'text'),
                 array('title' => 'How to fill', 'width' => 80, 'format' => 'text')), 'rows' => $fieldRows, 'freeze' => true);
             $sheets[] = array('name' => 'About', 'columns' => array(array('title' => 'Key', 'width' => 22, 'format' => 'text'), array('title' => 'Value', 'width' => 90, 'format' => 'text')),
                 'rows' => array(array('Template code', $vt['code']), array('Template version', $vt['version']), array('Import type', $vt['label']), array('Generated', date('Y-m-d H:i')),
-                    array('Rules', 'Keep the title lines and the header as they are. One line per payor and ATC, between the two lines of dashes; insert rows there for more payors. TIN with branch code as 000-000-000-0000. A corporation goes under CORPORATION; a person under INDIVIDUAL as LAST NAME, FIRST NAME, MIDDLE NAME. The month is read from the line FOR THE MONTH OF: for a quarterly return, the last month of the quarter.'),
-                    array('Codes', $variant === '2550Q' ? 'The 2550Q SAWT lists the VAT withheld on your sales (ATC WV010, WV020 and the other WV codes).' : 'The 1702Q SAWT lists the income tax withheld on your income (ATC WC and WI codes).'),
+                    array('Rules', 'Keep the title lines and the header as they are. One line per payor and ATC, between the two lines of dashes. TIN with branch code as 000-000-000-0000. A corporation goes under CORPORATION; a person under INDIVIDUAL as LAST NAME, FIRST NAME, MIDDLE NAME. Choose the ATC CODE from its dropdown: NATURE OF PAYMENT and TAX RATE fill in from the sheet ATC codes, and the tax is the income times the rate. Type over the rate or the tax only when the 2307 shows another amount. For more lines than the template has, copy a whole line and insert it above the dashes. The month is read from the line FOR THE MONTH OF: for a quarterly return the last month of the quarter, for an annual return the last month of the year.'),
+                    array('Codes', $vat ? 'The ' . $form . ' SAWT lists the VAT withheld on your sales: the sheet ATC codes has the WV codes.'
+                        : 'The ' . $form . ' SAWT lists the income tax withheld on your income: the sheet ATC codes has the expanded withholding codes for ' . (self::sawtPayeeType($form) === 'individual' ? 'individual payees (WI)' : 'non-individual payees (WC)') . ' in the tax code registry.'),
                     array('Note', 'This workbook is an input template for G-SMaRT BIR in the layout of the SAWT. It is not the SAWT DAT file and is not submitted to the BIR.')));
+        } else {
+            $sheets[] = $sheet;
         }
-        return XlsxWriter::build($sheets, array('title' => 'SAWT ' . $form . ' ' . month_label($month)));
+        return XlsxWriter::build($sheets, array('title' => 'SAWT ' . $form . ' ' . month_label($month), 'names' => $names));
     }
 
     /**

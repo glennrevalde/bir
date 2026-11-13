@@ -33,8 +33,18 @@ if (is_post()) {
         if (input('action') === 'upload') {
             $up = store_upload(isset($_FILES['dat']) ? $_FILES['dat'] : null, 'uploads/dat', array('dat', 'txt', 'csv'));
             $bytes = file_get_contents(storage_path($up['path']));
+            // The validation module's eAlpha copy is kept as the file it was made from, without the TIN and
+            // branch it adds to each SAWT detail line and without its key line.
+            $vcopy = DatReader::validationCopy($bytes);
+            if ($vcopy) {
+                $bytes = $vcopy['clean'];
+                file_put_contents(storage_path($up['path']), $bytes);
+                $up['sha256'] = hash('sha256', $bytes);
+                $up['size'] = strlen($bytes);
+            }
             $cands = DatReader::detect($up['name'], $bytes);
             $_SESSION['dat_upload'] = array('path' => $up['path'], 'name' => $up['name'], 'sha' => $up['sha256'], 'size' => $up['size'],
+                'vcopy' => $vcopy ? array('details' => $vcopy['details'], 'key' => $vcopy['key']) : null,
                 'candidates' => array_map(function ($c) { return array('spec_key' => $c['key'], 'tokens' => $c['tokens'], 'errors' => $c['errors']); }, $cands));
         } elseif (input('action') === 'confirm' && $stage) {
             $spec = Specs::byKey(input('spec_id'));
@@ -85,6 +95,9 @@ if (is_post()) {
                 }
             }
             $dup = DB::val('SELECT id FROM dat_files WHERE client_id = ? AND sha256 = ?', array($client['id'], $stage['sha']));
+            if ($dup && !empty($stage['vcopy'])) {
+                throw new RuntimeException('Without the validation module\'s additions this is file #' . $dup . ' of the library, byte for byte. Download that file and attach it to eSubmission.');
+            }
             if ($dup) {
                 throw new RuntimeException('This exact file is already in the library as file #' . $dup . '.');
             }
@@ -134,6 +147,11 @@ View::pageBar('Upload an existing DAT', View::clientContext('files made earlier 
   <form method="post" class="sheet"><?= csrf_field() ?><input type="hidden" name="action" value="confirm">
     <div class="sheet-head"><div><h2><?= e($stage['name']) ?></h2><p><?= e(human_bytes($stage['size'])) ?>, SHA-256 <?= e(substr($stage['sha'], 0, 16)) ?>...</p></div></div>
     <div class="sheet-body stack">
+      <?php if (!empty($stage['vcopy'])) { ?>
+        <div class="callout warn"><strong>This is the copy the BIR validation module writes to its eAlpha folder.</strong>
+          <?= $stage['vcopy']['details'] ? 'It had your TIN and branch added to the end of ' . (int)$stage['vcopy']['details'] . ' detail ' . ((int)$stage['vcopy']['details'] === 1 ? 'line' : 'lines') : 'It had' ?><?= $stage['vcopy']['key'] ? ($stage['vcopy']['details'] ? ' and' : '') . ' a validation key as its last line' : '' ?>.
+          eSubmission refuses that copy with "Detail Excess Column", so it is kept without them, as the data entry module wrote it. Download it from the library and attach that file to eSubmission.</div>
+      <?php } ?>
       <?php if ($stage['candidates']) { ?>
         <p>Matching layouts, best first:</p>
         <?php foreach ($stage['candidates'] as $i => $c) { $s = Specs::byKey(isset($c['spec_key']) ? $c['spec_key'] : $c['spec_id']); if (!$s) { continue; }

@@ -274,7 +274,15 @@ class XlsxWriter
             . '<dc:title>' . self::x($title) . '</dc:title><dc:creator>G-SMaRT BIR Integration System</dc:creator>'
             . '<dcterms:created xsi:type="dcterms:W3CDTF">' . gmdate('Y-m-d\TH:i:s\Z') . '</dcterms:created></cp:coreProperties>');
         // Formulas are written without cached results; ask Excel to calculate them when the file opens.
-        $zip->addFromString('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' . $wbSheets . '</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>');
+        // Named ranges, such as the ATC list a dropdown and a lookup formula read from another sheet.
+        $names = '';
+        if (!empty($props['names'])) {
+            foreach ($props['names'] as $nm => $ref) {
+                $names .= '<definedName name="' . self::x($nm) . '">' . self::x($ref) . '</definedName>';
+            }
+            $names = '<definedNames>' . $names . '</definedNames>';
+        }
+        $zip->addFromString('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' . $wbSheets . '</sheets>' . $names . '<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>');
         $zip->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' . $wbRels . '</Relationships>');
         $zip->addFromString('xl/styles.xml', self::styles());
         $zip->close();
@@ -424,8 +432,10 @@ class XlsxWriter
     }
 
     /**
-     * Cells of a free layout: $s['cells'][rowNo][colIndex] = value, or array('v' => value, 's' => style, 'f' => formula).
+     * Cells of a free layout: $s['cells'][rowNo][colIndex] = value, or array('v' => value, 's' => style, 'f' => formula,
+     * 'cv' => the formula's result, written so the file reads correctly before a spreadsheet recalculates it).
      * Styles: 'bold', 'amount' (###,###,###,##0.00), 'amount_bold', 'text'. Rows may be sparse.
+     * $s['validations'] = list of array('sqref' => 'E16:E65', 'formula' => 'ATC_CODES', 'title' =>, 'prompt' =>): dropdown lists.
      */
     private static function layoutXml($s, $colsXml)
     {
@@ -442,7 +452,14 @@ class XlsxWriter
                 $ref = self::colLetter($i) . (int)$r;
                 $st = isset($c['s']) && isset($styles[$c['s']]) ? $styles[$c['s']] : 0;
                 if (!empty($c['f'])) {
-                    $rowsXml .= '<c r="' . $ref . '" s="' . $st . '"><f>' . self::x($c['f']) . '</f></c>';
+                    $cv = isset($c['cv']) ? $c['cv'] : null;
+                    if ($cv === null) {
+                        $rowsXml .= '<c r="' . $ref . '" s="' . $st . '"><f>' . self::x($c['f']) . '</f></c>';
+                    } elseif (is_string($cv)) {
+                        $rowsXml .= '<c r="' . $ref . '" s="' . $st . '" t="str"><f>' . self::x($c['f']) . '</f><v>' . self::x($cv) . '</v></c>';
+                    } else {
+                        $rowsXml .= '<c r="' . $ref . '" s="' . $st . '"><f>' . self::x($c['f']) . '</f><v>' . self::x($cv) . '</v></c>';
+                    }
                     continue;
                 }
                 $v = isset($c['v']) ? $c['v'] : null;
@@ -457,7 +474,17 @@ class XlsxWriter
             }
             $rowsXml .= '</row>';
         }
+        $dv = '';
+        if (!empty($s['validations'])) {
+            foreach ($s['validations'] as $d) {
+                $dv .= '<dataValidation type="list" errorStyle="warning" allowBlank="1" showInputMessage="1" showErrorMessage="1"'
+                    . (isset($d['title']) ? ' promptTitle="' . self::x($d['title']) . '"' : '') . (isset($d['prompt']) ? ' prompt="' . self::x($d['prompt']) . '"' : '')
+                    . ' errorTitle="Not in the list" error="This code is not in the list on the sheet ATC codes. Choose Yes to keep it anyway."'
+                    . ' sqref="' . self::x($d['sqref']) . '"><formula1>' . self::x($d['formula']) . '</formula1></dataValidation>';
+            }
+            $dv = '<dataValidations count="' . count($s['validations']) . '">' . $dv . '</dataValidations>';
+        }
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-            . ($colsXml ? '<cols>' . $colsXml . '</cols>' : '') . '<sheetData>' . $rowsXml . '</sheetData></worksheet>';
+            . ($colsXml ? '<cols>' . $colsXml . '</cols>' : '') . '<sheetData>' . $rowsXml . '</sheetData>' . $dv . '</worksheet>';
     }
 }

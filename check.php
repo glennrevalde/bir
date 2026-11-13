@@ -34,6 +34,8 @@ if ($cfg) {
             $checks[] = array($salesRate ? 'Sales table is up to date (VAT sales format)' : 'Database needs an update: run database/migrations/2026-10-25c_vat_sales_format.sql', (bool)$salesRate);
             $upload = (int)$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'client_import_rows'")->fetchColumn();
             $checks[] = array($upload ? 'Client upload tables are in place' : 'Database needs an update: run database/migrations/2026-11-06_client_upload.sql', (bool)$upload);
+            $ewt = (int)$pdo->query("SELECT COUNT(*) FROM tax_codes WHERE tax_kind = 'EWT' AND atc_code IN ('WI830', 'WC830', 'WI020')")->fetchColumn();
+            $checks[] = array($ewt === 3 ? 'Expanded withholding codes of the BIR module are in place (SAWT templates)' : 'Database needs an update: run database/migrations/2026-11-14_sawt_atc_codes.sql', $ewt === 3);
         }
         $pk = (int)$pdo->query('SELECT @@max_allowed_packet')->fetchColumn();
         $checks[] = array('MySQL max_allowed_packet at least 16M (found ' . round($pk / 1048576, 1) . 'M' . ($pk >= 16 * 1048576 ? ')' : '; set max_allowed_packet = 16M under [mysqld] in my.ini and restart MySQL)'), $pk >= 16 * 1048576);

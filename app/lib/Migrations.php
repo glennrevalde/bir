@@ -6,7 +6,7 @@
  */
 class Migrations
 {
-    const CURRENT = 8;
+    const CURRENT = 9;
 
     public static function run()
     {
@@ -73,6 +73,13 @@ class Migrations
                 }
                 set_sys_config('schema_version', '8');
             }
+            if ($v < 9) {
+                // 2026-11-14: every expanded withholding code the SAWT entry of the BIR module v7.4 offers, for the
+                // ATC dropdown of the SAWT templates; the module's description for the rentals codes WI100 and WC100.
+                self::addTaxCodes(array('EWT'));
+                self::updateTaxDescriptions(array('WI100', 'WC100'), 'verify description against the current ATC table');
+                set_sys_config('schema_version', '9');
+            }
         } catch (Exception $e) {
             // Without ALTER rights the update waits for database/migrations/; check.php reports it.
             error_log('[GSB] Schema update to version ' . self::CURRENT . ' failed: ' . $e->getMessage());
@@ -101,6 +108,21 @@ class Migrations
         foreach ($R['schedules'] as $s) {
             DB::q('UPDATE report_schedules SET name = ?, dataset_key = ? WHERE form_code = ? AND schedule_code = ?', array($s[2], $s[3], $s[0], $s[1]));
         }
+    }
+
+    /** Replace a seeded description that still carries a placeholder note with the one in the reference data. */
+    public static function updateTaxDescriptions($codes, $placeholder)
+    {
+        require_once APP_PATH . '/specs/reference.php';
+        $R = gsb_reference();
+        $n = 0;
+        foreach ($R['tax_codes'] as $t) {
+            if (in_array($t[0], $codes, true)) {
+                $n += DB::q('UPDATE tax_codes SET description = ?, source_ref = ? WHERE atc_code = ? AND tax_kind = ? AND description LIKE ?',
+                    array($t[3], $t[5], $t[0], $t[1], '%' . $placeholder . '%'))->rowCount();
+            }
+        }
+        return $n;
     }
 
     /** Seed tax codes of the given kinds that an installation does not have yet (pending review, like at install). */

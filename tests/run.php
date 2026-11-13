@@ -631,7 +631,7 @@ list($tplJob, $tst, $texact, $tdet, $tmeta) = $simport(Imports::template('withhe
 ok($texact && $tdet === array(11, 13) && $tmeta['month'] === '2025-06' && $tmeta['tin'] === '004267719' && $tst['total'] === 3,
     'the generated template has the SAWT layout and the client title lines; its open formula lines are not rows', json_encode(array($tdet, $tmeta, $tst)));
 $tplXml = zip_part(Imports::template('withheld_on_us', false), 'xl/worksheets/sheet1.xml');
-ok(strpos($tplXml, '<f>SUM(G15:G46)</f>') !== false && strpos($tplXml, 'IF(OR(G16=&quot;&quot;,H16=&quot;&quot;),&quot;&quot;,ROUND(G16*H16/100,2))') !== false, 'the template carries the tax and Grand Total formulas');
+ok(strpos($tplXml, '<f>SUM(G15:G66)</f>') !== false && strpos($tplXml, 'IF(OR(G16=&quot;&quot;,H16=&quot;&quot;),&quot;&quot;,ROUND(G16*H16/100,2))') !== false, 'the template carries the tax and Grand Total formulas');
 $wm = Records::module('withheld_on_us');
 list($d, $e) = Records::validate($wm, array('branch_id' => $Gg['branch'], 'counterparty_id' => $sr[0]['counterparty_id'], 'period_month' => '2025-07', 'atc_code' => 'WC160', 'income_amount' => '50,000.00'), $Gg['client']);
 ok(!$e && $d['tax_withheld'] === '1000.00' && $d['payment_date'] === null && strpos($d['nature_of_payment'], 'purchase of services') !== false, 'a typed line needs only the month; the rate, tax and nature come from the ATC', json_encode($e));
@@ -696,6 +696,91 @@ ok(count(Imports::sawtLines($Gg['client'], null, '2025-09', null, array('GVAT'))
     'the SAWT layout export picks the lines of the return it is for');
 $v74 = Checks::v74Atcs();
 ok(isset($v74['WC160'], $v74['WV010'], $v74['WB030']) && !isset($v74['WZ999']) && count($v74) === 469, 'the v7.4 ATC table has the 469 codes its validator accepts, VAT and percentage tax included');
+
+// =====================================================================
+section('SAWT for 1701Q as the BIR file, and the validation module\'s eAlpha copy');
+// The BIR's own 1701Q SAWT (June 2026) of an individual with one payor, shown with the eSubmission report.
+$Jd = make_org('Judilla', '703196120', 'firm_owner', 'JUDILLA');
+DB::update('client_entities', array('taxpayer_type' => 'individual', 'registered_name' => '', 'last_name' => 'JUDILLA', 'first_name' => 'GAMALIEL', 'middle_name' => 'GERONA', 'rdo_code' => '080'), 'id = ?', array($Jd['client']));
+DB::update('branches', array('rdo_code' => '080'), 'id = ?', array($Jd['branch']));
+login_as($Jd['user'], $Jd['org'], $Jd['client']);
+$jc = DB::row('SELECT * FROM client_entities WHERE id = ?', array($Jd['client']));
+$jx = Imports::sawtWorkbook($jc, '1701Q', '2026-06', array(array('tin' => '102-717-388-0000', 'company' => '', 'individual' => 'KING, RICARIDO DELFIN, A', 'atc' => 'WI100', 'nature' => '',
+    'income' => 409207.77, 'rate' => 5, 'tax' => 20460.39)));
+list($jj, $jst, $jexact, $jdet, $jmeta) = $simport($jx, array(), $Jd);
+ok($jst['valid'] === 1 && $jst['errors'] === 0 && $jmeta['form'] === '1701Q', 'the payor line of the BIR sample imports', json_encode($jst));
+Imports::commit($jj, 'all');
+$jf = DB::row('SELECT * FROM dat_files WHERE id = ?', array(Reports::generate(Reports::context(array('form' => 'SAWT', 'schedule' => 'S1', 'branch_id' => $Jd['branch'], 'year' => 2026, 'part' => 2,
+    'sawt_form' => '1701Q', 'amended' => 0)), true)));
+$jBytes = file_get_contents(storage_path($jf['storage_path']));
+$birSample = "HSAWT,H1701Q,703196120,0000,\"\",\"JUDILLA\",\"GAMALIEL\",\"GERONA\",06/2026,080\r\n"
+    . "DSAWT,D1701Q,1,102717388,0000,,\"KING\",\"RICARIDO DELFIN\",\"A\",06/2026,,WI100,5.00,409207.77,20460.39\r\n"
+    . "CSAWT,C1701Q,703196120,0000,06/2026,409207.77,20460.39\r\n";
+ok($jBytes === $birSample && $jf['filename'] === '70319612000000620261701Q.DAT', 'the 1701Q SAWT is byte for byte the file the BIR data entry module writes: 15 fields on the detail line, no line after the control',
+    json_encode(array($jf['filename'], $jBytes)));
+ok(bir_v74_sawt($jBytes, '703196120', '0000', '1701Q', '06/2026') === array(), 'it passes the ported v7.4 SAWT checks');
+// The copy the validation module writes to eAlpha: TIN and branch on every detail line, then its key (as attached to the eSubmission that failed).
+$eAlpha = "HSAWT,H1701Q,703196120,0000,\"\",\"JUDILLA\",\"GAMALIEL\",\"GERONA\",09/2026,080\r\n"
+    . "DSAWT,D1701Q,1,102717388,0000,,\"KING\",\"RICARIDO DELFIN\",\"A\",09/2026,,WI100,5.00,409207.77,20460.39,703196120,0000\r\n"
+    . "CSAWT,C1701Q,703196120,0000,09/2026,409207.77,20460.39\r\nA6F6E8L4F9F3H53F9F078\r\n";
+$eaV = bir_v74_sawt(substr($eAlpha, 0, strrpos(rtrim($eAlpha), "\r\n") + 2), '703196120', '0000', '1701Q', '09/2026');
+ok($eaV === array(array(2, 'Detail Excess Column')), 'the eAlpha copy gives the "Detail Excess Column" eSubmission reported', json_encode($eaV));
+$vc = DatReader::validationCopy($eAlpha);
+ok($vc && $vc['key_ok'] && $vc['details'] === 1 && $vc['clean'] === str_replace('06/2026', '09/2026', $birSample), 'the eAlpha copy is recognised by its key, and reads back as the file it was made from', json_encode($vc));
+ok(DatReader::validationCopy($jBytes) === null && DatReader::validationCopy($fsBytes) === null, 'files G-SMaRT generates are not taken for a validation copy');
+$vcBad = DatReader::validationCopy(str_replace('A6F6E8L4F9F3H53F9F078', 'A6F6E8L4F9F3H53F9F079', $eAlpha));
+ok($vcBad && !$vcBad['key_ok'], 'a key that does not match the lines is reported as such');
+$jCopy = str_replace(",20460.39\r\nCSAWT", ",20460.39,703196120,0000\r\nCSAWT", $jBytes);
+$jTmp = tmp_file($jCopy);
+$jRep = "TIN of Withholding Agent TIN: 703196120-0000\r\nAlphalist Form              : 1701Q\r\nTaxable Month                : 06/2026\r\n\r\nLINE NUM       SCHEDULE     ERROR DESCRIPTION\r\n----------     --------     -----\r\n0000000000                  No Errors Encountered\r\n";
+$jev = Evidence::record($jf['id'], array('validator_version' => '7.4', 'executed_on' => '2026-06-30', 'outcome' => '', 'patch_date' => '', 'report_type' => '', 'notes' => ''),
+    array('name' => 'report.txt', 'tmp_name' => tmp_file($jRep), 'error' => 0, 'size' => strlen($jRep)),
+    array('name' => $jf['filename'], 'tmp_name' => $jTmp, 'error' => UPLOAD_ERR_OK, 'size' => strlen($jCopy)));
+$jevRow = DB::row('SELECT * FROM official_validation_evidence WHERE id = ?', array($jev));
+ok((int)$jevRow['checksum_match'] === 1 && strpos($jevRow['notes'], 'eAlpha') !== false, 'evidence with the eAlpha copy proves byte identity and says to attach the downloaded file', json_encode($jevRow['notes']));
+
+// The SAWT templates of the Template Library: one per return, the ATC a dropdown, the nature and rate looked up from it.
+$tl = Imports::type('withheld_on_us');
+ok(array_map('strval', array_keys($tl['variants'])) === array('1700', '1701', '1701Q', '1702', '1702Q', '2550Q'), 'the Template Library has a SAWT template for 1700, 1701, 1701Q, 1702, 1702Q and 2550Q');
+$ewtInd = (int)DB::val("SELECT COUNT(DISTINCT atc_code) FROM tax_codes WHERE tax_kind = 'EWT' AND status <> 'retired' AND payee_type IN ('individual', 'any')");
+$ewtCorp = (int)DB::val("SELECT COUNT(DISTINCT atc_code) FROM tax_codes WHERE tax_kind = 'EWT' AND status <> 'retired' AND payee_type IN ('corporate', 'any')");
+$tplOk = array();
+foreach (array('1700' => $Jd, '1701' => $Jd, '1701Q' => $Jd, '1702' => $Gg, '1702Q' => $Gg) as $tf => $who) {
+    $tf = (string)$tf;
+    login_as($who['user'], $who['org'], $who['client']);
+    $tb = Imports::template('withheld_on_us', true, array('client' => DB::row('SELECT * FROM client_entities WHERE id = ?', array($who['client'])), 'variant' => $tf, 'month' => '2026-03'));
+    $sx1 = zip_part($tb, 'xl/worksheets/sheet1.xml');
+    $sx2 = zip_part($tb, 'xl/worksheets/sheet2.xml');
+    $wbx = zip_part($tb, 'xl/workbook.xml');
+    $nCodes = substr_count($sx2, '<row ') - 1;
+    $ind = Imports::sawtPayeeType($tf) === 'individual';
+    $checks = array(
+        'title' => strpos($sx1, 'BIR FORM ' . $tf . '<') !== false,
+        'sheet' => strpos($wbx, '<sheet name="ATC codes"') !== false && strpos($wbx, '<definedName name="ATC_TABLE">&apos;ATC codes&apos;!$A$2:$C$' . ($nCodes + 1) . '</definedName>') !== false,
+        'dropdown' => strpos($sx1, 'sqref="E16:E65"><formula1>ATC_CODES</formula1>') !== false,
+        'nature' => strpos($sx1, '<f>IF(E16=&quot;&quot;,&quot;&quot;,IFERROR(VLOOKUP(E16,ATC_TABLE,2,FALSE),&quot;&quot;))</f>') !== false,
+        'rate' => strpos($sx1, '<f>IF(E65=&quot;&quot;,&quot;&quot;,IFERROR(VLOOKUP(E65,ATC_TABLE,3,FALSE),&quot;&quot;))</f>') !== false,
+        'codes' => $nCodes === ($ind ? $ewtInd : $ewtCorp) && strpos($sx2, $ind ? 'WI830' : 'WC830') !== false && strpos($sx2, $ind ? 'WC830' : 'WI830') === false && strpos($sx2, 'WV010') === false,
+    );
+    list($tj, $tst2, $tex2, $tdet2, $tmeta2) = $simport($tb, array(), $who);
+    $checks['import'] = $tex2 && $tst2['total'] === 3 && $tst2['errors'] === 0 && $tmeta2['form'] === $tf && $tmeta2['month'] === '2026-03';
+    $tnorm = json_decode(DB::val('SELECT normalized_json FROM import_rows WHERE job_id = ? ORDER BY id LIMIT 1 OFFSET 1', array($tj)), true);
+    $checks['lookup'] = $tnorm['record']['atc_code'] === ($ind ? 'WI100' : 'WC120') && $tnorm['record']['tax_rate'] === ($ind ? '5.0000' : '2.0000')
+        && strpos($tnorm['record']['nature_of_payment'], $ind ? 'Rentals' : 'contractors') !== false && $tnorm['record']['tax_withheld'] === ($ind ? '2262.52' : '905.01');
+    if (in_array(false, $checks, true)) {
+        $tplOk[$tf] = $checks;
+    }
+}
+ok(!$tplOk, 'each SAWT template has its form on the title line, a dropdown of the return\'s ATC codes on 50 lines, the nature and rate looked up from the ATC, and imports back as typed', json_encode($tplOk));
+$t25 = Imports::template('withheld_on_us', false, array('client' => $jc, 'variant' => '2550Q', 'month' => '2026-06'));
+$t25x = zip_part($t25, 'xl/worksheets/sheet2.xml');
+ok(strpos($t25x, 'WV010') !== false && strpos($t25x, 'WI100') === false && strpos(zip_part($t25, 'xl/worksheets/sheet1.xml'), 'BIR FORM 2550Q') !== false, 'the 2550Q template lists the VAT withholding codes');
+ok(strpos(zip_part(Imports::template('withheld_on_us', false, array('client' => $jc, 'variant' => '1701Q', 'month' => '2026-06')), 'xl/worksheets/sheet2.xml'), 'Rentals- real/personal properties') !== false
+    && !DB::val("SELECT COUNT(*) FROM tax_codes WHERE description LIKE '%verify description%'"), 'the rentals codes carry the description of the BIR module');
+ok(Imports::sawtDefaultMonth('1701Q', null, '2026-11-14') === '2026-09' && Imports::sawtDefaultMonth('1701', null, '2026-11-14') === '2025-12'
+    && Imports::sawtDefaultMonth('1702', array('fiscal_month_end' => 6), '2026-11-14') === '2026-06' && Imports::sawtDefaultMonth('1702Q', array('fiscal_month_end' => 7), '2026-11-14') === '2026-10'
+    && Imports::sawtDefaultMonth('2550Q', null, '2026-12-01') === '2026-09', 'a new template is for the last quarter or year ended, following a fiscal year end');
+login_as($Gg['user'], $Gg['org'], $Gg['client']);
 
 // =====================================================================
 section('1604-E alphalist template (Schedule 3)');

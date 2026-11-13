@@ -237,7 +237,7 @@ H
 
 'atc' => $S('Tax codes (ATC)', 'atc', 'The ATC codes, rates and descriptions, adding and changing them, and uploading them from Excel.', <<<'H'
 <figure><img src="{img:atc}" alt="Tax codes"><figcaption>One row per code, with the Excel upload and the form to add or change a code.</figcaption></figure>
-<p>Every withholding entry uses an ATC from this list. Each code has a kind (EWT, FWT, government VAT or percentage tax), a payee type (non-individual, individual or any), a rate and a description. The list is shared by every client, and the ATC dropdown of the Taxes we withheld template is made from it.</p>
+<p>Every withholding entry uses an ATC from this list. Each code has a kind (EWT, FWT, government VAT or percentage tax), a payee type (non-individual, individual or any), a rate and a description. The list is shared by every client, and the ATC dropdowns of the Taxes we withheld and SAWT templates are made from it. It starts with the expanded withholding, final tax, VAT and percentage tax codes of the ATC table installed with the BIR Alphalist module v7.4, with the module's descriptions and rates.</p>
 <ul>
 <li>Check each code you use against the ATC table installed with your BIR validator (and its latest patch).</li>
 <li>A new code or a change is in use as soon as you save it, and is recorded as approved in the audit trail.</li>
@@ -496,7 +496,8 @@ $ch[] = array('title' => 'Importing spreadsheets', 'sections' => array(
 <ul>
 <li><b>Sales</b> is the VAT sales workbook: one sheet with its 17 columns and widths, from CUSTOMER TIN to OUTPUT VAT. Fill in GROSS TAXABLE or TAXABLE SALES; leave the other, and OUTPUT VAT, blank to have them worked out at the VAT RATE (12 when blank).</li>
 <li><b>Purchases</b> is the R_Purchases workbook: one sheet named R_Purchases with its 16 columns, and the formulas for taxableNetofVat, inputVat and totalPurchases on every row, with vatRate 12. totalPurchases includes the input VAT. A workbook made with the earlier formula, which left the VAT out of the total, still imports, with a note.</li>
-<li><b>Taxes withheld on us 1702Q (SAWT)</b> and <b>Taxes withheld on us 2550Q (SAWT)</b> are the SAWT printout of the BIR Alphalist module v7.4. Their title lines carry the form, last month, the active client's TIN and name; under the header (1) to (8) are 30 open lines whose tax works itself out from the income and rate, then the Grand Total. Insert rows between the two lines of dashes for more payors. Use the 1702Q template for income tax withheld on the client (WC and WI codes) and the 2550Q template for VAT withheld (WV codes). Both upload as Taxes withheld on us.</li>
+<li><b>Taxes withheld on us (SAWT)</b> comes in one template for each return the SAWT is attached to: <b>1700</b>, <b>1701</b>, <b>1701Q</b>, <b>1702</b>, <b>1702Q</b> and <b>2550Q</b>. Each is the SAWT printout of the BIR Alphalist module v7.4. The title lines carry the form, the active client's TIN and name, and the last month of the latest quarter (1701Q, 1702Q, 2550Q) or year (1700, 1701, 1702) ended; change the month on the line FOR THE MONTH OF if you need another period. Under the header (1) to (8) are 50 open lines, then the Grand Total.</li>
+<li>On each line, type the payor's TIN and name, then choose the <b>ATC CODE</b> from its dropdown. <b>NATURE OF PAYMENT</b> and <b>TAX RATE</b> fill in from the sheet <b>ATC codes</b>, and the tax withheld is worked out once you type the income. Type over the rate or the tax only when the payor's 2307 shows another amount. The 1700, 1701 and 1701Q templates list the codes for individual payees (WI), the 1702 and 1702Q templates the codes for non-individuals (WC), and the 2550Q template the VAT withholding codes (WV), as they are under {sec:atc}. For more payors, copy a whole line and insert it above the lower line of dashes. Every SAWT template uploads as Taxes withheld on us.</li>
 <li><b>Annual alphalist 1604-E (Schedule 3)</b> is the Schedule 3 printout of the module: BIR FORM 1604E - SCHEDULE 3, AS OF DECEMBER 31 and the year, the TIN and withholding agent's name, then SEQ NO, TIN, registered name, name of payee, ATC, income, rate and tax withheld. One line per payee and ATC with the year's totals. Its lines are saved as taxes we withheld on December 31 of the year, so use it only for a year whose payments are not already recorded month by month.</li>
 <li>The other templates have one header row and one record per row.</li>
 </ul>
@@ -645,6 +646,7 @@ H
 <li>Click <b>Add to library</b>.</li>
 </ol>
 <p>Uploaded files can be used as sources for the SRS and annual builder, validated and approved like generated files, and their rows can be imported into records.</p>
+<p>If you upload the copy of a SAWT that the BIR validation module saves in its eAlpha folder, the system recognises it by the validation key on its last line. It keeps the file without the key and without your TIN and branch that the module adds to each detail line, which is the file eSubmission accepts.</p>
 H
 ),
 
@@ -708,6 +710,7 @@ H
 <li>Optionally add the DAT you validated. The system compares its SHA-256 with the generated file to prove they are the same bytes.</li>
 <li>Click <b>Record validator result</b>.</li>
 </ol>
+<div class="mwarn">For eSubmission, attach the file you downloaded from G-SMaRT. After a SAWT passes, the validation module also saves a copy with the same file name in its <b>eAlpha</b> folder. That copy has your TIN and branch added to the end of every detail line and a validation key as its last line, and eSubmission refuses it with "Detail Excess Column". If you add that copy as the validated DAT, the system still proves it matches once the module's additions are removed.</div>
 <figure><img src="{img:file_view_validated}" alt="A file with accepted validator evidence"><figcaption>A 1604-C with an accepted validator report and matching bytes.</figcaption></figure>
 <p>A report for a different TIN, form or period is refused. If the validator rejects the file, read the line numbers in its report, correct the data or the layout, generate a new file and validate again.</p>
 H

@@ -204,6 +204,93 @@ class DatReader
             'line_ending' => $eol, 'has_bom' => $hasBom, 'non_ascii' => $nonAscii, 'ends_with_newline' => $endsWithNewline, 'line_count' => count($lines));
     }
 
+    /**
+     * The copy the BIR Alphalist validation module writes after a file passes (in its eAlpha folder, under
+     * the same file name, procedure genvalkey): every SAWT detail line gets ",<taxpayer TIN>,<branch>" added
+     * at the end, and the file gets a last line with the module's validation key. eSubmission refuses that
+     * copy with "Detail Excess Column". Returns null for an ordinary file, otherwise array(
+     *   'clean' => the file as the data entry module (or G-SMaRT) wrote it, 'key' => the key line or null,
+     *   'key_ok' => whether the key matches the lines, 'details' => detail lines with the TIN and branch removed,
+     *   'tin' => taxpayer TIN, 'branch' => branch code).
+     */
+    public static function validationCopy($bytes)
+    {
+        if (substr($bytes, 0, 3) === "\xEF\xBB\xBF") {
+            return null;
+        }
+        $eol = strpos($bytes, "\r\n") !== false ? "\r\n" : "\n";
+        $lines = preg_split('/\r\n|\n|\r/', rtrim($bytes, "\r\n"));
+        if (count($lines) < 2) {
+            return null;
+        }
+        $key = null;
+        $last = trim(end($lines));
+        // Prefix letter, the TIN in 9 characters, the year in 4, the branch in 3 or 4, then a 3-digit checksum.
+        if (preg_match('/^[A-Z](\d[A-Z]){4}\d([A-Z]\d){2}\d[A-Z]\d[A-Z]?\d{3}$/', $last)) {
+            $key = $last;
+            array_pop($lines);
+        }
+        list($h) = self::splitLine(trim($lines[0]), ',');
+        $tin = '';
+        $branch = '';
+        $year = '';
+        if (strtoupper($h[0]) === 'HSAWT' && count($h) >= 10) {
+            $tin = $h[2];
+            $branch = $h[3];
+            $year = substr($h[8], -4);
+        }
+        $details = 0;
+        $clean = array();
+        foreach ($lines as $ln) {
+            $ln = trim($ln);
+            if ($tin !== '' && strtoupper(substr($ln, 0, 5)) === 'DSAWT') {
+                $tail = ',' . $tin . ',' . $branch;
+                list($f) = self::splitLine($ln, ',');
+                if (count($f) === 17 && substr($ln, -strlen($tail)) === $tail) {
+                    $ln = substr($ln, 0, -strlen($tail));
+                    $details++;
+                }
+            }
+            $clean[] = $ln;
+        }
+        if ($key === null && $details === 0) {
+            return null;
+        }
+        $keyOk = false;
+        if ($key !== null && $tin !== '') {
+            // The key as the module computes it: character and line counts and a running checksum of the lines it wrote.
+            $sum = 0;
+            $chars = 0;
+            $n = 0;
+            foreach ($lines as $ln) {
+                $ln = trim($ln);
+                if (!in_array(strtoupper(substr($ln, 0, 1)), array('H', 'D', 'C'), true)) {
+                    continue;
+                }
+                for ($i = 0, $len = strlen($ln); $i < $len; $i++) {
+                    $sum += ord($ln[$i]);
+                }
+                $sum %= 256;
+                $n++;
+                $chars += strlen($ln);
+            }
+            $d = function ($c, $k) {
+                return (string)(((int)$c + $k) % 10);
+            };
+            $l = function ($c, $k) {
+                return chr(((int)$c + $k) % 26 + 65);
+            };
+            $t = str_pad(substr($tin, 0, 9), 9, '0');
+            $y = str_pad($year, 4, '0');
+            $b = str_pad($branch, 4, '0');
+            $body = $d($t[0], $chars) . $l($t[1], $chars) . $d($t[2], $n) . $l($t[3], $n) . $d($t[4], $chars) . $l($t[5], $chars) . $d($t[6], $n) . $l($t[7], $n) . $d($t[8], $chars)
+                . $l($y[0], $n) . $d($y[1], $n) . $l($y[2], $chars) . $d($y[3], $chars) . $d($b[0], $n) . $l($b[1], $chars) . $d($b[2], $chars);
+            $cs = str_pad((string)$sum, 3, '0', STR_PAD_LEFT);
+            $keyOk = substr($key, 1) === $body . $cs || substr($key, 1) === $body . $l($b[3], $n) . $cs || substr($key, 1) === $body . $l($b[3], $chars) . $cs;
+        }
+        return array('clean' => implode($eol, $clean) . $eol, 'key' => $key, 'key_ok' => $keyOk, 'details' => $details, 'tin' => $tin, 'branch' => $branch);
+    }
+
     private static function detailOf($spec)
     {
         foreach ($spec['records'] as $r) {

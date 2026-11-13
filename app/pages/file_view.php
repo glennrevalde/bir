@@ -183,7 +183,8 @@ View::pageBar($f['filename'], View::clientContext(e($f['form_code'] . ' ' . Spec
     <div class="sheet-body small prose">
       <ol><li>Download this exact file. Do not open and save it in Excel.</li>
         <li>Validate it in the BIR module (<?= e(sys_config('current_validator', 'current module')) ?>, <?= e(sys_config('current_validator_patch', 'latest patch')) ?>).</li>
-        <li>Upload the .TXT report the module writes. Adding the DAT you validated proves byte identity.</li></ol>
+        <li>Upload the .TXT report the module writes. Adding the DAT you validated proves byte identity.</li>
+        <?php if ($f['form_code'] === 'SAWT') { ?><li>Attach this file to eSubmission as you downloaded it. After a successful check the BIR module also saves a copy with the same name in its eAlpha folder, with your TIN and branch added to every detail line and a validation key as the last line. eSubmission refuses that copy with "Detail Excess Column".</li><?php } ?></ol>
       <p><a href="<?= e(url('manual', array('s' => 'guide_validator'))) ?>">Step-by-step guide</a></p>
     </div>
     <?php if (Ctx::can('validation.record') && !in_array($f['status'], array('superseded', 'submitted', 'approved'), true)) { ?>
