@@ -56,6 +56,7 @@ foreach ($type['columns'] as $c) {
 $isPurchases = $type['key'] === 'purchases';
 $isSawt = in_array($type['key'], array('withheld_on_us', 'alphalist_1604e'), true);
 $is1604e = $type['key'] === 'alphalist_1604e';
+$isWh = $type['key'] === 'withholding';
 $isSales = $type['key'] === 'sales';
 $labels['period_month'] = $is1604e ? 'Year' : ($isSawt ? 'Month' : 'Purchase month');
 $labels['tax_rate'] = 'TAX RATE';
@@ -321,18 +322,19 @@ View::pageBar('Review import #' . $job['id'], View::clientContext(e($job['origin
         <td data-label="Output VAT" class="num"><strong><?= $done ? Money::fmtDb($rec['output_vat']) : $rawAmt('output_vat') ?></strong></td>
       </tr>
     <?php } ?></tbody></table></div>
-  <?php } elseif ($isSawt) { ?>
+  <?php } elseif ($isSawt || $isWh) { ?>
   <div class="table-wrap"><table class="table table-stack">
-    <thead><tr><th>Row</th><th>Messages</th><th><?= $is1604e ? 'Payee' : 'Payor' ?></th><th>ATC</th><th>Nature of payment</th><th class="num">Income payment</th><th class="num">Tax rate</th><th class="num">Tax withheld</th></tr></thead>
+    <thead><tr><th>Row</th><th>Messages</th><th><?= $is1604e || $isWh ? 'Payee' : 'Payor' ?></th><?= $isWh ? '<th>Payment date</th>' : '' ?><th>ATC</th><th>Nature of payment</th><th class="num">Income payment</th><th class="num">Tax rate</th><th class="num">Tax withheld</th></tr></thead>
     <tbody><?php foreach ($rows as $r) { $n = json_decode((string)$r['normalized_json'], true) ?: array(); $rec = isset($n['record']) ? $n['record'] : array(); $pt = isset($n['party']) ? $n['party'] : array();
       $errs = json_decode((string)$r['errors_json'], true) ?: array(); $warns = json_decode((string)$r['warnings_json'], true) ?: array(); $raw = json_decode($r['raw_json'], true);
       $nature = !empty($rec['nature_of_payment']) ? $rec['nature_of_payment'] : trim(preg_replace('/\s+/', ' ', isset($raw['nature_of_payment']) ? (string)$raw['nature_of_payment'] : '')); ?>
       <tr class="<?= $r['status'] === 'error' ? 'row-error' : ($r['status'] === 'duplicate' ? 'row-dup' : '') ?>">
         <td data-label="Row" class="nowrap"><?= (int)$r['row_no'] ?></td>
         <td data-label="Messages" class="small" style="min-width:220px"><?= $msgHtml($r, $errs, $warns, $raw) ?></td>
-        <td data-label="<?= $is1604e ? 'Payee' : 'Payor' ?>"><strong><?= e($pt ? (!empty($pt['registered_name']) ? $pt['registered_name'] : trim((isset($pt['last_name']) ? $pt['last_name'] : '') . ', ' . (isset($pt['first_name']) ? $pt['first_name'] : '') . ' ' . (isset($pt['middle_name']) ? $pt['middle_name'] : ''), ', ')) : trim(isset($raw['p_registered_name']) ? (string)$raw['p_registered_name'] : '')) ?></strong>
+        <td data-label="<?= $is1604e || $isWh ? 'Payee' : 'Payor' ?>"><strong><?= e($pt ? (!empty($pt['registered_name']) ? $pt['registered_name'] : trim((isset($pt['last_name']) ? $pt['last_name'] : '') . ', ' . (isset($pt['first_name']) ? $pt['first_name'] : '') . ' ' . (isset($pt['middle_name']) ? $pt['middle_name'] : ''), ', ')) : trim(isset($raw['p_registered_name']) ? (string)$raw['p_registered_name'] : '')) ?></strong>
           <span class="sub"><?= e(!empty($pt['tin']) ? Tin::display($pt['tin'], $pt['branch_code']) : (isset($raw['p_tin']) && $raw['p_tin'] !== '' ? $raw['p_tin'] : 'No TIN')) ?></span></td>
-        <td data-label="ATC" class="nowrap"><?= e(!empty($rec['atc_code']) ? $rec['atc_code'] : (isset($raw['atc_code']) ? $raw['atc_code'] : '')) ?></td>
+        <?php if ($isWh) { ?><td data-label="Payment date" class="nowrap"><?= e(!empty($rec['payment_date']) ? fmt_date($rec['payment_date']) : (isset($raw['payment_date']) ? (string)$raw['payment_date'] : '')) ?></td><?php } ?>
+        <td data-label="ATC" class="nowrap"><?= e(!empty($rec['atc_code']) ? $rec['atc_code'] : (isset($raw['atc_code']) ? $raw['atc_code'] : '')) ?><?php if ($isWh) { $kd = !empty($rec['tax_kind']) ? $rec['tax_kind'] : (isset($raw['tax_kind']) ? (string)$raw['tax_kind'] : ''); if ($kd !== '') { ?><span class="sub"><?= e($kd) ?></span><?php } } ?></td>
         <td data-label="Nature of payment" class="small"><span class="clamp-2" title="<?= e($nature) ?>"><?= e($nature) ?></span></td>
         <td data-label="Income payment" class="num"><?= isset($rec['income_amount']) ? Money::fmtDb($rec['income_amount']) : e(isset($raw['income_amount']) ? $raw['income_amount'] : '') ?></td>
         <td data-label="Tax rate" class="num"><?= $rec && isset($rec['tax_rate']) && $rec['tax_rate'] !== null && $rec['tax_rate'] !== '' ? e(Money::rateFormat((int)Money::rateUnits($rec['tax_rate']), 'pct2')) : e(isset($raw['tax_rate']) ? $raw['tax_rate'] : '') ?></td>

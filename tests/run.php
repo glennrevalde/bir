@@ -792,6 +792,14 @@ $eTpl = Imports::template('alphalist_1604e', true, array('client' => $eClient, '
 $eXml = zip_part($eTpl, 'xl/sharedStrings.xml') . zip_part($eTpl, 'xl/worksheets/sheet1.xml');
 ok(strpos($eXml, 'BIR FORM 1604E - SCHEDULE 3') !== false && strpos($eXml, 'AS OF DECEMBER 31,2025') !== false && strpos($eXml, '006112233') !== false && strpos($eXml, 'Grand Total') !== false,
     'the 1604-E template has the Schedule 3 title lines of the BIR printout with the client TIN');
+$eS2 = zip_part($eTpl, 'xl/worksheets/sheet2.xml');
+$eWb = zip_part($eTpl, 'xl/workbook.xml');
+$eEwt = (int)DB::val("SELECT COUNT(DISTINCT atc_code) FROM tax_codes WHERE tax_kind = 'EWT' AND status <> 'retired' AND effective_from <= '2025-12-31'");
+ok(strpos($eXml, 'sqref="E16:E45"><formula1>ATC_CODES</formula1>') !== false && strpos($eWb, '<sheet name="ATC codes"') !== false
+    && strpos($eXml, '<c r="G45" s="9"><f>IF(E45=&quot;&quot;,&quot;&quot;,IFERROR(VLOOKUP(E45,ATC_TABLE,3,FALSE),&quot;&quot;))</f></c>') !== false
+    && strpos($eXml, '<f>IF(E16=&quot;&quot;,&quot;&quot;,IFERROR(VLOOKUP(E16,ATC_TABLE,3,FALSE),&quot;&quot;))</f><v>5</v>') !== false
+    && substr_count($eS2, '<row ') - 1 === $eEwt && strpos($eS2, 'WI830') !== false && strpos($eS2, 'WC830') !== false && strpos($eS2, 'WV010') === false,
+    'the 1604-E template: ATC CODE is a dropdown of every expanded withholding code, and RATE OF TAX is looked up from it', json_encode(array(substr_count($eS2, '<row ') - 1, $eEwt)));
 $eimport = function ($bytes, $opts = array()) use ($Ee, $etype) {
     $rel = 'uploads/e1604-' . mt_rand() . '.xlsx';
     file_put_contents(storage_path($rel), $bytes);
@@ -925,8 +933,52 @@ ok(implode('|', array_map(function ($c) { return $c['title']; }, $wcols)) === 'P
 $wtpl = Imports::template('withholding', true);
 $wx = zip_part($wtpl, 'xl/worksheets/sheet1.xml');
 $wr = new XlsxReader(tmp_file($wtpl));
-ok(strpos($wx, "<formula1>&apos;ATC codes&apos;!\$A\$2:\$A\$") !== false && strpos($wx, 'sqref="K2:K20000"') !== false && $wr->sheetNames()[1] === 'ATC codes',
+$wwb = zip_part($wtpl, 'xl/workbook.xml');
+$nAtc = count(TaxCodes::current());
+ok(strpos($wx, '<formula1>ATC_CODES</formula1>') !== false && strpos($wx, 'sqref="K2:K20000"') !== false && $wr->sheetNames()[1] === 'ATC codes'
+    && strpos($wwb, '<definedName name="ATC_CODES">&apos;ATC codes&apos;!$A$2:$A$' . ($nAtc + 1) . '</definedName>') !== false
+    && strpos($wwb, '<definedName name="ATC_TABLE">&apos;ATC codes&apos;!$A$2:$F$' . ($nAtc + 1) . '</definedName>') !== false,
     'the ATC column is a dropdown of the tax codes saved in the system, listed on the sheet ATC codes');
+// v8: KIND, NATURE OF PAYMENT, TAX RATE and TAX WITHHELD work themselves out from the ATC and the income.
+$wfx = array(
+    'kind' => '<c r="J501" s="4"><f>IF(K501=&quot;&quot;,&quot;&quot;,IFERROR(VLOOKUP(K501,ATC_TABLE,4,FALSE),&quot;&quot;))</f></c>',
+    'nature' => '<c r="M501" s="4"><f>IF(K501=&quot;&quot;,&quot;&quot;,IFERROR(VLOOKUP(K501,ATC_TABLE,2,FALSE),&quot;&quot;))</f></c>',
+    'rate' => '<c r="O501" s="7"><f>IF(K501=&quot;&quot;,&quot;&quot;,IFERROR(VLOOKUP(K501,ATC_TABLE,3,FALSE),&quot;&quot;))</f></c>',
+    'tax' => '<c r="P501" s="7"><f>IF(OR(N501=&quot;&quot;,O501=&quot;&quot;),&quot;&quot;,ROUND(N501*O501/100,2))</f></c>',
+    'sample kind' => '<c r="J2" s="4" t="str"><f>IF(K2=&quot;&quot;,&quot;&quot;,IFERROR(VLOOKUP(K2,ATC_TABLE,4,FALSE),&quot;&quot;))</f><v>EWT</v></c>',
+    'sample rate' => '<v>1</v></c><c r="P2"', 'sample tax' => '<f>IF(OR(N2=&quot;&quot;,O2=&quot;&quot;),&quot;&quot;,ROUND(N2*O2/100,2))</f><v>1000.00</v>',
+);
+$wmiss = array();
+foreach ($wfx as $k => $needle) {
+    if (strpos($wx, $needle) === false) {
+        $wmiss[] = $k;
+    }
+}
+ok(!$wmiss && strpos($wx, '<c r="J502"') === false, 'KIND, NATURE OF PAYMENT and TAX RATE are looked up from the ATC and TAX WITHHELD is income x rate, on 500 rows; sample rows carry the results', json_encode($wmiss));
+$wAtcRow = array_values($wr->rows('ATC codes', 400));
+$wHead = array_map(function ($c) { return $c['v']; }, $wAtcRow[0]);
+$wByCode = array();
+foreach (array_slice($wAtcRow, 1) as $ar) {
+    $wByCode[$ar[0]['v']] = array($ar[1]['v'], $ar[2]['v'], $ar[3]['v']);
+}
+ok(implode('|', $wHead) === 'ATC CODE|NATURE OF PAYMENT|TAX RATE|KIND|PAYEE TYPE|STATUS' && count($wByCode) === $nAtc && isset($wByCode['WI830'], $wByCode['WC160'])
+    && (float)$wByCode['WC158'][1] === 1.0 && $wByCode['WC158'][2] === 'EWT' && isset($wByCode['WV010']) && $wByCode['WV010'][2] === 'GVAT',
+    'the sheet ATC codes gives the nature of payment, the rate as a number and the kind of every code', json_encode(array($wHead, count($wByCode), $nAtc)));
+list($wjT, $wstT) = (function () use ($Ww, $wtype, $wtpl) {
+    $rel = 'uploads/wh-' . mt_rand() . '.xlsx';
+    file_put_contents(storage_path($rel), $wtpl);
+    $job = DB::insert('import_jobs', array('organization_id' => $Ww['org'], 'client_id' => $Ww['client'], 'branch_id' => $Ww['branch'], 'import_type' => 'withholding', 'original_filename' => 'tpl.xlsx',
+        'stored_path' => $rel, 'file_sha256' => hash('sha256', $wtpl), 'sheet_name' => 'Data', 'header_row' => 1, 'status' => 'uploaded', 'created_by' => $Ww['user'], 'created_at' => now()));
+    list($map) = Imports::suggestMapping($wtype, Imports::headersOf(Imports::readRows(DB::row('SELECT * FROM import_jobs WHERE id = ?', array($job))), 1));
+    DB::update('import_jobs', array('mapping_json' => json_encode($map), 'options_json' => json_encode(array('date_format' => 'auto'))), 'id = ?', array($job));
+    Imports::prepare($job);
+    do { $st = Imports::stageChunk($job, 100); } while (!$st['done']);
+    return array($job, $st);
+})();
+$wTn = array_map(function ($j) { return json_decode($j, true); }, DB::col('SELECT normalized_json FROM import_rows WHERE job_id = ? ORDER BY row_no', array($wjT)));
+ok($wstT['total'] === 2 && $wstT['errors'] === 0 && $wTn[1]['record']['tax_rate'] === '5.0000' && $wTn[1]['record']['tax_withheld'] === '1000.00' && $wTn[0]['record']['tax_kind'] === 'EWT'
+    && stripos($wTn[0]['record']['nature_of_payment'], 'goods') !== false,
+    'the template with sample rows imports as filled in: 500 formula rows left blank are skipped', json_encode(array($wstT, $wTn)));
 ok(strpos($wx, '<formula1>&quot;1,2,3&quot;</formula1>') !== false && strpos($wx, 'sqref="Q2:Q20000"') !== false, 'SCHEDULE is a dropdown of 1, 2 and 3');
 $wm = Records::module('withholding');
 $visible = array_values(array_filter(array_map(function ($f) { return empty($f['hidden']) ? $f['key'] : null; }, $wm['fields'])));

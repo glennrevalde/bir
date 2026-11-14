@@ -344,7 +344,8 @@ class XlsxWriter
             $fmt = isset($c['format']) ? $c['format'] : 'general';
             $style = $fmt === 'text' ? 2 : ($fmt === 'amount' ? 3 : ($fmt === 'note' ? 5 : 4));
             if (isset($c['xlsx_format'])) {
-                $style = $c['xlsx_format'] === 'red_negative' ? 8 : ($c['xlsx_format'] === 'sawt' ? 9 : 7);
+                // 'general' leaves a formula column out of the Text format, so Excel works it out.
+                $style = $c['xlsx_format'] === 'red_negative' ? 8 : ($c['xlsx_format'] === 'sawt' ? 9 : ($c['xlsx_format'] === 'general' ? 4 : 7));
             }
             $styleFor[$i] = $style;
             $w = isset($c['width']) ? $c['width'] : 16;
@@ -386,7 +387,16 @@ class XlsxWriter
                 $ref = self::colLetter($i) . $r;
                 $st = isset($styleFor[$i]) ? $styleFor[$i] : 0;
                 if (!empty($c['formula']) && $hasFormulas) {
-                    $rowsXml .= '<c r="' . $ref . '" s="' . $st . '"><f>' . self::x(str_replace('{r}', (string)$r, $c['formula'])) . '</f></c>';
+                    // A value given for the row is written as the formula's result, so the file reads the same before Excel recalculates it.
+                    $f = '<f>' . self::x(str_replace('{r}', (string)$r, $c['formula'])) . '</f>';
+                    $cv = isset($row[$i]) ? $row[$i] : null;
+                    if ($cv === null || $cv === '') {
+                        $rowsXml .= '<c r="' . $ref . '" s="' . $st . '">' . $f . '</c>';
+                    } elseif (is_numeric($cv) && !(is_string($cv) && preg_match('/^0\d/', $cv))) {
+                        $rowsXml .= '<c r="' . $ref . '" s="' . $st . '">' . $f . '<v>' . self::x($cv) . '</v></c>';
+                    } else {
+                        $rowsXml .= '<c r="' . $ref . '" s="' . $st . '" t="str">' . $f . '<v>' . self::x($cv) . '</v></c>';
+                    }
                     continue;
                 }
                 $v = isset($row[$i]) ? $row[$i] : null;
